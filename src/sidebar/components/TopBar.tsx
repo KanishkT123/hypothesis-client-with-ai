@@ -111,6 +111,7 @@ function TopBar({
           {isSidebar && (
             <>
               <SearchIconButton />
+              <SearchIconButton />
               <SortMenu />
               {controlEnabled(settings, 'share') && (
                 <TopBarToggleButton
