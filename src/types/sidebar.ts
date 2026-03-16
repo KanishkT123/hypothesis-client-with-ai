@@ -9,7 +9,8 @@ export type PanelName =
   | 'help'
   | 'loginPrompt'
   | 'shareGroupAnnotations'
-  | 'searchAnnotations';
+  | 'searchAnnotations'
+  | 'aiSearchAnnotations';
 
 /**
  * The top-level tabs in the sidebar interface. Used to reference which tab

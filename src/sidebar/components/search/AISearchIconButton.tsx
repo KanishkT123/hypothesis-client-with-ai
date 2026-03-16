@@ -34,8 +34,8 @@ function useSearchKeyboardShortcuts(store: SidebarStore) {
         return;
       }
       prevFocusRef.current = document.activeElement as HTMLOrSVGElement | null;
-      if (!store.isSidebarPanelOpen('searchAnnotations')) {
-        store.openSidebarPanel('searchAnnotations');
+      if (!store.isSidebarPanelOpen('aiSearchAnnotations')) {
+        store.openSidebarPanel('aiSearchAnnotations');
         event.preventDefault();
         event.stopPropagation();
       }
@@ -52,10 +52,10 @@ function useSearchKeyboardShortcuts(store: SidebarStore) {
 export default function AISearchIconButton() {
   const store = useSidebarStore();
   const isLoading = store.isLoading();
-  const isSearchPanelOpen = store.isSidebarPanelOpen('searchAnnotations');
+  const isSearchPanelOpen = store.isSidebarPanelOpen('aiSearchAnnotations');
 
   const toggleSearchPanel = useCallback(() => {
-    store.toggleSidebarPanel('searchAnnotations');
+    store.toggleSidebarPanel('aiSearchAnnotations');
   }, [store]);
 
   useSearchKeyboardShortcuts(store);
@@ -65,11 +65,11 @@ export default function AISearchIconButton() {
       {isLoading && <Spinner />}
       {!isLoading && (
         <TopBarToggleButton
-          icon={AnnotateIcon}
+          icon={AnnotateIcon} //TODO: instead of the search icon, but could change it to something outside the library that looks like AI
           expanded={isSearchPanelOpen}
           pressed={isSearchPanelOpen}
           onClick={toggleSearchPanel}
-          title="Show search panel"
+          title="Show AI search panel"
         />
       )}
     </>

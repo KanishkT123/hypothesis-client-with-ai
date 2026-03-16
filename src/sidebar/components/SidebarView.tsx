@@ -66,7 +66,9 @@ function SidebarView({
   // open, filter controls are integrated into it. The UI may render nothing
   // if no filters are configured or selection is active.
   const isSearchPanelOpen = store.isSidebarPanelOpen('searchAnnotations');
-  const showFilterControls = !hasContentError && !isSearchPanelOpen;
+  const isAISearchPanelOpen = store.isSidebarPanelOpen('aiSearchAnnotations');
+  const showFilterControls =
+    !hasContentError && !isSearchPanelOpen && !isAISearchPanelOpen;
 
   // Show a CTA to log in if successfully viewing a direct-linked annotation
   // and not logged in

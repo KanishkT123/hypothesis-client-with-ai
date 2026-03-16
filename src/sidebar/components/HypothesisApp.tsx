@@ -23,6 +23,7 @@ import StreamView from './StreamView';
 import ToastMessages from './ToastMessages';
 import TopBar from './TopBar';
 import SearchPanel from './search/SearchPanel';
+import AISearchPanel from './search/AISearchPanel';
 
 export type HypothesisAppProps = {
   auth: AuthService;
@@ -168,6 +169,7 @@ function HypothesisApp({
         <ToastMessages />
         <HelpPanel />
         <SearchPanel />
+        <AISearchPanel />
         <SharePanel shareTab={!isThirdParty} />
 
         {route && (
