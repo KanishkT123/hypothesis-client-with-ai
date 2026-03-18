@@ -8,7 +8,9 @@ import SearchField from './SearchField';
 
 import { withServices } from '../../service-context';
 import type { ReductoService } from '../../services/reducto';
+import type { APIService } from '../../services/api';
 import type { ToastMessengerService } from '../../services/toast-messenger';
+import { sharedPermissions } from '../../helpers/permissions';
 
 /* export type StreamViewProps = {
     // injected
@@ -19,10 +21,11 @@ import type { ToastMessengerService } from '../../services/toast-messenger';
 type AISearchPanelProps = {
     // injected
     reducto: ReductoService;
+    api: APIService;
     toastMessenger: ToastMessengerService;
 };
 
-function AISearchPanel({ reducto, toastMessenger }: AISearchPanelProps) {
+function AISearchPanel({ reducto, api, toastMessenger }: AISearchPanelProps) {
   const store = useSidebarStore();
   const filterQuery = store.filterQuery();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -32,6 +35,74 @@ function AISearchPanel({ reducto, toastMessenger }: AISearchPanelProps) {
   const clearSearch = () => {
     store.closeSidebarPanel('aiSearchAnnotations');
   };
+
+//   const firstPDFURI = (candidateURIs: string[]): string | null => {
+//     for (const uri of candidateURIs) {
+//       if (uri.toLowerCase().endsWith('.pdf')) {
+//         return uri;
+//       }
+//     }
+//     return null;
+//   };
+
+  async function onAISearch(query: string) {
+    try {
+    const reductoResult = await reducto.AISearchDocument({
+        query,
+        candidateURIs: store.searchUris(),
+        apiKey: reductoAPIKey,
+    });
+    console.log('reductoResult', reductoResult);
+
+    const userid = store.profile().userid;
+    const groupId = store.focusedGroupId();
+    const documentURL = reducto.firstPDFURI(store.searchUris());
+
+    console.log('userid, groupId, documentURL', userid, groupId, documentURL);
+    
+    if (!userid || !groupId || !documentURL) {
+        toastMessenger.error('Missing user, group, or PDF URL');
+        return;
+    }
+
+    const quotes = ((reductoResult.answer as any).result?.[0]?.quotes ?? []) as
+      Array<{ text?: string }>;
+    console.log('quotes', quotes);
+
+    const created = [];
+    for (const quote of quotes) {
+      if (!quote.text?.trim()) {
+        continue;
+      }
+      console.log('quote.text', quote.text);
+      const payload = {
+        group: groupId,
+        uri: documentURL,
+        target: [{ source: documentURL, selector: [{ type: 'TextQuoteSelector', exact: quote.text }] }],
+        text: query,
+        tags: ['ai',],
+        permissions: sharedPermissions(userid, groupId),
+      };
+      const ann = await api.annotation.create({}, payload);
+      created.push(ann);
+      console.log('created', created);
+    }
+    if (created.length) {
+      store.addAnnotations(created);
+    }
+    toastMessenger.success(`Created ${created.length} annotation(s) from AI results.`);
+    // const hypResults = await api.search({
+    //   any: query,            // or use a quote from reductoResult
+    //   uri: pdfURI,
+    //   limit: 20,
+    //   offset: 0,
+    // });
+    // console.log('hypothesisSearchResults', hypResults);
+    } catch (error) {
+      console.error('Error creating annotations from AI results:', error);
+      toastMessenger.error('Failed to create annotations from AI results.');
+    }
+  }
 
   return (
     <SidebarPanel
@@ -57,11 +128,12 @@ function AISearchPanel({ reducto, toastMessenger }: AISearchPanelProps) {
               onClearSearch={clearSearch}
               //onSearch={store.setFilterQuery}
               //onSearch={query => reducto.AISearchDocument({ documentURL: 'test', query })} //TODO: replace with actual document URL, check Reducto function call name
-              onSearch={query => reducto.AISearchDocument({
-                query,
-                candidateURIs: store.searchUris(),
-                apiKey: reductoAPIKey,
-              })} 
+            //   onSearch={query => reducto.AISearchDocument({
+            //     query,
+            //     candidateURIs: store.searchUris(),
+            //     apiKey: reductoAPIKey,
+            //   })} 
+              onSearch={onAISearch}
               onKeyDown={e => {
                 if (e.key === 'Escape') {
                   clearSearch();
@@ -89,4 +161,4 @@ function AISearchPanel({ reducto, toastMessenger }: AISearchPanelProps) {
   );
 }
 
-export default withServices(AISearchPanel, ['reducto', 'toastMessenger']);
+export default withServices(AISearchPanel, ['reducto', 'api', 'toastMessenger']);

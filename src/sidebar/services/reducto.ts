@@ -12,7 +12,7 @@ export type ReductoSearchResult = {
 };
 
 export class ReductoService {
-  private _firstPDFURI(candidateURIs: string[]): string | null {
+  firstPDFURI(candidateURIs: string[]): string | null {
     for (const uri of candidateURIs) {
       if (uri.toLowerCase().endsWith('.pdf')) {
         return uri;
@@ -31,7 +31,7 @@ export class ReductoService {
     request: ReductoSearchRequest,
   ): Promise<ReductoSearchResult> {
     const { query, candidateURIs, apiKey } = request;
-    const documentURL = this._firstPDFURI(candidateURIs);
+    const documentURL = this.firstPDFURI(candidateURIs);
     if (!documentURL) {
       throw new Error('No PDF URL found in candidateURIs');
     }
@@ -76,7 +76,8 @@ export class ReductoService {
         input: documentURL,
         instructions: {
           schema: schema,
-          system_prompt: `Extract a list of verbatim quotes matching this query, iterating until all matching quotes are found: ${query}`
+          system_prompt: `Extract a list of verbatim quotes matching this query, iterating until all matching quotes are found: ${query}` 
+          //TODO: ask for empty result rather than hallucanating
         },
         settings: {
           alpha: {
