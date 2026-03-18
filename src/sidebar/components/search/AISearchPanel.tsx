@@ -1,5 +1,5 @@
-import { Card, CardContent } from '@hypothesis/frontend-shared';
-import { useRef } from 'preact/hooks';
+import { Card, CardContent, Input } from '@hypothesis/frontend-shared';
+import { useRef, useState } from 'preact/hooks';
 
 import { useSidebarStore } from '../../store';
 import SidebarPanel from '../SidebarPanel';
@@ -27,6 +27,7 @@ function AISearchPanel({ reducto, toastMessenger }: AISearchPanelProps) {
   const filterQuery = store.filterQuery();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const hasSelection = store.hasSelectedAnnotations();
+  const [reductoAPIKey, setReductoAPIKey] = useState('');
 
   const clearSearch = () => {
     store.closeSidebarPanel('aiSearchAnnotations');
@@ -45,7 +46,7 @@ function AISearchPanel({ reducto, toastMessenger }: AISearchPanelProps) {
     >
       <Card>
         <CardContent>
-          <div className="flex gap-x-3">
+          <div className="flex flex-col gap-y-3">
             <SearchField
               inputRef={inputRef}
               classes="grow"
@@ -56,12 +57,29 @@ function AISearchPanel({ reducto, toastMessenger }: AISearchPanelProps) {
               onClearSearch={clearSearch}
               //onSearch={store.setFilterQuery}
               //onSearch={query => reducto.AISearchDocument({ documentURL: 'test', query })} //TODO: replace with actual document URL, check Reducto function call name
-              onSearch={query => reducto.AISearchDocument({ query, candidateURIs: store.searchUris() })} 
+              onSearch={query => reducto.AISearchDocument({
+                query,
+                candidateURIs: store.searchUris(),
+                apiKey: reductoAPIKey,
+              })} 
               onKeyDown={e => {
                 if (e.key === 'Escape') {
                   clearSearch();
                 }
               }}
+            />
+            <Input
+              aria-label="Reducto API key"
+              classes="text-base touch:text-touch-base"
+              data-testid="reducto-api-key-input"
+              dir="auto"
+              name="reducto-api-key"
+              placeholder="REDUCTO_API_KEY"
+              type="password"
+              value={reductoAPIKey}
+              onInput={(e: Event) =>
+                setReductoAPIKey((e.target as HTMLInputElement).value)
+              }
             />
           </div>
           <FilterControls />

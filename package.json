@@ -122,5 +122,8 @@
     "test:watch": "gulp test --live",
     "typecheck": "tsc --build tsconfig.json"
   },
-  "packageManager": "yarn@3.6.0"
+  "packageManager": "yarn@3.6.0",
+  "dependencies": {
+    "reductoai": "^0.13.0"
+  }
 }
