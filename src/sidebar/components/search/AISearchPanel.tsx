@@ -6,7 +6,23 @@ import SidebarPanel from '../SidebarPanel';
 import FilterControls from './FilterControls';
 import SearchField from './SearchField';
 
-export default function AISearchPanel() {
+import { withServices } from '../../service-context';
+import type { ReductoService } from '../../services/reducto';
+import type { ToastMessengerService } from '../../services/toast-messenger';
+
+/* export type StreamViewProps = {
+    // injected
+    api: APIService;
+    toastMessenger: ToastMessengerService;
+}; */
+
+type AISearchPanelProps = {
+    // injected
+    reducto: ReductoService;
+    toastMessenger: ToastMessengerService;
+};
+
+function AISearchPanel({ reducto, toastMessenger }: AISearchPanelProps) {
   const store = useSidebarStore();
   const filterQuery = store.filterQuery();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -38,7 +54,9 @@ export default function AISearchPanel() {
               disabled={hasSelection}
               query={filterQuery || null}
               onClearSearch={clearSearch}
-              onSearch={store.setFilterQuery}
+              //onSearch={store.setFilterQuery}
+              //onSearch={query => reducto.AISearchDocument({ documentURL: 'test', query })} //TODO: replace with actual document URL, check Reducto function call name
+              onSearch={query => reducto.AISearchDocument({ query, candidateURIs: store.searchUris() })} 
               onKeyDown={e => {
                 if (e.key === 'Escape') {
                   clearSearch();
@@ -52,3 +70,5 @@ export default function AISearchPanel() {
     </SidebarPanel>
   );
 }
+
+export default withServices(AISearchPanel, ['reducto', 'toastMessenger']);
