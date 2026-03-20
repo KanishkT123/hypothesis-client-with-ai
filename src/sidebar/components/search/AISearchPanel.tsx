@@ -7,10 +7,16 @@ import FilterControls from './FilterControls';
 import SearchField from './SearchField';
 
 import { withServices } from '../../service-context';
+import type { FrameSyncService } from '../../services/frame-sync';
 import type { ReductoService } from '../../services/reducto';
 import type { APIService } from '../../services/api';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { sharedPermissions } from '../../helpers/permissions';
+
+/** Until a color picker owns this map, push these tag → rgba() values to guests. */
+const INITIAL_TAG_HIGHLIGHT_PALETTE: Record<string, string> = {
+  ai: 'rgba(64, 169, 255, 0.38)',
+};
 
 /* export type StreamViewProps = {
     // injected
@@ -20,18 +26,24 @@ import { sharedPermissions } from '../../helpers/permissions';
 
 type AISearchPanelProps = {
     // injected
+    frameSync: FrameSyncService;
     reducto: ReductoService;
     api: APIService;
     toastMessenger: ToastMessengerService;
 };
 
-function AISearchPanel({ reducto, api, toastMessenger }: AISearchPanelProps) {
+function AISearchPanel({
+  frameSync,
+  reducto,
+  api,
+  toastMessenger,
+}: AISearchPanelProps) {
   const store = useSidebarStore();
   const filterQuery = store.filterQuery();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const hasSelection = store.hasSelectedAnnotations();
   const [reductoAPIKey, setReductoAPIKey] = useState('');
-
+  const [schemaTag, setSchemaTag] = useState('');
   const clearSearch = () => {
     store.closeSidebarPanel('aiSearchAnnotations');
   };
@@ -51,6 +63,7 @@ function AISearchPanel({ reducto, api, toastMessenger }: AISearchPanelProps) {
         query,
         candidateURIs: store.searchUris(),
         apiKey: reductoAPIKey,
+        //schemaTag: schemaTag,
     });
     console.log('reductoResult', reductoResult);
 
@@ -80,7 +93,7 @@ function AISearchPanel({ reducto, api, toastMessenger }: AISearchPanelProps) {
         uri: documentURL,
         target: [{ source: documentURL, selector: [{ type: 'TextQuoteSelector', exact: quote.text }] }],
         text: query,
-        tags: ['ai',],
+        tags: ['ai', schemaTag],
         permissions: sharedPermissions(userid, groupId),
       };
       const ann = await api.annotation.create({}, payload);
@@ -90,6 +103,7 @@ function AISearchPanel({ reducto, api, toastMessenger }: AISearchPanelProps) {
     if (created.length) {
       store.addAnnotations(created);
     }
+
     toastMessenger.success(`Created ${created.length} annotation(s) from AI results.`);
     // const hypResults = await api.search({
     //   any: query,            // or use a quote from reductoResult
@@ -112,12 +126,40 @@ function AISearchPanel({ reducto, api, toastMessenger }: AISearchPanelProps) {
       onActiveChanged={active => {
         if (!active) {
           store.setFilterQuery(null);
+        } else {
+          frameSync.setTagHighlightPalette(INITIAL_TAG_HIGHLIGHT_PALETTE);
         }
       }}
     >
       <Card>
         <CardContent>
           <div className="flex flex-col gap-y-3">
+            <Input
+              aria-label="Reducto API key"
+              classes="text-base touch:text-touch-base"
+              data-testid="reducto-api-key-input"
+              dir="auto"
+              name="reducto-api-key"
+              placeholder="REDUCTO_API_KEY"
+              type="password"
+              value={reductoAPIKey}
+              onInput={(e: Event) =>
+                setReductoAPIKey((e.target as HTMLInputElement).value)
+              }
+            />
+            <Input
+              aria-label="schema tag"
+              classes="text-base touch:text-touch-base"
+              data-testid="schema-tag-input"
+              dir="auto"
+              name="schema-tag"
+              placeholder="Tag"
+              type="text"
+              value={schemaTag}
+              onInput={(e: Event) =>
+                setSchemaTag((e.target as HTMLInputElement).value)
+              }
+            />
             <SearchField
               inputRef={inputRef}
               classes="grow"
@@ -140,19 +182,6 @@ function AISearchPanel({ reducto, api, toastMessenger }: AISearchPanelProps) {
                 }
               }}
             />
-            <Input
-              aria-label="Reducto API key"
-              classes="text-base touch:text-touch-base"
-              data-testid="reducto-api-key-input"
-              dir="auto"
-              name="reducto-api-key"
-              placeholder="REDUCTO_API_KEY"
-              type="password"
-              value={reductoAPIKey}
-              onInput={(e: Event) =>
-                setReductoAPIKey((e.target as HTMLInputElement).value)
-              }
-            />
           </div>
           <FilterControls />
         </CardContent>
@@ -161,4 +190,9 @@ function AISearchPanel({ reducto, api, toastMessenger }: AISearchPanelProps) {
   );
 }
 
-export default withServices(AISearchPanel, ['reducto', 'api', 'toastMessenger']);
+export default withServices(AISearchPanel, [
+  'frameSync',
+  'reducto',
+  'api',
+  'toastMessenger',
+]);

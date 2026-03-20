@@ -53,3 +53,7 @@ license information can be found in the included [LICENSE][license] file.
 
 [bsd2c]: http://www.opensource.org/licenses/BSD-2-Clause
 [license]: https://github.com/hypothesis/client/blob/main/LICENSE
+
+# Todo's
+- make sure clear error message pops up if API key is missing onSearch in AISearchPanel
+- make sure to show user-friendly versions of console.log messages in UI

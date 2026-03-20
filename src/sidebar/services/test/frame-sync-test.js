@@ -304,6 +304,7 @@ describe('FrameSyncService', () => {
         '$tag',
         'target',
         'uri',
+        'tags',
       ]);
     });
   });

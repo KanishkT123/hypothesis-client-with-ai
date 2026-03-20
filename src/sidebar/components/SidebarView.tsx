@@ -69,6 +69,7 @@ function SidebarView({
   const isAISearchPanelOpen = store.isSidebarPanelOpen('aiSearchAnnotations');
   const showFilterControls =
     !hasContentError && !isSearchPanelOpen && !isAISearchPanelOpen;
+    //TODO: show filter controls for AI and/or regular search panel if it is open
 
   // Show a CTA to log in if successfully viewing a direct-linked annotation
   // and not logged in

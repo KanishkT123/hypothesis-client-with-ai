@@ -4,6 +4,7 @@ export type ReductoSearchRequest = {
   candidateURIs: string[];
   query: string;
   apiKey: string;
+  //schemaTag: string;
 };
 
 
@@ -63,6 +64,7 @@ export class ReductoService {
     console.log('[ReductoService] candidateURIs:', candidateURIs);
     console.log('[ReductoService] documentURL:', documentURL);
     console.log('[ReductoService] apiKey:', apiKey);
+    //console.log('[ReductoService] schemaTag:', schemaTag);
     // Temporary stub response so submit does not throw.
     //return { answer: 'Reducto debug stub response' }; //TODO: replace with actual Reducto response
     // const result = await reducto.search(documentURL, query, { schema });

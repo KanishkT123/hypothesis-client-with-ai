@@ -3,6 +3,7 @@ import { ListenerCollection } from '@hypothesis/frontend-shared';
 import { EventEmitter } from '../shared/event-emitter';
 import { PortFinder, PortRPC } from '../shared/messaging';
 import { generateHexString } from '../shared/random';
+import { applyTagHighlightPalette } from '../shared/tag-highlight-styles';
 import { matchShortcut } from '../shared/shortcut';
 import { getAllShortcuts, setAllShortcuts } from '../shared/shortcut-config';
 import type {
@@ -277,6 +278,12 @@ export class Guest
   private _pendingKeyboardMode?: 'move' | 'resize';
 
   /**
+   * Tag → highlight color for {@link applyTagHighlightPalette}. Updated when the
+   * sidebar sends `setTagHighlightPalette`; starts empty (cluster styling only).
+   */
+  private _tagHighlightPalette: Record<string, string>;
+
+  /**
    * @param element -
    *   The root element in which the `Guest` instance should be able to anchor
    *   or create annotations. In an ordinary web page this typically `document.body`.
@@ -301,6 +308,7 @@ export class Guest
     this._informHostOnNextSelectionClear = true;
     this.selectedRanges = [];
     this._outsideAssignmentNotice = null;
+    this._tagHighlightPalette = {};
     this._highlighter = new Highlighter(this.element);
 
     this._adder = new Adder(this.element, {
@@ -693,10 +701,25 @@ export class Guest
       async (annotations: AnnotationData[]) => {
         try {
           await Promise.all(annotations.map(ann => this.anchor(ann)));
+          applyTagHighlightPalette(
+            this.element.ownerDocument,
+            this._tagHighlightPalette,
+          );
         } catch (e) {
           /* istanbul ignore next */
           console.warn('Failed to anchor annotations:', e);
         }
+      },
+    );
+
+    this._sidebarRPC.on(
+      'setTagHighlightPalette',
+      (palette: Record<string, string>) => {
+        this._tagHighlightPalette = { ...palette };
+        applyTagHighlightPalette(
+          this.element.ownerDocument,
+          this._tagHighlightPalette,
+        );
       },
     );
 
@@ -955,6 +978,7 @@ export class Guest
         highlights = this._highlighter.highlightRange(
           region,
           anchor.annotation?.$cluster /* cssClass */,
+          anchor.annotation?.tags ?? [],
         ) as AnnotationHighlight[];
       } else {
         highlights = this._highlighter.highlightShape(
@@ -1069,6 +1093,7 @@ export class Guest
           uri: info.uri,
           document: info.metadata,
           target,
+          tags: [],
           $tag: 'a:' + generateHexString(8),
         };
 
@@ -1145,6 +1170,7 @@ export class Guest
       uri: info.uri,
       document: info.metadata,
       target,
+      tags: [],
       $highlight: highlight,
       $cluster: highlight ? 'user-highlights' : 'user-annotations',
       $tag: 'a:' + generateHexString(8),

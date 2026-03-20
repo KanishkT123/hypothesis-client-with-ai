@@ -74,7 +74,7 @@ export type SegmentInfo = {
  * the document.
  */
 export type AnnotationData = ClientAnnotationData &
-  Pick<APIAnnotationData, 'target' | 'uri'> & {
+  Pick<APIAnnotationData, 'target' | 'uri' | 'tags'> & {
     document?: DocumentMetadata;
   };
 

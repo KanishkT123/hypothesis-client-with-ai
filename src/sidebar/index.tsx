@@ -176,6 +176,9 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('$window', { value: window })
     .register('settings', { value: settings });
 
+  // Debug only
+  (window as any).sidebarStore = container.get('store');
+
   // Initialize services.
   //
   // We sync the route with the initial URL as the first step, because

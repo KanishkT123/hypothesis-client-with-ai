@@ -215,6 +215,12 @@ export type SidebarToGuestCalls = {
   /** Load new annotations into the guest frame. */
   loadAnnotations(anns: AnnotationData[]): void;
 
+  /**
+   * Replace tag highlight colors in this guest (full map). Keys are tag names
+   * (e.g. `ai`); values are CSS colors (e.g. `rgba(...)`).
+   */
+  setTagHighlightPalette(palette: Record<string, string>): void;
+
   /** Navigate to the segment of a book associated with an annotation. */
   navigateToSegment(ann: AnnotationData): void;
 

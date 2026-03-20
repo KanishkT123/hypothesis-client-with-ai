@@ -46,19 +46,22 @@ import type { ToastMessengerService } from './toast-messenger';
  *
  * Because this representation will be exposed to untrusted third-party
  * JavaScript, it includes only the information needed to uniquely identify it
- * within the current session and anchor it in the document.
+ * within the current session and anchor it in the document, plus `tags` so
+ * highlights can apply tag-based CSS classes in the page.
  */
 export function formatAnnot({
   $cluster,
   $tag,
   target,
   uri,
+  tags,
 }: Annotation): AnnotationData {
   return {
     $cluster,
     $tag,
     target,
     uri,
+    tags,
   };
 }
 
@@ -634,6 +637,15 @@ export class FrameSyncService {
     ...args: Parameters<SidebarToHostCalls[M]>
   ) {
     this._hostRPC.call(method, ...args);
+  }
+
+  /**
+   * picker change). Pass the full map each time.
+   */
+  setTagHighlightPalette(palette: Record<string, string>): void {
+    this._guestRPC.forEach(rpc =>
+      rpc.call('setTagHighlightPalette', palette),
+    );
   }
 
   /**

@@ -1,5 +1,6 @@
 import classnames from 'classnames';
 
+import { highlightTagClass } from '../shared/highlight-tag-class';
 import { generateHexString } from '../shared/random';
 import type { ShapeAnchor } from '../types/annotator';
 import type { HighlightCluster } from '../types/shared';
@@ -76,7 +77,11 @@ export class Highlighter {
    * @param [cssClass] - CSS class(es) to add to the highlight elements
    * @return Elements wrapping text in `normedRange` to add a highlight effect
    */
-  highlightRange(range: Range, cssClass?: string): HighlightElement[] {
+  highlightRange(
+    range: Range,
+    cssClass?: string,
+    annotationTags: string[] = [],
+  ): HighlightElement[] {
     const textNodes = wholeTextNodesInRange(range);
 
     // Check if this range refers to a placeholder for not-yet-rendered content in
@@ -117,12 +122,13 @@ export class Highlighter {
 
     // Wrap each text node span with a `<hypothesis-highlight>` element.
     const highlights: HighlightElement[] = [];
+    const tagClasses = annotationTags.map(highlightTagClass);
     textNodeSpans.forEach(nodes => {
       // A custom element name is used here rather than `<span>` to reduce the
       // likelihood of highlights being hidden by page styling.
 
       const highlightEl = document.createElement('hypothesis-highlight');
-      highlightEl.className = classnames('hypothesis-highlight', cssClass);
+      highlightEl.className = classnames('hypothesis-highlight', cssClass, ...tagClasses);
 
       const parent = nodes[0].parentNode as ParentNode;
       parent.replaceChild(highlightEl, nodes[0]);
@@ -141,7 +147,7 @@ export class Highlighter {
     // to reduce the number of forced reflows. We also skip creating them for
     // unrendered pages for performance reasons.
     if (!inPlaceholder) {
-      drawHighlightsAbovePDFCanvas(highlights, cssClass);
+      drawHighlightsAbovePDFCanvas(highlights, cssClass, tagClasses);
     }
 
     return highlights;
@@ -258,6 +264,7 @@ function getPDFCanvas(highlightEl: HighlightElement): HTMLCanvasElement | null {
 function drawHighlightsAbovePDFCanvas(
   highlightEls: HighlightElement[],
   cssClass?: string,
+  tagClasses: string[] = [],
 ) {
   if (highlightEls.length === 0) {
     return;
@@ -318,7 +325,7 @@ function drawHighlightsAbovePDFCanvas(
     rect.setAttribute('height', `${height * 100}%`);
     rect.setAttribute(
       'class',
-      classnames('hypothesis-svg-highlight', cssClass),
+      classnames('hypothesis-svg-highlight', cssClass, ...tagClasses),
     );
 
     // Make the highlight in the text layer transparent.
