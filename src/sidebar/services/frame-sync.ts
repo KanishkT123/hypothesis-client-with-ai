@@ -640,6 +640,7 @@ export class FrameSyncService {
   }
 
   /**
+   * Replace tag highlight colors in every connected guest (e.g. after a color
    * picker change). Pass the full map each time.
    */
   setTagHighlightPalette(palette: Record<string, string>): void {
