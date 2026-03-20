@@ -16,6 +16,12 @@ describe('sidebar/store/modules/sidebar-panels', () => {
     it('sets initial `activePanelName` to `null`', () => {
       assert.equal(getSidebarPanelsState().activePanelName, null);
     });
+
+    it('sets initial `aiSearch` rows and colors empty', () => {
+      const ai = getSidebarPanelsState().aiSearch;
+      assert.deepEqual(ai.rows, []);
+      assert.deepEqual(ai.schemaTagColors, {});
+    });
   });
 
   describe('reducers', () => {
@@ -72,6 +78,67 @@ describe('sidebar/store/modules/sidebar-panels', () => {
     });
   });
 
+  describe('aiSearch reducers', () => {
+    it('adds a row and assigns a default color for a new schema tag', () => {
+      store.addAISearchRow({
+        id: 'r1',
+        schemaTag: 'methods',
+        query: 'q1',
+        annotationIds: ['a1'],
+      });
+      const ai = getSidebarPanelsState().aiSearch;
+      assert.lengthOf(ai.rows, 1);
+      assert.equal(ai.rows[0].schemaTag, 'methods');
+      assert.include(ai.schemaTagColors.methods, 'rgba(');
+    });
+
+    it('does not duplicate default color when adding another row for the same tag', () => {
+      store.addAISearchRow({
+        id: 'r1',
+        schemaTag: 't',
+        query: 'q1',
+        annotationIds: [],
+      });
+      const first = getSidebarPanelsState().aiSearch.schemaTagColors.t;
+      store.addAISearchRow({
+        id: 'r2',
+        schemaTag: 't',
+        query: 'q2',
+        annotationIds: [],
+      });
+      assert.equal(
+        getSidebarPanelsState().aiSearch.schemaTagColors.t,
+        first,
+      );
+    });
+
+    it('removes a row and prunes color when no rows use that tag', () => {
+      store.addAISearchRow({
+        id: 'r1',
+        schemaTag: 'x',
+        query: 'q',
+        annotationIds: [],
+      });
+      assert.property(getSidebarPanelsState().aiSearch.schemaTagColors, 'x');
+      store.removeAISearchRow('r1');
+      assert.notProperty(getSidebarPanelsState().aiSearch.schemaTagColors, 'x');
+    });
+
+    it('updates schema tag color', () => {
+      store.addAISearchRow({
+        id: 'r1',
+        schemaTag: 'z',
+        query: 'q',
+        annotationIds: [],
+      });
+      store.setAISearchSchemaTagColor('z', 'rgba(1, 2, 3, 0.38)');
+      assert.equal(
+        getSidebarPanelsState().aiSearch.schemaTagColors.z,
+        'rgba(1, 2, 3, 0.38)',
+      );
+    });
+  });
+
   describe('selectors', () => {
     describe('#isSidebarPanelOpen', () => {
       it('returns `true` if `panelName` is the current active panel', () => {
@@ -82,6 +149,19 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       it('returns `false` if `panelName` is not the current active panel', () => {
         store.openSidebarPanel('dingdong');
         assert.isFalse(store.isSidebarPanelOpen('broomstick'));
+      });
+    });
+
+    describe('#aiSearchRows and #aiSearchSchemaTagColors', () => {
+      it('returns current aiSearch slice fields', () => {
+        store.addAISearchRow({
+          id: 'id1',
+          schemaTag: 's',
+          query: 'qq',
+          annotationIds: ['id'],
+        });
+        assert.lengthOf(store.aiSearchRows(), 1);
+        assert.property(store.aiSearchSchemaTagColors(), 's');
       });
     });
   });

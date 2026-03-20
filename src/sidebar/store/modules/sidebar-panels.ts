@@ -6,9 +6,24 @@
  * opinions about whether a given `panelName` corresponds to one or more
  * extant `SidebarPanel` components. Only one panel (as keyed by `panelName`)
  * may be "active" (open) at one time.
+ *
+ * Also holds durable in-session state for the AI search panel (`aiSearch`).
  */
 import type { PanelName } from '../../../types/sidebar';
+import { highlightRgbaFromString } from '../../../shared/tag-color-from-string';
 import { createStoreModule, makeAction } from '../create-store';
+
+export type AISearchRow = {
+  id: string;
+  schemaTag: string;
+  query: string;
+  annotationIds: string[];
+};
+
+export type AISearchState = {
+  rows: AISearchRow[];
+  schemaTagColors: Record<string, string>;
+};
 
 export type State = {
   /**
@@ -21,10 +36,19 @@ export type State = {
    * with `panelName` of `foobar` would be active, and thus visible.
    */
   activePanelName: PanelName | null;
+
+  /** Table rows and per–schema-tag highlight colors for the AI search panel. */
+  aiSearch: AISearchState;
+};
+
+const initialAiSearch: AISearchState = {
+  rows: [],
+  schemaTagColors: {},
 };
 
 const initialState: State = {
   activePanelName: null,
+  aiSearch: initialAiSearch, //TODO: Rename
 };
 
 const reducers = {
@@ -72,6 +96,54 @@ const reducers = {
       activePanelName,
     };
   },
+
+  ADD_AI_SEARCH_ROW(state: State, action: { row: AISearchRow }) {
+    const { row } = action;
+    const rows = [...state.aiSearch.rows, row];
+    const tag = row.schemaTag.trim();
+    let { schemaTagColors } = state.aiSearch;
+    if (tag && schemaTagColors[tag] === undefined) {
+      schemaTagColors = {
+        ...schemaTagColors,
+        [tag]: highlightRgbaFromString(tag),
+      };
+    }
+    return {
+      aiSearch: { rows, schemaTagColors },
+    };
+  },
+
+  REMOVE_AI_SEARCH_ROW(state: State, action: { rowId: string }) {
+    const removed = state.aiSearch.rows.find(r => r.id === action.rowId);
+    const rows = state.aiSearch.rows.filter(r => r.id !== action.rowId);
+    let { schemaTagColors } = state.aiSearch;
+    if (removed) {
+      const tag = removed.schemaTag.trim();
+      if (tag && !rows.some(r => r.schemaTag.trim() === tag)) {
+        const next = { ...schemaTagColors };
+        delete next[tag];
+        schemaTagColors = next;
+      }
+    }
+    return {
+      aiSearch: { rows, schemaTagColors },
+    };
+  },
+
+  SET_AI_SEARCH_SCHEMA_TAG_COLOR(
+    state: State,
+    action: { schemaTag: string; rgba: string },
+  ) {
+    return {
+      aiSearch: {
+        ...state.aiSearch,
+        schemaTagColors: {
+          ...state.aiSearch.schemaTagColors,
+          [action.schemaTag]: action.rgba,
+        },
+      },
+    };
+  },
 };
 
 /**
@@ -102,11 +174,34 @@ function toggleSidebarPanel(panelName: PanelName, panelState?: boolean) {
   });
 }
 
+function addAISearchRow(row: AISearchRow) {
+  return makeAction(reducers, 'ADD_AI_SEARCH_ROW', { row });
+}
+
+function removeAISearchRow(rowId: string) {
+  return makeAction(reducers, 'REMOVE_AI_SEARCH_ROW', { rowId });
+}
+
+function setAISearchSchemaTagColor(schemaTag: string, rgba: string) {
+  return makeAction(reducers, 'SET_AI_SEARCH_SCHEMA_TAG_COLOR', {
+    schemaTag,
+    rgba,
+  });
+}
+
 /**
  * Is the panel indicated by `panelName` currently active (open)?
  */
 function isSidebarPanelOpen(state: State, panelName: PanelName) {
   return state.activePanelName === panelName;
+}
+
+function aiSearchRows(state: State) {
+  return state.aiSearch.rows;
+}
+
+function aiSearchSchemaTagColors(state: State) {
+  return state.aiSearch.schemaTagColors;
 }
 
 export const sidebarPanelsModule = createStoreModule(initialState, {
@@ -117,9 +212,14 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     openSidebarPanel,
     closeSidebarPanel,
     toggleSidebarPanel,
+    addAISearchRow,
+    removeAISearchRow,
+    setAISearchSchemaTagColor,
   },
 
   selectors: {
     isSidebarPanelOpen,
+    aiSearchRows,
+    aiSearchSchemaTagColors,
   },
 });

@@ -228,6 +228,7 @@ export class AnnotationsService {
       ],
       uri: topLevelFrame.uri,
       document,
+      tags: [],
     } satisfies Partial<AnnotationData>;
     this.create(pageNoteAnnotation);
   }
@@ -262,6 +263,7 @@ export class AnnotationsService {
       references: (annotation.references || []).concat(annotation.id),
       target: [{ source: annotation.target[0].source }],
       uri: annotation.uri,
+      tags: [],
     };
     this.create(replyAnnotation);
   }

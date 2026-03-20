@@ -42,8 +42,10 @@ import { ThumbnailService } from './services/thumbnail';
 import { ToastMessengerService } from './services/toast-messenger';
 import { createSidebarStore } from './store';
 import type { SidebarStore } from './store';
+import { mergeAISearchTagHighlightPalette } from './helpers/ai-search-tag-palette';
 import { disableOpenerForExternalLinks } from './util/disable-opener-for-external-links';
 import * as sentry from './util/sentry';
+import { watch } from './util/watch';
 
 // Read settings rendered into sidebar app HTML by service/extension.
 const configFromSidebar = parseJsonConfig(document) as ConfigFromSidebar;
@@ -119,6 +121,23 @@ function setupFrameSync(
   store: SidebarStore,
   toastMessenger: ToastMessengerService,
 ) {
+  const pushAiSearchTagPalette = () => {
+    const colors = store.getState().sidebarPanels.aiSearch.schemaTagColors;
+    frameSync.setTagHighlightPalette(
+      mergeAISearchTagHighlightPalette(colors),
+    );
+  };
+
+  watch(
+    store.subscribe,
+    () => store.getState().sidebarPanels.aiSearch.schemaTagColors,
+    () => {
+      pushAiSearchTagPalette();
+    },
+    (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  );
+  pushAiSearchTagPalette();
+
   if (store.route() === 'sidebar') {
     frameSync.connect().catch(() => {
       toastMessenger.error(
@@ -176,8 +195,10 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('$window', { value: window })
     .register('settings', { value: settings });
 
-  // Debug only
-  (window as any).sidebarStore = container.get('store');
+  //if (process.env.NODE_ENV !== 'production') {
+  (window as Window & { __sidebarStore?: SidebarStore }).__sidebarStore =
+      container.get('store') as SidebarStore;
+  //}
 
   // Initialize services.
   //
