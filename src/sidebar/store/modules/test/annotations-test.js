@@ -45,6 +45,16 @@ describe('sidebar/store/modules/annotations', () => {
       ]);
     });
 
+    it('sets moderation_status to PENDING when tags include ai-pending', () => {
+      const annot = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['ai-pending', 'schema'],
+      };
+      store.addAnnotations([annot]);
+      const stored = store.getState().annotations.annotations[0];
+      assert.equal(stored.moderation_status, 'PENDING');
+    });
+
     it('assigns a $tag to annotations', () => {
       const annotA = Object.assign(fixtures.defaultAnnotation(), { id: 'a1' });
       const annotB = Object.assign(fixtures.defaultAnnotation(), { id: 'a2' });

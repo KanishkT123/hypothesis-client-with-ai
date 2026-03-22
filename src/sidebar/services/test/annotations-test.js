@@ -697,6 +697,50 @@ describe('AnnotationsService', () => {
         await fakeApi.annotation.moderate.lastCall.returnValue;
       assert.calledWith(fakeStore.addAnnotations, [savedAnnotation]);
     });
+
+    it('swaps ai-pending tags via update when approving', async () => {
+      const annotation = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['ai-pending', 'schema'],
+        moderation_status: 'PENDING',
+      };
+      const updated = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['schema', 'ai-user-approved'],
+      };
+      fakeApi.annotation.update.resolves(updated);
+
+      const result = await svc.moderate(annotation, 'APPROVED');
+
+      assert.notCalled(fakeApi.annotation.moderate);
+      assert.calledWith(fakeApi.annotation.update, { id: annotation.id }, {
+        tags: ['schema', 'ai-user-approved'],
+      });
+      assert.calledWith(
+        fakeStore.addAnnotations,
+        [
+          sinon.match({
+            tags: ['schema', 'ai-user-approved'],
+            moderation_status: 'APPROVED',
+          }),
+        ],
+      );
+      assert.equal(result.moderation_status, 'APPROVED');
+    });
+
+    it('deletes annotation when ai-pending and DENIED', async () => {
+      const annotation = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['ai-pending'],
+      };
+
+      const result = await svc.moderate(annotation, 'DENIED');
+
+      assert.notCalled(fakeApi.annotation.moderate);
+      assert.calledWith(fakeApi.annotation.delete, { id: annotation.id });
+      assert.calledWith(fakeStore.removeAnnotations, [annotation]);
+      assert.equal(result, annotation);
+    });
   });
 
   describe('loadAnnotation', () => {

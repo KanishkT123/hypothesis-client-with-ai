@@ -330,6 +330,43 @@ export class AnnotationsService {
     annotation: SavedAnnotation,
     newStatus: ModerationStatus,
   ): Promise<Annotation> {
+    const tags = annotation.tags ?? [];
+    const isAiPending = tags.includes('ai-pending');
+
+    if (isAiPending && newStatus === 'APPROVED') {
+      const newTags = tags.filter(t => t !== 'ai-pending');
+      if (!newTags.includes('ai-user-approved')) {
+        newTags.push('ai-user-approved');
+      }
+
+      let savedAnnotation = await this._api.annotation.update(
+        { id: annotation.id },
+        { tags: newTags },
+      );
+
+      for (const [key, value] of Object.entries(annotation)) {
+        if (key.startsWith('$')) {
+          const fields: Record<string, unknown> = savedAnnotation;
+          fields[key] = value;
+        }
+      }
+
+      if (savedAnnotation.moderation_status === undefined) {
+        savedAnnotation = {
+          ...savedAnnotation,
+          moderation_status: 'APPROVED',
+        };
+      }
+
+      this._store.addAnnotations([savedAnnotation]);
+      return savedAnnotation;
+    }
+
+    if (isAiPending && newStatus === 'DENIED') {
+      await this.delete(annotation);
+      return annotation;
+    }
+
     const savedAnnotation = await this._api.annotation.moderate(
       { id: annotation.id },
       {

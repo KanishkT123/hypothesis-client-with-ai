@@ -285,7 +285,13 @@ function addAnnotations(annotations: Annotation[]) {
       session: SessionState;
     },
   ) {
-    const added = annotations.filter(annot => {
+    const annotationsForStore = annotations.map(annot =>
+      annot.tags?.includes('ai-pending')
+        ? { ...annot, moderation_status: 'PENDING' as const }
+        : annot,
+    );
+
+    const added = annotationsForStore.filter(annot => {
       return (
         !annot.id || !findByID(getState().annotations.annotations, annot.id)
       );
@@ -295,7 +301,7 @@ function addAnnotations(annotations: Annotation[]) {
 
     dispatch(
       makeAction(reducers, 'ADD_ANNOTATIONS', {
-        annotations,
+        annotations: annotationsForStore,
         currentAnnotationCount: getState().annotations.annotations.length,
         currentUserId: profile.userid,
       }),

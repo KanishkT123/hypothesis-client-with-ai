@@ -28,7 +28,9 @@ function ModerationControl({
   annotationsService,
   toastMessenger,
 }: ModerationControlProps) {
-  const canModerate = annotation.actions?.includes('moderate');
+  const canModerate =
+    annotation.actions?.includes('moderate') ||
+    (annotation.tags?.includes('ai-pending') ?? false);
   const moderationStatus = annotation?.moderation_status ?? 'APPROVED';
   const [changingStatus, setChangingStatus] = useState(false);
   const handleChangeStatusError = useCallback(
