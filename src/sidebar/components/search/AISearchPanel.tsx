@@ -81,7 +81,7 @@ function AISearchPanel({
         Array<{ text?: string }>;
 
       const tagTrim = schemaTag.trim();
-      const tags = ['ai', ...(tagTrim ? [tagTrim] : [])];
+      const tags = ['ai-pending', ...(tagTrim ? [tagTrim] : [])];
 
       const created = [];
       for (const quote of quotes) {

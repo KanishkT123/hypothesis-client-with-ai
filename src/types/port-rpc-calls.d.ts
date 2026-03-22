@@ -217,7 +217,7 @@ export type SidebarToGuestCalls = {
 
   /**
    * Replace tag highlight colors in this guest (full map). Keys are tag names
-   * (e.g. `ai`); values are CSS colors (e.g. `rgba(...)`).
+   * (e.g. `ai-pending`); values are CSS colors (e.g. `rgba(...)`).
    */
   setTagHighlightPalette(palette: Record<string, string>): void;
 
