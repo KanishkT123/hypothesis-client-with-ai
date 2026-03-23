@@ -103,6 +103,28 @@ function findByTag(annotations: Annotation[], tag: string) {
 }
 
 /**
+ * If the same `ADD_ANNOTATIONS` action includes multiple entries with the same
+ * `id`, merge them (later fields win) into one. Otherwise each entry only looks
+ * up {@link findByID} in the previous store state, so every duplicate id gets a
+ * new `$tag` and the same logical annotation appears many times.
+ */
+function mergeAnnotationsWithSameId(annotations: Annotation[]): Annotation[] {
+  const byId = new Map<string, Annotation>();
+  const withoutId: Annotation[] = [];
+
+  for (const annot of annotations) {
+    if (annot.id) {
+      const prev = byId.get(annot.id);
+      byId.set(annot.id, prev ? Object.assign({}, prev, annot) : annot);
+    } else {
+      withoutId.push(annot);
+    }
+  }
+
+  return [...byId.values(), ...withoutId];
+}
+
+/**
  * Merge client annotation data into the annotation object about to be added to
  * the store's collection of `annotations`.
  *
@@ -155,7 +177,9 @@ const reducers = {
     const updated = [];
     let nextTag = state.nextTag;
 
-    for (const annot of action.annotations) {
+    const actionAnnotations = mergeAnnotationsWithSameId(action.annotations);
+
+    for (const annot of actionAnnotations) {
       let existing;
       if (annot.id) {
         existing = findByID(state.annotations, annot.id);
@@ -285,10 +309,12 @@ function addAnnotations(annotations: Annotation[]) {
       session: SessionState;
     },
   ) {
-    const annotationsForStore = annotations.map(annot =>
-      annot.tags?.includes('ai-pending')
-        ? { ...annot, moderation_status: 'PENDING' as const }
-        : annot,
+    const annotationsForStore = mergeAnnotationsWithSameId(
+      annotations.map(annot =>
+        annot.tags?.includes('ai-pending')
+          ? { ...annot, moderation_status: 'PENDING' as const }
+          : annot,
+      ),
     );
 
     const added = annotationsForStore.filter(annot => {

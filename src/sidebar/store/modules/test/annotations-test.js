@@ -55,6 +55,16 @@ describe('sidebar/store/modules/annotations', () => {
       assert.equal(stored.moderation_status, 'PENDING');
     });
 
+    it('merges duplicate annotation ids in the same batch', () => {
+      const annot = fixtures.defaultAnnotation();
+      store.addAnnotations([
+        { ...annot, text: 'first' },
+        { ...annot, text: 'last' },
+      ]);
+      assert.equal(store.getState().annotations.annotations.length, 1);
+      assert.equal(store.findAnnotationByID(annot.id).text, 'last');
+    });
+
     it('assigns a $tag to annotations', () => {
       const annotA = Object.assign(fixtures.defaultAnnotation(), { id: 'a1' });
       const annotB = Object.assign(fixtures.defaultAnnotation(), { id: 'a2' });
