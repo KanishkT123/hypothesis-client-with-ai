@@ -137,6 +137,42 @@ describe('sidebar/store/modules/sidebar-panels', () => {
         'rgba(1, 2, 3, 0.38)',
       );
     });
+
+    describe('#HYDRATE_AI_SEARCH', () => {
+      it('replaces the full aiSearch slice', () => {
+        store.addAISearchRow({
+          id: 'r1',
+          schemaTag: 'tag',
+          query: 'q',
+          annotationIds: [],
+        });
+        const replacement = {
+          rows: [
+            {
+              id: 'x',
+              schemaTag: 'a',
+              query: 'b',
+              annotationIds: ['id1'],
+            },
+          ],
+          schemaTagColors: { a: 'rgba(1,1,1,0.38)' },
+        };
+        store.hydrateAISearch(replacement);
+        assert.deepEqual(getSidebarPanelsState().aiSearch, replacement);
+      });
+
+      it('does not change activePanelName', () => {
+        store.openSidebarPanel('aiSearchAnnotations');
+        store.hydrateAISearch({
+          rows: [],
+          schemaTagColors: {},
+        });
+        assert.equal(
+          getSidebarPanelsState().activePanelName,
+          'aiSearchAnnotations',
+        );
+      });
+    });
   });
 
   describe('selectors', () => {

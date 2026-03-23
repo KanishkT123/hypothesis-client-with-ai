@@ -7,7 +7,9 @@
  * extant `SidebarPanel` components. Only one panel (as keyed by `panelName`)
  * may be "active" (open) at one time.
  *
- * Also holds durable in-session state for the AI search panel (`aiSearch`).
+ * Also holds state for the AI search panel (`aiSearch`). Rows and colors are
+ * hydrated from `localStorage` at startup and kept in sync across tabs by
+ * `PersistedAISearchService`.
  */
 import type { PanelName } from '../../../types/sidebar';
 import { highlightRgbaFromString } from '../../../shared/tag-color-from-string';
@@ -144,6 +146,16 @@ const reducers = {
       },
     };
   },
+
+  /**
+   * Replace the full `aiSearch` slice (e.g. from `localStorage` on load or
+   * when another tab updates storage).
+   */
+  HYDRATE_AI_SEARCH(state: State, action: { aiSearch: AISearchState }) {
+    return {
+      aiSearch: action.aiSearch,
+    };
+  },
 };
 
 /**
@@ -189,6 +201,10 @@ function setAISearchSchemaTagColor(schemaTag: string, rgba: string) {
   });
 }
 
+function hydrateAISearch(aiSearch: AISearchState) {
+  return makeAction(reducers, 'HYDRATE_AI_SEARCH', { aiSearch });
+}
+
 /**
  * Is the panel indicated by `panelName` currently active (open)?
  */
@@ -215,6 +231,7 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     addAISearchRow,
     removeAISearchRow,
     setAISearchSchemaTagColor,
+    hydrateAISearch,
   },
 
   selectors: {

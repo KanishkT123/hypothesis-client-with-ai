@@ -29,6 +29,7 @@ import { GroupsService } from './services/groups';
 import { ImportAnnotationsService } from './services/import-annotations';
 import { LoadAnnotationsService } from './services/load-annotations';
 import { LocalStorageService } from './services/local-storage';
+import { PersistedAISearchService } from './services/persisted-ai-search';
 import { PersistedDefaultsService } from './services/persisted-defaults';
 import { RouterService } from './services/router';
 import { ReductoService } from './services/reducto';
@@ -104,10 +105,12 @@ function loadGroupsAndProfile(groups: GroupsService, session: SessionService) {
 function initServices(
   autosaveService: AutosaveService,
   persistedDefaults: PersistedDefaultsService,
+  persistedAISearch: PersistedAISearchService,
   serviceURL: ServiceURLService,
 ) {
   autosaveService.init();
   persistedDefaults.init();
+  persistedAISearch.init();
   serviceURL.init();
 }
 
@@ -175,6 +178,7 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('loadAnnotationsService', LoadAnnotationsService)
     .register('localStorage', LocalStorageService)
     .register('persistedDefaults', PersistedDefaultsService)
+    .register('persistedAISearch', PersistedAISearchService)
     .register('reducto', ReductoService)
     .register('router', RouterService)
     .register('serviceURL', ServiceURLService)
