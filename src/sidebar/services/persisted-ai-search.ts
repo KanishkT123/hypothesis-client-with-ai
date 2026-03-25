@@ -105,11 +105,38 @@ export class PersistedAISearchService {
       (a, b) => JSON.stringify(a) === JSON.stringify(b),
     );
 
-    this._window.addEventListener('storage', (e: StorageEvent) => {
-      if (e.key !== AI_SEARCH_STORAGE_KEY) {
-        return;
+    /**
+     * Apply persisted state from storage into Redux when it differs from the
+     * current slice.
+     *
+     * For `storage` events, prefer `event.newValue` so we apply exactly what
+     * changed (matches browser behavior; tests' fake storage does not update on
+     * events). For `visibilitychange` / `focus`, re-read via `getObject`.
+     */
+    const syncFromLocalStorage = (e?: StorageEvent) => {
+      let raw: unknown;
+
+      if (e) {
+        // Ignore updates to other keys; `key === null` means storage was cleared.
+        if (e.key !== null && e.key !== AI_SEARCH_STORAGE_KEY) {
+          return;
+        }
+        if (e.key === AI_SEARCH_STORAGE_KEY && e.newValue !== null) {
+          try {
+            raw = JSON.parse(e.newValue);
+          } catch {
+            return;
+          }
+        } else if (e.key === AI_SEARCH_STORAGE_KEY && e.newValue === null) {
+          raw = null;
+        } else {
+          raw = this._storage.getObject<unknown>(AI_SEARCH_STORAGE_KEY);
+        }
+      } else {
+        raw = this._storage.getObject<unknown>(AI_SEARCH_STORAGE_KEY);
       }
-      if (e.newValue === null) {
+
+      if (raw === null) {
         const empty = emptyAiSearch();
         const current = this._store.getState().sidebarPanels.aiSearch;
         if (JSON.stringify(empty) !== JSON.stringify(current)) {
@@ -117,12 +144,7 @@ export class PersistedAISearchService {
         }
         return;
       }
-      let next: AISearchState | null;
-      try {
-        next = parseAISearchState(JSON.parse(e.newValue));
-      } catch {
-        return;
-      }
+      const next = parseAISearchState(raw);
       if (!next) {
         return;
       }
@@ -131,6 +153,20 @@ export class PersistedAISearchService {
         return;
       }
       this._store.hydrateAISearch(next);
+    };
+
+    this._window.addEventListener('storage', (e: StorageEvent) => {
+      syncFromLocalStorage(e);
+    });
+
+    this._window.document.addEventListener('visibilitychange', () => {
+      if (this._window.document.visibilityState === 'visible') {
+        syncFromLocalStorage();
+      }
+    });
+
+    this._window.addEventListener('focus', () => {
+      syncFromLocalStorage();
     });
   }
 }

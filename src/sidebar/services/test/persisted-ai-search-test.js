@@ -50,6 +50,13 @@ describe('PersistedAISearchService', () => {
   beforeEach(() => {
     listeners = {};
     fakeWindow = {
+      document: {
+        visibilityState: 'visible',
+        addEventListener: sinon.spy((type, fn) => {
+          listeners[`doc:${type}`] = listeners[`doc:${type}`] || [];
+          listeners[`doc:${type}`].push(fn);
+        }),
+      },
       addEventListener: sinon.spy((type, fn) => {
         listeners[type] = listeners[type] || [];
         listeners[type].push(fn);
