@@ -33,6 +33,9 @@ export type SearchFieldProps = {
 
   /** Classes to be added to the outermost element */
   classes?: string | string[];
+
+  /** Placeholder when the field is empty and not loading */
+  placeholder?: string;
 };
 
 /**
@@ -46,6 +49,7 @@ export default function SearchField({
   onClearSearch,
   onKeyDown,
   onSearch,
+  placeholder = 'Search…',
   query,
 }: SearchFieldProps) {
   const store = useSidebarStore();
@@ -110,7 +114,7 @@ export default function SearchField({
           data-testid="search-input"
           dir="auto"
           name="query"
-          placeholder={(isLoading && 'Loading…') || 'Search…'}
+          placeholder={(isLoading && 'Loading…') || placeholder}
           disabled={disabled || isLoading}
           elementRef={input}
           value={pendingQuery || ''}

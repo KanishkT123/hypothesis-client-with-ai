@@ -204,6 +204,7 @@ function AISearchPanel({
             <SearchField
               inputRef={inputRef}
               classes="grow"
+              placeholder="ask AI to highlight…"
               // Disable the input when there is a selection, as the selection
               // replaces any other filters.
               disabled={hasSelection}
