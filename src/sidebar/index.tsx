@@ -32,7 +32,8 @@ import { LocalStorageService } from './services/local-storage';
 import { PersistedAISearchService } from './services/persisted-ai-search';
 import { PersistedDefaultsService } from './services/persisted-defaults';
 import { RouterService } from './services/router';
-import { ReductoService } from './services/reducto';
+// import { ReductoService } from './services/reducto';
+import { ClaudeService } from './services/claude';
 import { ServiceURLService } from './services/service-url';
 import { SessionService } from './services/session';
 import { StreamFilter } from './services/stream-filter';
@@ -179,7 +180,8 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('localStorage', LocalStorageService)
     .register('persistedDefaults', PersistedDefaultsService)
     .register('persistedAISearch', PersistedAISearchService)
-    .register('reducto', ReductoService)
+//    .register('reducto', ReductoService)
+    .register('claude', ClaudeService)
     .register('router', RouterService)
     .register('serviceURL', ServiceURLService)
     .register('session', SessionService)

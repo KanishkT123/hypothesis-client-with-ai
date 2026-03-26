@@ -20,7 +20,8 @@ import type { SavedAnnotation } from '../../../types/api';
 import type { AnnotationsService } from '../../services/annotations';
 import type { APIService } from '../../services/api';
 import type { FrameSyncService } from '../../services/frame-sync';
-import type { ReductoService } from '../../services/reducto';
+// import type { ReductoService } from '../../services/reducto';
+import type { ClaudeService } from '../../services/claude';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
 import type { AISearchRow } from '../../store/modules/sidebar-panels';
@@ -31,7 +32,8 @@ import SearchField from './SearchField';
 type AISearchPanelProps = {
   annotationsService: AnnotationsService;
   frameSync: FrameSyncService;
-  reducto: ReductoService;
+  // reducto: ReductoService;
+  claude: ClaudeService;
   api: APIService;
   toastMessenger: ToastMessengerService;
 };
@@ -39,7 +41,8 @@ type AISearchPanelProps = {
 function AISearchPanel({
   annotationsService,
   frameSync,
-  reducto,
+  // reducto,
+  claude,
   api,
   toastMessenger,
 }: AISearchPanelProps) {
@@ -47,7 +50,8 @@ function AISearchPanel({
   const filterQuery = store.filterQuery();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const hasSelection = store.hasSelectedAnnotations();
-  const [reductoAPIKey, setReductoAPIKey] = useState('');
+  // const [reductoAPIKey, setReductoAPIKey] = useState('');
+  const [claudeAPIKey, setClaudeAPIKey] = useState('');
   const [schemaTag, setSchemaTag] = useState('');
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
 
@@ -62,23 +66,31 @@ function AISearchPanel({
     try {
       // Reducto SDK uses PascalCase for this method.
       // eslint-disable-next-line new-cap
-      const reductoResult = await reducto.AISearchDocument({
+      // const reductoResult = await reducto.AISearchDocument({
+      //   query,
+      //   candidateURIs: store.searchUris(),
+      //   apiKey: reductoAPIKey,
+      // });
+      const claudeResult = await claude.AISearchDocument({
         query,
         candidateURIs: store.searchUris(),
-        apiKey: reductoAPIKey,
+        apiKey: claudeAPIKey,
       });
+      console.log('claudeResult', claudeResult);
 
       const userid = store.profile().userid;
       const groupId = store.focusedGroupId();
-      const documentURL = reducto.firstPDFURI(store.searchUris());
+      //const documentURL = reducto.firstPDFURI(store.searchUris());
+      const documentURL = claude.firstPDFURI(store.searchUris()); // TODO: move this to a shared function
 
       if (!userid || !groupId || !documentURL) {
         toastMessenger.error('Missing user, group, or PDF URL');
         return;
       }
 
-      const quotes = ((reductoResult.answer as any).result?.[0]?.quotes ?? []) as
-        Array<{ text?: string }>;
+      // const quotes = ((reductoResult.answer as any).result?.[0]?.quotes ?? []) as
+      //   Array<{ text?: string }>;
+      const quotes = ((claudeResult.answer as any).result?.[0]?.quotes ?? []) as Array<{ text?: string }>;
 
       const tagTrim = schemaTag.trim();
       const tags = ['ai-pending', ...(tagTrim ? [tagTrim] : [])];
@@ -176,16 +188,16 @@ function AISearchPanel({
         <CardContent>
           <div className="flex flex-col gap-y-3">
             <Input
-              aria-label="Reducto API key"
+              aria-label="Claude API key"
               classes="text-base touch:text-touch-base"
-              data-testid="reducto-api-key-input"
+              data-testid="claude-api-key-input"
               dir="auto"
-              name="reducto-api-key"
-              placeholder="REDUCTO_API_KEY"
+              name="claude-api-key"
+              placeholder="CLAUDE_API_KEY"
               type="password"
-              value={reductoAPIKey}
+              value={claudeAPIKey}
               onInput={(e: Event) =>
-                setReductoAPIKey((e.target as HTMLInputElement).value)
+                setClaudeAPIKey((e.target as HTMLInputElement).value)
               }
             />
             <Input
@@ -326,7 +338,8 @@ function AISearchPanel({
 export default withServices(AISearchPanel, [
   'annotationsService',
   'frameSync',
-  'reducto',
+  // 'reducto',
+  'claude',
   'api',
   'toastMessenger',
 ]);

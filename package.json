@@ -124,6 +124,8 @@
   },
   "packageManager": "yarn@3.6.0",
   "dependencies": {
-    "reductoai": "^0.13.0"
+    "@anthropic-ai/sdk": "^0.80.0",
+    "reductoai": "^0.13.0",
+    "zod": "^4.3.6"
   }
 }
