@@ -22,6 +22,15 @@ export type AISearchRow = {
   annotationIds: string[];
 };
 
+/** Local snapshot from a user-denied ai-pending annotation (not persisted on server). */
+export type AISearchNegativeExample = {
+  id: string;
+  schemaTag: string;
+  query: string;
+  quote: string;
+  documentUri: string;
+};
+
 export type AISearchState = {
   rows: AISearchRow[];
   schemaTagColors: Record<string, string>;
@@ -41,6 +50,12 @@ export type State = {
 
   /** Table rows and per–schema-tag highlight colors for the AI search panel. */
   aiSearch: AISearchState;
+
+  /**
+   * Locally stored negative training examples (declined ai-pending annotations).
+   * Persisted separately from `aiSearch`; see `PersistedAISearchService`.
+   */
+  aiSearchNegativeExamples: AISearchNegativeExample[];
 };
 
 const initialAiSearch: AISearchState = {
@@ -51,6 +66,7 @@ const initialAiSearch: AISearchState = {
 const initialState: State = {
   activePanelName: null,
   aiSearch: initialAiSearch, //TODO: Rename
+  aiSearchNegativeExamples: [],
 };
 
 const reducers = {
@@ -224,6 +240,44 @@ const reducers = {
       },
     };
   },
+
+  ADD_AI_SEARCH_NEGATIVE_EXAMPLE(
+    state: State,
+    action: { example: AISearchNegativeExample },
+  ) {
+    const ex = action.example;
+    const dedupeKey = `${ex.documentUri}\0${ex.schemaTag.trim()}\0${ex.query.trim()}\0${ex.quote}`;
+    const duplicate = state.aiSearchNegativeExamples.some(e => {
+      const k = `${e.documentUri}\0${e.schemaTag.trim()}\0${e.query.trim()}\0${e.quote}`;
+      return k === dedupeKey;
+    });
+    if (duplicate) {
+      return state;
+    }
+    return {
+      aiSearchNegativeExamples: [...state.aiSearchNegativeExamples, ex],
+    };
+  },
+
+  REMOVE_AI_SEARCH_NEGATIVE_EXAMPLE(
+    state: State,
+    action: { exampleId: string },
+  ) {
+    return {
+      aiSearchNegativeExamples: state.aiSearchNegativeExamples.filter(
+        e => e.id !== action.exampleId,
+      ),
+    };
+  },
+
+  HYDRATE_AI_SEARCH_NEGATIVE_EXAMPLES(
+    state: State,
+    action: { examples: AISearchNegativeExample[] },
+  ) {
+    return {
+      aiSearchNegativeExamples: action.examples,
+    };
+  },
 };
 
 /**
@@ -292,6 +346,22 @@ function removeAnnotationIdsFromAISearchRows(annotationIds: string[]) {
   });
 }
 
+function addAISearchNegativeExample(example: AISearchNegativeExample) {
+  return makeAction(reducers, 'ADD_AI_SEARCH_NEGATIVE_EXAMPLE', { example });
+}
+
+function removeAISearchNegativeExample(exampleId: string) {
+  return makeAction(reducers, 'REMOVE_AI_SEARCH_NEGATIVE_EXAMPLE', {
+    exampleId,
+  });
+}
+
+function hydrateAISearchNegativeExamples(examples: AISearchNegativeExample[]) {
+  return makeAction(reducers, 'HYDRATE_AI_SEARCH_NEGATIVE_EXAMPLES', {
+    examples,
+  });
+}
+
 /**
  * Is the panel indicated by `panelName` currently active (open)?
  */
@@ -305,6 +375,10 @@ function aiSearchRows(state: State) {
 
 function aiSearchSchemaTagColors(state: State) {
   return state.aiSearch.schemaTagColors;
+}
+
+function aiSearchNegativeExamples(state: State) {
+  return state.aiSearchNegativeExamples;
 }
 
 export const sidebarPanelsModule = createStoreModule(initialState, {
@@ -322,11 +396,15 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     mergeAISearchRowsWithSameTagQuery,
     setAISearchRowAnnotationIds,
     removeAnnotationIdsFromAISearchRows,
+    addAISearchNegativeExample,
+    removeAISearchNegativeExample,
+    hydrateAISearchNegativeExamples,
   },
 
   selectors: {
     isSidebarPanelOpen,
     aiSearchRows,
     aiSearchSchemaTagColors,
+    aiSearchNegativeExamples,
   },
 });

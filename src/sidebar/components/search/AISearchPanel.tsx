@@ -3,6 +3,8 @@ import {
   Card,
   CardContent,
   Input,
+  MenuCollapseIcon,
+  MenuExpandIcon,
   RedoIcon,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
@@ -17,6 +19,8 @@ import {
 import {
   buildClaudeAISearchUserMessage,
   collectTagQueryQuoteRows,
+  countAiSearchQuotesSkippedAsDuplicates,
+  filterAiSearchQuotesAgainstExisting,
 } from '../../helpers/claude-ai-search-user-message';
 import { mergeAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
 import { sharedPermissions } from '../../helpers/permissions';
@@ -29,7 +33,10 @@ import type { FrameSyncService } from '../../services/frame-sync';
 import type { ClaudeService } from '../../services/claude';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
-import type { AISearchRow } from '../../store/modules/sidebar-panels';
+import type {
+  AISearchNegativeExample,
+  AISearchRow,
+} from '../../store/modules/sidebar-panels';
 import SidebarPanel from '../SidebarPanel';
 import FilterControls from './FilterControls';
 import SearchField from './SearchField';
@@ -93,9 +100,16 @@ function AISearchPanel({
   const [schemaTag, setSchemaTag] = useState('');
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
   const [rerunningRowId, setRerunningRowId] = useState<string | null>(null);
+  const [userDeniedSectionOpen, setUserDeniedSectionOpen] = useState(false);
 
   const aiRows = store.aiSearchRows();
   const schemaTagColors = store.aiSearchSchemaTagColors();
+  const documentURL = claude.firstPDFURI(store.searchUris());
+  const negativeExamplesForDoc: AISearchNegativeExample[] = documentURL
+    ? store
+        .aiSearchNegativeExamples()
+        .filter(ex => ex.documentUri === documentURL)
+    : [];
 
   const clearSearch = () => {
     store.closeSidebarPanel('aiSearchAnnotations');
@@ -109,8 +123,6 @@ function AISearchPanel({
     try {
       const userid = store.profile().userid;
       const groupId = store.focusedGroupId();
-      //const documentURL = reducto.firstPDFURI(store.searchUris());
-      const documentURL = claude.firstPDFURI(store.searchUris()); // TODO: move this to a shared function
 
       if (!userid || !groupId || !documentURL) {
         toastMessenger.error('Missing user, group, or PDF URL');
@@ -127,6 +139,7 @@ function AISearchPanel({
         rows: tripleRows,
         schemaTag: tagTrim,
         searchQuery: query,
+        negativeExamples: negativeExamplesForDoc,
       });
 
       // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
@@ -137,9 +150,18 @@ function AISearchPanel({
       });
       console.log('claudeResult', claudeResult);
 
-      const quotes = ((claudeResult.answer as any).result?.[0]?.quotes ?? []) as Array<{
-        text?: string;
-      }>;
+      const rawQuotes = ((claudeResult.answer as any).result?.[0]?.quotes ??
+        []) as Array<{ text?: string }>;
+      const quotes = filterAiSearchQuotesAgainstExisting(
+        rawQuotes,
+        store.savedAnnotations(),
+        documentURL,
+        tagTrim,
+      );
+      const skippedDuplicate = countAiSearchQuotesSkippedAsDuplicates(
+        rawQuotes,
+        quotes,
+      );
 
       const tags = ['ai-pending', ...(tagTrim ? [tagTrim] : [])];
 
@@ -186,9 +208,11 @@ function AISearchPanel({
         store.addAISearchRow(row);
       }
 
-      toastMessenger.success(
-        `Created ${created.length} annotation(s) from AI results.`,
-      );
+      let successMsg = `Created ${created.length} annotation(s) from AI results.`;
+      if (skippedDuplicate > 0) {
+        successMsg += ` Skipped ${skippedDuplicate} already covered.`;
+      }
+      toastMessenger.success(successMsg);
     } catch (error) {
       console.error('Error creating annotations from AI results:', error);
       toastMessenger.error('Failed to create annotations from AI results.');
@@ -458,6 +482,91 @@ function AISearchPanel({
                   Highlight color is per tag; rows that share a tag share this
                   color.
                 </p>
+              </div>
+            )}
+            {negativeExamplesForDoc.length > 0 && (
+              <div className="flex flex-col border border-grey-3 rounded-md overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between gap-2 py-2 px-2 text-left text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring"
+                  onClick={() => setUserDeniedSectionOpen(v => !v)}
+                  aria-expanded={userDeniedSectionOpen}
+                >
+                  <span className="font-medium text-xs">
+                    User-denied AI annotations
+                  </span>
+                  {userDeniedSectionOpen ? (
+                    <MenuCollapseIcon className="w-em h-em shrink-0" />
+                  ) : (
+                    <MenuExpandIcon className="w-em h-em shrink-0" />
+                  )}
+                </button>
+                {userDeniedSectionOpen && (
+                  <div className="px-2 pb-2">
+                    <table className="w-full border-collapse text-left text-xs text-color-text">
+                      <thead>
+                        <tr className="border-b border-grey-3 text-color-text-light">
+                          <th className="py-1 pr-2 font-normal" scope="col">
+                            Tag
+                          </th>
+                          <th className="py-1 pr-2 font-normal" scope="col">
+                            Query
+                          </th>
+                          <th className="py-1 pr-2 font-normal" scope="col">
+                            Quote
+                          </th>
+                          <th className="py-1 w-10" scope="col">
+                            <span className="sr-only">Remove</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {negativeExamplesForDoc.map(ex => (
+                          <tr
+                            key={ex.id}
+                            className="border-b border-grey-2 last:border-0"
+                          >
+                            <td className="py-1 pr-2 align-middle break-all max-w-[8rem]">
+                              {ex.schemaTag || (
+                                <span className="text-color-text-light">—</span>
+                              )}
+                            </td>
+                            <td className="py-1 pr-2 align-middle break-all max-w-[10rem]">
+                              {ex.query}
+                            </td>
+                            <td
+                              className="py-1 pr-2 align-middle break-all max-w-[12rem]"
+                              title={ex.quote}
+                            >
+                              {ex.quote.length > 80
+                                ? `${ex.quote.slice(0, 80)}…`
+                                : ex.quote}
+                            </td>
+                            <td className="py-1 align-middle">
+                              <button
+                                type="button"
+                                className={classnames(
+                                  'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2',
+                                  'transition-colors duration-200 focus-visible-ring',
+                                )}
+                                title="Remove stored negative example"
+                                aria-label="Remove stored negative example"
+                                onClick={() =>
+                                  store.removeAISearchNegativeExample(ex.id)
+                                }
+                              >
+                                <CancelIcon
+                                  className="w-em h-em"
+                                  title="Remove"
+                                />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -4,7 +4,9 @@ import {
   buildCandidateRows,
   buildClaudeAISearchUserMessage,
   collectTagQueryQuoteRows,
+  countAiSearchQuotesSkippedAsDuplicates,
   dedupeTagQueryRows,
+  filterAiSearchQuotesAgainstExisting,
 } from '../claude-ai-search-user-message';
 
 describe('sidebar/helpers/claude-ai-search-user-message', () => {
@@ -54,6 +56,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         schemaTag: '',
         searchQuery: 'only the search',
       });
+      assert.notInclude(out, 'Examples of tag-query-quote triples');
       assert.include(out, 'New query: only the search.');
     });
 
@@ -63,9 +66,224 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         schemaTag: 's',
         searchQuery: 'q',
       });
+      assert.include(out, 'Examples of tag-query-quote triples');
       assert.include(out, 'tag: ');
       assert.include(out, 'query: ');
       assert.include(out, 'quote: x');
+    });
+
+    it('omits positive block when rows empty', () => {
+      const out = buildClaudeAISearchUserMessage({
+        rows: [],
+        schemaTag: 's',
+        searchQuery: 'q',
+      });
+      assert.notInclude(out, 'Examples of tag-query-quote triples');
+      assert.include(
+        out,
+        'What retrieved verbatim quotes from the document would go with the tag "s" and the query "q"?',
+      );
+    });
+
+    it('appends negative examples after positives when both present', () => {
+      const out = buildClaudeAISearchUserMessage({
+        rows: [{ tag: 't', query: 'q1', quote: 'v' }],
+        schemaTag: 's',
+        searchQuery: 'find',
+        negativeExamples: [
+          {
+            id: 'n1',
+            schemaTag: 'nt',
+            query: 'nq',
+            quote: 'bad',
+            documentUri: 'http://x',
+          },
+        ],
+      });
+      const posIdx = out.indexOf('Examples of tag-query-quote triples');
+      const negIdx = out.indexOf(
+        'Negative examples of tag-query-quote triples:',
+      );
+      assert.isBelow(posIdx, negIdx);
+      assert.include(
+        out,
+        '- tag: nt\n  query: nq\n  should not return\n  quote: bad\n',
+      );
+    });
+
+    it('includes only negative block and question when no positives', () => {
+      const out = buildClaudeAISearchUserMessage({
+        rows: [],
+        schemaTag: '',
+        searchQuery: 'solo',
+        negativeExamples: [
+          {
+            id: 'n1',
+            schemaTag: 'a',
+            query: 'b',
+            quote: 'c',
+            documentUri: 'http://x',
+          },
+        ],
+      });
+      assert.notInclude(out, 'Examples of tag-query-quote triples');
+      assert.include(out, 'Negative examples of tag-query-quote triples:');
+      assert.include(
+        out,
+        '- tag: a\n  query: b\n  should not return\n  quote: c\n',
+      );
+      assert.include(out, 'New query: solo.');
+    });
+
+    it('formats negative example with empty tag like positive triple lines', () => {
+      const out = buildClaudeAISearchUserMessage({
+        rows: [],
+        schemaTag: 's',
+        searchQuery: 'q',
+        negativeExamples: [
+          {
+            id: 'n1',
+            schemaTag: '',
+            query: 'onlyq',
+            quote: 'qt',
+            documentUri: 'http://x',
+          },
+        ],
+      });
+      assert.include(
+        out,
+        '- tag: \n  query: onlyq\n  should not return\n  quote: qt\n',
+      );
+    });
+  });
+
+  describe('filterAiSearchQuotesAgainstExisting', () => {
+    it('drops quote when ai-user-approved annotation has same tag and quote', () => {
+      const saved = [
+        textQuoteAnn({
+          id: 'a1',
+          tags: ['methods', 'ai-user-approved'],
+          text: 'prior query',
+          exact: 'same quote text',
+        }),
+      ];
+      const raw = [{ text: 'same quote text' }, { text: 'new quote' }];
+      const out = filterAiSearchQuotesAgainstExisting(
+        raw,
+        saved,
+        pdf,
+        'methods',
+      );
+      assert.deepEqual(out, [{ text: 'new quote' }]);
+    });
+
+    it('drops quote when ai-pending annotation has same tag and quote', () => {
+      const saved = [
+        textQuoteAnn({
+          id: 'p1',
+          tags: ['ai-pending', 'methods'],
+          text: 'q',
+          exact: 'overlap',
+        }),
+      ];
+      const out = filterAiSearchQuotesAgainstExisting(
+        [{ text: 'overlap' }],
+        saved,
+        pdf,
+        'methods',
+      );
+      assert.deepEqual(out, []);
+    });
+
+    it('keeps quote when quote text differs', () => {
+      const saved = [
+        textQuoteAnn({
+          id: 'a1',
+          tags: ['t', 'ai-user-approved'],
+          text: 'q',
+          exact: 'only this',
+        }),
+      ];
+      const out = filterAiSearchQuotesAgainstExisting(
+        [{ text: 'different' }],
+        saved,
+        pdf,
+        't',
+      );
+      assert.deepEqual(out, [{ text: 'different' }]);
+    });
+
+    it('keeps quote when schema tag differs from existing annotation', () => {
+      const saved = [
+        textQuoteAnn({
+          id: 'a1',
+          tags: ['other', 'ai-user-approved'],
+          text: 'q',
+          exact: 'shared',
+        }),
+      ];
+      const out = filterAiSearchQuotesAgainstExisting(
+        [{ text: 'shared' }],
+        saved,
+        pdf,
+        'methods',
+      );
+      assert.deepEqual(out, [{ text: 'shared' }]);
+    });
+
+    it('empty schema: drops when only system tags and same quote', () => {
+      const saved = [
+        textQuoteAnn({
+          id: 'a1',
+          tags: ['ai-user-approved'],
+          text: 'q',
+          exact: 'bare',
+        }),
+      ];
+      const out = filterAiSearchQuotesAgainstExisting(
+        [{ text: 'bare' }],
+        saved,
+        pdf,
+        '',
+      );
+      assert.deepEqual(out, []);
+    });
+
+    it('empty schema: keeps when existing has a content tag', () => {
+      const saved = [
+        textQuoteAnn({
+          id: 'a1',
+          tags: ['foo', 'ai-user-approved'],
+          text: 'q',
+          exact: 'x',
+        }),
+      ];
+      const out = filterAiSearchQuotesAgainstExisting(
+        [{ text: 'x' }],
+        saved,
+        pdf,
+        '',
+      );
+      assert.deepEqual(out, [{ text: 'x' }]);
+    });
+
+    it('passes through empty quote entries', () => {
+      const out = filterAiSearchQuotesAgainstExisting(
+        [{ text: '' }, { text: '  ' }],
+        [],
+        pdf,
+        't',
+      );
+      assert.deepEqual(out, [{ text: '' }, { text: '  ' }]);
+    });
+
+    it('countAiSearchQuotesSkippedAsDuplicates counts non-empty only', () => {
+      const raw = [{ text: 'a' }, { text: 'b' }, { text: '' }];
+      const filtered = [{ text: 'b' }, { text: '' }];
+      assert.equal(
+        countAiSearchQuotesSkippedAsDuplicates(raw, filtered),
+        1,
+      );
     });
   });
 
@@ -189,7 +407,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         exact: 'e',
       });
       const candidates = buildCandidateRows([a1, a2], pdf);
-      const out = await dedupeTagQuoteRows(candidates, svc);
+      const out = await dedupeTagQueryRows(candidates, svc);
       assert.lengthOf(out, 1);
       assert.equal(out[0].annotation.id, 'a1');
       assert.calledOnce(del);
@@ -212,7 +430,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         exact: 'e',
       });
       const candidates = buildCandidateRows([b1, b2], pdf);
-      const out = await dedupeTagQuoteRows(candidates, svc);
+      const out = await dedupeTagQueryRows(candidates, svc);
       assert.lengthOf(out, 2);
       assert.notCalled(del);
     });
@@ -233,7 +451,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         exact: 'e',
       });
       const candidates = buildCandidateRows([b1, b2], pdf);
-      const out = await dedupeTagQuoteRows(candidates, svc);
+      const out = await dedupeTagQueryRows(candidates, svc);
       assert.lengthOf(out, 1);
       assert.equal(out[0].annotation.id, 'b1');
       assert.calledOnce(del);

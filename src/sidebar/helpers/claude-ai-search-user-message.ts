@@ -1,6 +1,9 @@
 import type { SavedAnnotation } from '../../types/api';
 import type { AnnotationsService } from '../services/annotations';
+import type { AISearchNegativeExample } from '../store/modules/sidebar-panels';
 import { isReply, isSaved, quote } from './annotation-metadata';
+
+export type AiSearchQuoteItem = { text?: string };
 
 const AI_USER_APPROVED = 'ai-user-approved';
 const AI_PENDING = 'ai-pending';
@@ -228,24 +231,134 @@ export async function collectTagQueryQuoteRows(
   }
 }
 
+/**
+ * Tags other than ai-pending / ai-user-approved (schema and user tags).
+ */
+function contentTags(tags: string[]): string[] {
+  return tags.filter(t => t !== AI_USER_APPROVED && t !== AI_PENDING);
+}
+
+/**
+ * True if `ann` uses the same schema tag as the current AI search row.
+ * Empty `schemaTagTrim` matches annotations with no content tags (only system tags).
+ */
+function schemaTagMatchesSearchRow(
+  schemaTagTrim: string,
+  annTags: string[],
+): boolean {
+  if (schemaTagTrim) {
+    return annTags.includes(schemaTagTrim);
+  }
+  return contentTags(annTags).length === 0;
+}
+
+/**
+ * True if a saved annotation on `documentUri` already has the same quote text
+ * and schema tag as an AI result quote (so creating a new ai-pending would duplicate).
+ */
+function existingAnnotationCoversAiQuote(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTagTrim: string,
+  normalizedQuoteText: string,
+): boolean {
+  for (const ann of annotations) {
+    if (!isSaved(ann) || ann.uri !== documentUri) {
+      continue;
+    }
+    if (isReply(ann)) {
+      continue;
+    }
+    const q = quote(ann);
+    if (q == null || !norm(q)) {
+      continue;
+    }
+    if (norm(q) !== normalizedQuoteText) {
+      continue;
+    }
+    if (!schemaTagMatchesSearchRow(schemaTagTrim, ann.tags ?? [])) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Drop AI quote items that would duplicate an existing annotation on the same
+ * document with the same tag+quote (e.g. ai-user-approved after rerun).
+ */
+export function filterAiSearchQuotesAgainstExisting(
+  quotes: AiSearchQuoteItem[],
+  savedAnnotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTagTrim: string,
+): AiSearchQuoteItem[] {
+  return quotes.filter(item => {
+    const t = item.text?.trim();
+    if (!t) {
+      return true;
+    }
+    return !existingAnnotationCoversAiQuote(
+      savedAnnotations,
+      documentUri,
+      schemaTagTrim,
+      norm(t),
+    );
+  });
+}
+
+/**
+ * Non-empty quotes in `raw` minus non-empty quotes in `filtered` (duplicate skips).
+ */
+export function countAiSearchQuotesSkippedAsDuplicates(
+  raw: AiSearchQuoteItem[],
+  filtered: AiSearchQuoteItem[],
+): number {
+  const nonEmptyRaw = raw.filter(q => q.text?.trim()).length;
+  const nonEmptyFiltered = filtered.filter(q => q.text?.trim()).length;
+  return nonEmptyRaw - nonEmptyFiltered;
+}
+
 const EXAMPLES_HEADER =
   'Examples of tag-query-quote triples:\n\n';
 
+const NEGATIVE_EXAMPLES_HEADER =
+  'Negative examples of tag-query-quote triples:\n\n';
+
 function formatRowLine(row: TagQueryQuoteRow): string {
   return `- tag: ${row.tag}\n  query: ${row.query}\n  quote: ${row.quote}\n`;
+}
+
+function formatNegativeExampleLine(ex: AISearchNegativeExample): string {
+  const tag = ex.schemaTag.trim();
+  const query = ex.query.trim();
+  const quoteText = ex.quote.trim();
+  return `- tag: ${tag}\n  query: ${query}\n  should not return\n  quote: ${quoteText}\n`;
 }
 
 export function buildClaudeAISearchUserMessage(params: {
   rows: TagQueryQuoteRow[];
   schemaTag: string;
   searchQuery: string;
+  negativeExamples?: AISearchNegativeExample[];
 }): string {
-  const { rows, schemaTag, searchQuery } = params;
-  let body = EXAMPLES_HEADER;
-  for (const row of rows) {
-    body += formatRowLine(row);
+  const { rows, schemaTag, searchQuery, negativeExamples } = params;
+  let body = '';
+  if (rows.length > 0) {
+    body += EXAMPLES_HEADER;
+    for (const row of rows) {
+      body += formatRowLine(row);
+    }
+    body += '\n';
   }
-  body += '\n';
+  if (negativeExamples?.length) {
+    body += NEGATIVE_EXAMPLES_HEADER;
+    for (const ex of negativeExamples) {
+      body += `${formatNegativeExampleLine(ex)}\n`;
+    }
+    body += '\n';
+  }
   if (schemaTag.trim()) {
     body += `What retrieved verbatim quotes from the document would go with the tag "${schemaTag}" and the query "${searchQuery}"?`;
   } else {

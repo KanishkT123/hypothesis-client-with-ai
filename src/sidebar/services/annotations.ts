@@ -363,6 +363,21 @@ export class AnnotationsService {
     }
 
     if (isAiPending && newStatus === 'DENIED') {
+      const id = annotation.id;
+      if (id) {
+        this._store.removeAnnotationIdsFromAISearchRows([id]);
+        const quoteText = metadata.quote(annotation);
+        if (quoteText != null && quoteText.trim()) {
+          const schemaTag = tags.filter(t => t !== 'ai-pending').join(', ');
+          this._store.addAISearchNegativeExample({
+            id: crypto.randomUUID(),
+            schemaTag,
+            query: (annotation.text ?? '').trim(),
+            quote: quoteText.trim(),
+            documentUri: annotation.uri,
+          });
+        }
+      }
       await this.delete(annotation);
       return annotation;
     }
