@@ -3,7 +3,7 @@ import {
   Card,
   CardContent,
   Input,
-  RefreshIcon,
+  RedoIcon,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
 import { useRef, useState } from 'preact/hooks';
@@ -388,7 +388,7 @@ function AISearchPanel({
                               aria-label="Rerun search"
                               onClick={() => onRerunRow(row)}
                             >
-                              <RefreshIcon
+                              <RedoIcon
                                 className="w-em h-em"
                                 title="Rerun search"
                               />
