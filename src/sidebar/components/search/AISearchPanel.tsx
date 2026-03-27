@@ -219,8 +219,17 @@ function AISearchPanel({
     }
   }
 
-  function onAISearch(query: string) {
-    return runAISearch(schemaTag, query);
+  async function onAISearch(query: string) {
+    const tagKey = schemaTag.trim();
+    const queryKey = query.trim();
+    const matchingRow = aiRows.find(
+      r => r.schemaTag.trim() === tagKey && r.query.trim() === queryKey,
+    );
+    if (matchingRow) {
+      await onRerunRow(matchingRow);
+    } else {
+      await runAISearch(schemaTag, query);
+    }
   }
 
   async function onRerunRow(row: AISearchRow) {
