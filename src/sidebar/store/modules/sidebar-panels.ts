@@ -156,6 +156,74 @@ const reducers = {
       aiSearch: action.aiSearch,
     };
   },
+
+  /**
+   * Merge all rows with the same trimmed tag+query as `keepRowId` into that
+   * row (union of `annotationIds`) and remove the other duplicate rows.
+   */
+  MERGE_AI_SEARCH_ROWS_SAME_TAG_QUERY(
+    state: State,
+    action: { keepRowId: string },
+  ) {
+    const { rows } = state.aiSearch;
+    const keep = rows.find(r => r.id === action.keepRowId);
+    if (!keep) {
+      return state;
+    }
+    const tagKey = keep.schemaTag.trim();
+    const queryKey = keep.query.trim();
+    const sameKey = (r: AISearchRow) =>
+      r.schemaTag.trim() === tagKey && r.query.trim() === queryKey;
+
+    const unionIds = [
+      ...new Set(rows.filter(sameKey).flatMap(r => r.annotationIds)),
+    ];
+
+    const newRows = rows
+      .filter(r => !(sameKey(r) && r.id !== action.keepRowId))
+      .map(r =>
+        r.id === action.keepRowId ? { ...r, annotationIds: unionIds } : r,
+      );
+
+    return {
+      aiSearch: {
+        ...state.aiSearch,
+        rows: newRows,
+      },
+    };
+  },
+
+  SET_AI_SEARCH_ROW_ANNOTATION_IDS(
+    state: State,
+    action: { rowId: string; annotationIds: string[] },
+  ) {
+    return {
+      aiSearch: {
+        ...state.aiSearch,
+        rows: state.aiSearch.rows.map(r =>
+          r.id === action.rowId
+            ? { ...r, annotationIds: action.annotationIds }
+            : r,
+        ),
+      },
+    };
+  },
+
+  REMOVE_AI_SEARCH_ANNOTATION_IDS(
+    state: State,
+    action: { annotationIds: string[] },
+  ) {
+    const idSet = new Set(action.annotationIds);
+    return {
+      aiSearch: {
+        ...state.aiSearch,
+        rows: state.aiSearch.rows.map(r => ({
+          ...r,
+          annotationIds: r.annotationIds.filter(id => !idSet.has(id)),
+        })),
+      },
+    };
+  },
 };
 
 /**
@@ -205,6 +273,25 @@ function hydrateAISearch(aiSearch: AISearchState) {
   return makeAction(reducers, 'HYDRATE_AI_SEARCH', { aiSearch });
 }
 
+function mergeAISearchRowsWithSameTagQuery(keepRowId: string) {
+  return makeAction(reducers, 'MERGE_AI_SEARCH_ROWS_SAME_TAG_QUERY', {
+    keepRowId,
+  });
+}
+
+function setAISearchRowAnnotationIds(rowId: string, annotationIds: string[]) {
+  return makeAction(reducers, 'SET_AI_SEARCH_ROW_ANNOTATION_IDS', {
+    rowId,
+    annotationIds,
+  });
+}
+
+function removeAnnotationIdsFromAISearchRows(annotationIds: string[]) {
+  return makeAction(reducers, 'REMOVE_AI_SEARCH_ANNOTATION_IDS', {
+    annotationIds,
+  });
+}
+
 /**
  * Is the panel indicated by `panelName` currently active (open)?
  */
@@ -232,6 +319,9 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     removeAISearchRow,
     setAISearchSchemaTagColor,
     hydrateAISearch,
+    mergeAISearchRowsWithSameTagQuery,
+    setAISearchRowAnnotationIds,
+    removeAnnotationIdsFromAISearchRows,
   },
 
   selectors: {

@@ -3,6 +3,7 @@ import {
   Card,
   CardContent,
   Input,
+  RefreshIcon,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
 import { useRef, useState } from 'preact/hooks';
@@ -33,6 +34,39 @@ import SidebarPanel from '../SidebarPanel';
 import FilterControls from './FilterControls';
 import SearchField from './SearchField';
 
+const AI_PENDING = 'ai-pending';
+
+function expectedTagsForAISearch(schemaTagTrimmed: string): string[] {
+  return schemaTagTrimmed ? [AI_PENDING, schemaTagTrimmed] : [AI_PENDING];
+}
+
+function tagsMatchAISearchPending(
+  tags: string[] | undefined,
+  schemaTagTrimmed: string,
+): boolean {
+  const expected = expectedTagsForAISearch(schemaTagTrimmed);
+  const t = tags ?? [];
+  if (t.length !== expected.length) {
+    return false;
+  }
+  return expected.every((x, i) => t[i] === x);
+}
+
+function isPendingAISearchAnnotation(
+  ann: SavedAnnotation,
+  documentURL: string,
+  queryTrimmed: string,
+  schemaTagTrimmed: string,
+): boolean {
+  if (ann.uri !== documentURL) {
+    return false;
+  }
+  if (!tagsMatchAISearchPending(ann.tags, schemaTagTrimmed)) {
+    return false;
+  }
+  return (ann.text ?? '').trim() === queryTrimmed;
+}
+
 type AISearchPanelProps = {
   annotationsService: AnnotationsService;
   frameSync: FrameSyncService;
@@ -58,6 +92,7 @@ function AISearchPanel({
   const [claudeAPIKey, setClaudeAPIKey] = useState('');
   const [schemaTag, setSchemaTag] = useState('');
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
+  const [rerunningRowId, setRerunningRowId] = useState<string | null>(null);
 
   const aiRows = store.aiSearchRows();
   const schemaTagColors = store.aiSearchSchemaTagColors();
@@ -66,7 +101,11 @@ function AISearchPanel({
     store.closeSidebarPanel('aiSearchAnnotations');
   };
 
-  async function onAISearch(query: string) {
+  async function runAISearch(
+    schemaTagForRow: string,
+    query: string,
+    options?: { replaceRowId?: string },
+  ) {
     try {
       const userid = store.profile().userid;
       const groupId = store.focusedGroupId();
@@ -83,12 +122,14 @@ function AISearchPanel({
         documentURL,
         annotationsService,
       );
+      const tagTrim = schemaTagForRow.trim();
       const fullUserMessage = buildClaudeAISearchUserMessage({
         rows: tripleRows,
-        schemaTag: schemaTag.trim(),
+        schemaTag: tagTrim,
         searchQuery: query,
       });
 
+      // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
       const claudeResult = await claude.AISearchDocument({
         query: fullUserMessage,
         candidateURIs: store.searchUris(),
@@ -96,11 +137,10 @@ function AISearchPanel({
       });
       console.log('claudeResult', claudeResult);
 
-      // const quotes = ((reductoResult.answer as any).result?.[0]?.quotes ?? []) as
-      //   Array<{ text?: string }>;
-      const quotes = ((claudeResult.answer as any).result?.[0]?.quotes ?? []) as Array<{ text?: string }>;
+      const quotes = ((claudeResult.answer as any).result?.[0]?.quotes ?? []) as Array<{
+        text?: string;
+      }>;
 
-      const tagTrim = schemaTag.trim();
       const tags = ['ai-pending', ...(tagTrim ? [tagTrim] : [])];
 
       const created = [];
@@ -130,15 +170,21 @@ function AISearchPanel({
         store.addAnnotations(created);
       }
 
-      const row: AISearchRow = {
-        id: crypto.randomUUID(),
-        schemaTag,
-        query,
-        annotationIds: created
-          .map(a => a.id)
-          .filter((id): id is string => typeof id === 'string'),
-      };
-      store.addAISearchRow(row);
+      const newIds = created
+        .map(a => a.id)
+        .filter((id): id is string => typeof id === 'string');
+
+      if (options?.replaceRowId) {
+        store.setAISearchRowAnnotationIds(options.replaceRowId, newIds);
+      } else {
+        const row: AISearchRow = {
+          id: crypto.randomUUID(),
+          schemaTag: schemaTagForRow,
+          query,
+          annotationIds: newIds,
+        };
+        store.addAISearchRow(row);
+      }
 
       toastMessenger.success(
         `Created ${created.length} annotation(s) from AI results.`,
@@ -146,6 +192,58 @@ function AISearchPanel({
     } catch (error) {
       console.error('Error creating annotations from AI results:', error);
       toastMessenger.error('Failed to create annotations from AI results.');
+    }
+  }
+
+  function onAISearch(query: string) {
+    return runAISearch(schemaTag, query);
+  }
+
+  async function onRerunRow(row: AISearchRow) {
+    const userid = store.profile().userid;
+    const groupId = store.focusedGroupId();
+    const documentURL = claude.firstPDFURI(store.searchUris());
+
+    if (!userid || !groupId || !documentURL) {
+      toastMessenger.error('Missing user, group, or PDF URL');
+      return;
+    }
+
+    setRerunningRowId(row.id);
+    try {
+      store.mergeAISearchRowsWithSameTagQuery(row.id);
+
+      const schemaTagTrim = row.schemaTag.trim();
+      const queryTrim = row.query.trim();
+
+      const pending = store
+        .savedAnnotations()
+        .filter(ann =>
+          isPendingAISearchAnnotation(
+            ann as SavedAnnotation,
+            documentURL,
+            queryTrim,
+            schemaTagTrim,
+          ),
+        ) as SavedAnnotation[];
+
+      const deletedIds: string[] = [];
+      for (const ann of pending) {
+        if (ann.id) {
+          await annotationsService.delete(ann);
+          deletedIds.push(ann.id);
+        }
+      }
+      if (deletedIds.length) {
+        store.removeAnnotationIdsFromAISearchRows(deletedIds);
+      }
+
+      await runAISearch(row.schemaTag, row.query, { replaceRowId: row.id });
+    } catch (err) {
+      console.error(err);
+      toastMessenger.error('Failed to rerun AI search.');
+    } finally {
+      setRerunningRowId(null);
     }
   }
 
@@ -242,6 +340,9 @@ function AISearchPanel({
                 <table className="w-full border-collapse text-left text-sm text-color-text">
                   <thead>
                     <tr className="border-b border-grey-3 text-color-text-light">
+                      <th className="py-1 w-10" scope="col">
+                        <span className="sr-only">Rerun</span>
+                      </th>
                       <th className="py-1 pr-2 font-normal" scope="col">
                         Color
                       </th>
@@ -272,6 +373,27 @@ function AISearchPanel({
                           key={row.id}
                           className="border-b border-grey-2 last:border-0"
                         >
+                          <td className="py-1 pr-2 align-middle">
+                            <button
+                              type="button"
+                              className={classnames(
+                                'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2',
+                                'transition-colors duration-200 focus-visible-ring',
+                              )}
+                              disabled={
+                                deletingRowId === row.id ||
+                                rerunningRowId === row.id
+                              }
+                              title="Rerun search"
+                              aria-label="Rerun search"
+                              onClick={() => onRerunRow(row)}
+                            >
+                              <RefreshIcon
+                                className="w-em h-em"
+                                title="Rerun search"
+                              />
+                            </button>
+                          </td>
                           <td className="py-1 pr-2 align-middle">
                             <input
                               aria-label={`Highlight color for tag ${tagKey || '(empty)'}`}
@@ -314,7 +436,10 @@ function AISearchPanel({
                                 'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2',
                                 'transition-colors duration-200 focus-visible-ring',
                               )}
-                              disabled={deletingRowId === row.id}
+                              disabled={
+                                deletingRowId === row.id ||
+                                rerunningRowId === row.id
+                              }
                               title="Remove row and delete matching annotations"
                               onClick={() => onDeleteRow(row)}
                             >
