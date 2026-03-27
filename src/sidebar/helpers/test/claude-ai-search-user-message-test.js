@@ -5,6 +5,8 @@ import {
   buildClaudeAISearchUserMessage,
   collectTagQueryQuoteRows,
   countAiSearchQuotesSkippedAsDuplicates,
+  countAISearchRowPendingAnnotations,
+  countAISearchRowTotalAnnotations,
   dedupeTagQueryRows,
   filterAiSearchQuotesAgainstExisting,
 } from '../claude-ai-search-user-message';
@@ -479,4 +481,54 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       assert.isNumber(logCall.args[1].elapsedMs);
     });
   });
+
+  describe('countAISearchRowPendingAnnotations / countAISearchRowTotalAnnotations', () => {
+    it('counts pending only for ai-pending with matching tag and query', () => {
+      const pending = textQuoteAnn({
+        id: 'p1',
+        tags: ['ai-pending', 'schema'],
+        text: 'find me',
+      });
+      const approved = textQuoteAnn({
+        id: 'a1',
+        tags: ['schema', 'ai-user-approved'],
+        text: 'find me',
+      });
+      assert.equal(
+        countAISearchRowPendingAnnotations([pending, approved], pdf, 'schema', 'find me'),
+        1,
+      );
+      assert.equal(
+        countAISearchRowTotalAnnotations([pending, approved], pdf, 'schema', 'find me'),
+        2,
+      );
+    });
+
+    it('includes manual annotation with same tag and query as total', () => {
+      const manual = textQuoteAnn({
+        id: 'm1',
+        tags: ['t1'],
+        text: 'q',
+      });
+      assert.equal(countAISearchRowPendingAnnotations([manual], pdf, 't1', 'q'), 0);
+      assert.equal(countAISearchRowTotalAnnotations([manual], pdf, 't1', 'q'), 1);
+    });
+
+    it('excludes replies and wrong uri', () => {
+      const reply = textQuoteAnn({
+        id: 'r1',
+        tags: ['ai-pending', 'x'],
+        text: 'q',
+        references: ['parent'],
+      });
+      const other = textQuoteAnn({
+        id: 'o1',
+        uri: 'http://other/doc.pdf',
+        tags: ['ai-pending', 'x'],
+        text: 'q',
+      });
+      assert.equal(countAISearchRowTotalAnnotations([reply, other], pdf, 'x', 'q'), 0);
+    });
+  });
+
 });

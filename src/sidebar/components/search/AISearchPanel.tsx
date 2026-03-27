@@ -20,6 +20,8 @@ import {
   buildClaudeAISearchUserMessage,
   collectTagQueryQuoteRows,
   countAiSearchQuotesSkippedAsDuplicates,
+  countAISearchRowPendingAnnotations,
+  countAISearchRowTotalAnnotations,
   filterAiSearchQuotesAgainstExisting,
 } from '../../helpers/claude-ai-search-user-message';
 import { mergeAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
@@ -103,6 +105,7 @@ function AISearchPanel({
   const [userDeniedSectionOpen, setUserDeniedSectionOpen] = useState(false);
 
   const aiRows = store.aiSearchRows();
+  const savedAnnotations = store.savedAnnotations();
   const schemaTagColors = store.aiSearchSchemaTagColors();
   const documentURL = claude.firstPDFURI(store.searchUris());
   const negativeExamplesForDoc: AISearchNegativeExample[] = documentURL
@@ -386,10 +389,18 @@ function AISearchPanel({
                         Query
                       </th>
                       <th
-                        className="py-1 pr-2 text-right font-normal w-10"
+                        className="py-1 pr-2 text-right font-normal tabular-nums"
                         scope="col"
+                        title="AI-generated pending annotations"
                       >
-                        #
+                        Pending
+                      </th>
+                      <th
+                        className="py-1 pr-2 text-right font-normal tabular-nums"
+                        scope="col"
+                        title="All annotations matching this tag and query"
+                      >
+                        Total
                       </th>
                       <th className="py-1 w-10" scope="col">
                         <span className="sr-only">Remove</span>
@@ -460,7 +471,24 @@ function AISearchPanel({
                             {row.query}
                           </td>
                           <td className="py-1 pr-2 text-right align-middle tabular-nums">
-                            {row.annotationIds.length}
+                            {documentURL != null
+                              ? countAISearchRowPendingAnnotations(
+                                  savedAnnotations,
+                                  documentURL,
+                                  row.schemaTag,
+                                  row.query,
+                                )
+                              : 0}
+                          </td>
+                          <td className="py-1 pr-2 text-right align-middle tabular-nums">
+                            {documentURL != null
+                              ? countAISearchRowTotalAnnotations(
+                                  savedAnnotations,
+                                  documentURL,
+                                  row.schemaTag,
+                                  row.query,
+                                )
+                              : 0}
                           </td>
                           <td className="py-1 align-middle">
                             <button
@@ -489,7 +517,9 @@ function AISearchPanel({
                 </table>
                 <p className="text-color-text-light text-xs leading-snug">
                   Highlight color is per tag; rows that share a tag share this
-                  color.
+                  color. Pending counts ai-pending annotations for this tag and
+                  query; Total includes approved, pending, and manual annotations
+                  with the same tag and query text on this document.
                 </p>
               </div>
             )}

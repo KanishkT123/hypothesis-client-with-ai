@@ -320,6 +320,71 @@ export function countAiSearchQuotesSkippedAsDuplicates(
   return nonEmptyRaw - nonEmptyFiltered;
 }
 
+/**
+ * True if a saved annotation belongs to an AI search history row: same document,
+ * body text equals the row query (trimmed), schema tag matches, not a reply.
+ * Includes ai-pending, ai-user-approved, and manually authored rows with that tag+query.
+ */
+export function savedAnnotationMatchesAISearchRow(
+  ann: SavedAnnotation,
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): boolean {
+  if (!isSaved(ann) || ann.uri !== documentUri) {
+    return false;
+  }
+  if (isReply(ann)) {
+    return false;
+  }
+  const queryTrim = norm(query);
+  if (norm(ann.text ?? '') !== queryTrim) {
+    return false;
+  }
+  return schemaTagMatchesSearchRow(norm(schemaTag), ann.tags ?? []);
+}
+
+/**
+ * Count of ai-pending annotations for this row (same tag+query on documentUri).
+ */
+export function countAISearchRowPendingAnnotations(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): number {
+  return countIf(annotations, ann => {
+    if (!savedAnnotationMatchesAISearchRow(ann, documentUri, schemaTag, query)) {
+      return false;
+    }
+    return (ann.tags ?? []).includes(AI_PENDING);
+  });
+}
+
+/**
+ * Total annotations for this row: pending, user-approved, or manual, matching tag+query.
+ */
+export function countAISearchRowTotalAnnotations(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): number {
+  return countIf(annotations, ann =>
+    savedAnnotationMatchesAISearchRow(ann, documentUri, schemaTag, query),
+  );
+}
+
+function countIf<T>(items: T[], pred: (item: T) => boolean): number {
+  let n = 0;
+  for (const item of items) {
+    if (pred(item)) {
+      n++;
+    }
+  }
+  return n;
+}
+
 const EXAMPLES_HEADER =
   'Examples of tag-query-quote triples:\n\n';
 
