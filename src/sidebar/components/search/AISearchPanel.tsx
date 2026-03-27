@@ -13,6 +13,10 @@ import {
   rgbaStringToHexColorInput,
   TAG_HIGHLIGHT_ALPHA,
 } from '../../../shared/tag-color-from-string';
+import {
+  buildClaudeAISearchUserMessage,
+  collectTagQueryQuoteRows,
+} from '../../helpers/claude-ai-search-user-message';
 import { mergeAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
 import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
@@ -64,20 +68,6 @@ function AISearchPanel({
 
   async function onAISearch(query: string) {
     try {
-      // Reducto SDK uses PascalCase for this method.
-      // eslint-disable-next-line new-cap
-      // const reductoResult = await reducto.AISearchDocument({
-      //   query,
-      //   candidateURIs: store.searchUris(),
-      //   apiKey: reductoAPIKey,
-      // });
-      const claudeResult = await claude.AISearchDocument({
-        query,
-        candidateURIs: store.searchUris(),
-        apiKey: claudeAPIKey,
-      });
-      console.log('claudeResult', claudeResult);
-
       const userid = store.profile().userid;
       const groupId = store.focusedGroupId();
       //const documentURL = reducto.firstPDFURI(store.searchUris());
@@ -87,6 +77,24 @@ function AISearchPanel({
         toastMessenger.error('Missing user, group, or PDF URL');
         return;
       }
+
+      const tripleRows = await collectTagQueryQuoteRows(
+        store.savedAnnotations(),
+        documentURL,
+        annotationsService,
+      );
+      const fullUserMessage = buildClaudeAISearchUserMessage({
+        rows: tripleRows,
+        schemaTag: schemaTag.trim(),
+        searchQuery: query,
+      });
+
+      const claudeResult = await claude.AISearchDocument({
+        query: fullUserMessage,
+        candidateURIs: store.searchUris(),
+        apiKey: claudeAPIKey,
+      });
+      console.log('claudeResult', claudeResult);
 
       // const quotes = ((reductoResult.answer as any).result?.[0]?.quotes ?? []) as
       //   Array<{ text?: string }>;
