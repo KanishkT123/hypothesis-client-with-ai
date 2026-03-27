@@ -534,13 +534,8 @@ function AISearchPanel({
                             <td className="py-1 pr-2 align-middle break-all max-w-[10rem]">
                               {ex.query}
                             </td>
-                            <td
-                              className="py-1 pr-2 align-middle break-all max-w-[12rem]"
-                              title={ex.quote}
-                            >
-                              {ex.quote.length > 80
-                                ? `${ex.quote.slice(0, 80)}…`
-                                : ex.quote}
+                            <td className="py-1 pr-2 align-middle break-all max-w-[12rem]">
+                              {ex.quote}
                             </td>
                             <td className="py-1 align-middle">
                               <button
