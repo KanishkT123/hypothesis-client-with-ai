@@ -19,6 +19,12 @@ describe('SearchField', () => {
     input.simulate('input');
   }
 
+  function typeQueryTextarea(wrapper, query) {
+    const textarea = wrapper.find('textarea');
+    textarea.getDOMNode().value = query;
+    textarea.simulate('input');
+  }
+
   function getClearButton(wrapper) {
     return wrapper.find('button[data-testid="clear-button"]');
   }
@@ -155,6 +161,73 @@ describe('SearchField', () => {
     });
   });
 
+  it('renders a textarea and full-width submit when multiline and label are set', () => {
+    const wrapper = createSearchField({
+      multiline: true,
+      fullWidthSubmitLabel: 'Ask the AI',
+      query: null,
+      onSearch: sinon.stub(),
+      onClearSearch: sinon.stub(),
+    });
+    assert.isTrue(wrapper.find('textarea').exists());
+    assert.isFalse(wrapper.find('input').exists());
+    assert.equal(
+      wrapper.find('[data-testid="search-submit-button"]').first().text(),
+      'Ask the AI',
+    );
+  });
+
+  it('invokes `onSearch` on Enter in multiline field when Shift is not held', () => {
+    const onSearch = sinon.stub();
+    const wrapper = createSearchField({
+      query: 'foo',
+      onSearch,
+      multiline: true,
+      fullWidthSubmitLabel: 'Ask the AI',
+      onClearSearch: sinon.stub(),
+    });
+    typeQueryTextarea(wrapper, 'new-query');
+    wrapper.find('textarea').simulate('keydown', {
+      key: 'Enter',
+      shiftKey: false,
+    });
+    assert.calledWith(onSearch, 'new-query');
+  });
+
+  it('does not invoke `onSearch` on Shift+Enter in multiline field', () => {
+    const onSearch = sinon.stub();
+    const wrapper = createSearchField({
+      query: 'foo',
+      onSearch,
+      multiline: true,
+      fullWidthSubmitLabel: 'Ask the AI',
+      onClearSearch: sinon.stub(),
+    });
+    typeQueryTextarea(wrapper, 'new-query');
+    wrapper.find('textarea').simulate('keydown', {
+      key: 'Enter',
+      shiftKey: true,
+    });
+    assert.notCalled(onSearch);
+  });
+
+  it('disables textarea, clear, and full-width submit when `disabled` is true', () => {
+    const query = 'some query';
+    const wrapper = createSearchField({
+      disabled: true,
+      query,
+      multiline: true,
+      fullWidthSubmitLabel: 'Ask the AI',
+      onSearch: sinon.stub(),
+      onClearSearch: sinon.stub(),
+    });
+    assert.isTrue(wrapper.find('textarea').prop('disabled'));
+    assert.deepEqual(
+      wrapper.find('button').map(btn => btn.prop('disabled')),
+      [true, true],
+    );
+  });
+
   it(
     'should pass a11y checks',
     checkAccessibility([
@@ -167,6 +240,17 @@ describe('SearchField', () => {
           fakeStore.isLoading.returns(true);
           return createSearchField();
         },
+      },
+      {
+        name: 'multiline with full-width submit',
+        content: () =>
+          createSearchField({
+            multiline: true,
+            fullWidthSubmitLabel: 'Ask the AI',
+            query: 'q',
+            onSearch: sinon.stub(),
+            onClearSearch: sinon.stub(),
+          }),
       },
     ]),
   );

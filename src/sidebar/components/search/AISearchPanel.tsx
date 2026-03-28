@@ -69,8 +69,9 @@ function AISearchPanel({
 }: AISearchPanelProps) {
   const store = useSidebarStore();
   const filterQuery = store.filterQuery();
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const hasSelection = store.hasSelectedAnnotations();
+  const [aiSearchBusy, setAiSearchBusy] = useState(false);
   // const [reductoAPIKey, setReductoAPIKey] = useState('');
   const [claudeAPIKey, setClaudeAPIKey] = useState('');
   const [schemaTag, setSchemaTag] = useState('');
@@ -197,15 +198,20 @@ function AISearchPanel({
   }
 
   async function onAISearch(query: string) {
-    const tagKey = schemaTag.trim();
-    const queryKey = query.trim();
-    const matchingRow = aiRows.find(
-      r => r.schemaTag.trim() === tagKey && r.query.trim() === queryKey,
-    );
-    if (matchingRow) {
-      await onRerunRow(matchingRow);
-    } else {
-      await runAISearch(schemaTag, query);
+    setAiSearchBusy(true);
+    try {
+      const tagKey = schemaTag.trim();
+      const queryKey = query.trim();
+      const matchingRow = aiRows.find(
+        r => r.schemaTag.trim() === tagKey && r.query.trim() === queryKey,
+      );
+      if (matchingRow) {
+        await onRerunRow(matchingRow);
+      } else {
+        await runAISearch(schemaTag, query);
+      }
+    } finally {
+      setAiSearchBusy(false);
     }
   }
 
@@ -407,10 +413,13 @@ function AISearchPanel({
             <SearchField
               inputRef={inputRef}
               classes="grow"
+              fullWidthSubmitLabel="Ask the AI"
+              multiline
               placeholder="ask AI to highlight…"
+              rows={4}
               // Disable the input when there is a selection, as the selection
               // replaces any other filters.
-              disabled={hasSelection}
+              disabled={hasSelection || aiSearchBusy}
               query={filterQuery || null}
               onClearSearch={clearSearch}
               onSearch={onAISearch}
@@ -493,6 +502,7 @@ function AISearchPanel({
                                 'transition-colors duration-200 focus-visible-ring',
                               )}
                               disabled={
+                                aiSearchBusy ||
                                 deletingRowId === row.id ||
                                 rerunningRowId === row.id
                               }
@@ -566,6 +576,7 @@ function AISearchPanel({
                                 'transition-colors duration-200 focus-visible-ring',
                               )}
                               disabled={
+                                aiSearchBusy ||
                                 deletingRowId === row.id ||
                                 rerunningRowId === row.id ||
                                 !documentURL ||
@@ -589,6 +600,7 @@ function AISearchPanel({
                                 'transition-colors duration-200 focus-visible-ring',
                               )}
                               disabled={
+                                aiSearchBusy ||
                                 deletingRowId === row.id ||
                                 rerunningRowId === row.id ||
                                 !documentURL ||
