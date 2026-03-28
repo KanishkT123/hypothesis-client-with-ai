@@ -233,9 +233,14 @@ export async function collectTagQueryQuoteRows(
 
 /**
  * Tags other than ai-pending / ai-user-approved (schema and user tags).
+ * Exported for AI search delete-all (content-tag count) and tests.
  */
-function contentTags(tags: string[]): string[] {
+export function aiSearchContentTags(tags: string[]): string[] {
   return tags.filter(t => t !== AI_USER_APPROVED && t !== AI_PENDING);
+}
+
+function contentTags(tags: string[]): string[] {
+  return aiSearchContentTags(tags);
 }
 
 /**
@@ -345,7 +350,50 @@ export function savedAnnotationMatchesAISearchRow(
 }
 
 /**
- * Count of ai-pending annotations for this row (same tag+query on documentUri).
+ * Expected tag list for AI-created pending annotations (strict match for rerun / delete pending).
+ */
+export function expectedTagsForStrictAISearchPending(
+  schemaTagTrimmed: string,
+): string[] {
+  return schemaTagTrimmed ? [AI_PENDING, schemaTagTrimmed] : [AI_PENDING];
+}
+
+/**
+ * True if tags are exactly `['ai-pending']` or `['ai-pending', schemaTag]` in order.
+ */
+export function tagsMatchStrictAISearchPending(
+  tags: string[] | undefined,
+  schemaTagTrimmed: string,
+): boolean {
+  const expected = expectedTagsForStrictAISearchPending(schemaTagTrimmed);
+  const t = tags ?? [];
+  if (t.length !== expected.length) {
+    return false;
+  }
+  return expected.every((x, i) => t[i] === x);
+}
+
+/**
+ * Strict AI pending: same document, query text, and exact pending tag shape as rerun.
+ */
+export function savedAnnotationIsStrictAISearchPending(
+  ann: SavedAnnotation,
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): boolean {
+  if (!isSaved(ann) || ann.uri !== documentUri) {
+    return false;
+  }
+  const schemaTagTrim = norm(schemaTag);
+  if (!tagsMatchStrictAISearchPending(ann.tags, schemaTagTrim)) {
+    return false;
+  }
+  return norm(ann.text ?? '') === norm(query);
+}
+
+/**
+ * Count of strict pending annotations for this row (matches delete pending / rerun).
  */
 export function countAISearchRowPendingAnnotations(
   annotations: SavedAnnotation[],
@@ -353,12 +401,71 @@ export function countAISearchRowPendingAnnotations(
   schemaTag: string,
   query: string,
 ): number {
-  return countIf(annotations, ann => {
-    if (!savedAnnotationMatchesAISearchRow(ann, documentUri, schemaTag, query)) {
-      return false;
-    }
-    return (ann.tags ?? []).includes(AI_PENDING);
-  });
+  return countIf(annotations, ann =>
+    savedAnnotationIsStrictAISearchPending(ann, documentUri, schemaTag, query),
+  );
+}
+
+/**
+ * All saved annotations matching this row's Total (tag + query + document).
+ */
+export function listSavedAnnotationsMatchingAISearchRow(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): SavedAnnotation[] {
+  return annotations.filter(ann =>
+    savedAnnotationMatchesAISearchRow(ann, documentUri, schemaTag, query),
+  );
+}
+
+/**
+ * Strict pending list for delete pending / rerun.
+ */
+export function listStrictAISearchRowPendingAnnotations(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): SavedAnnotation[] {
+  return annotations.filter(ann =>
+    savedAnnotationIsStrictAISearchPending(ann, documentUri, schemaTag, query),
+  );
+}
+
+export type AISearchDeleteAllAction = 'removeRowTag' | 'deleteAnnotation';
+
+/**
+ * For an annotation that matches this row's Total, choose PATCH (remove schema tag) vs full delete.
+ * Empty-schema rows always delete (no tag to strip).
+ */
+export function deleteAllActionForAISearchRowMatch(
+  ann: SavedAnnotation,
+  rowSchemaTagTrimmed: string,
+): AISearchDeleteAllAction {
+  if (!norm(rowSchemaTagTrimmed)) {
+    return 'deleteAnnotation';
+  }
+  const ct = aiSearchContentTags(ann.tags ?? []);
+  if (ct.length > 1) {
+    return 'removeRowTag';
+  }
+  return 'deleteAnnotation';
+}
+
+/**
+ * Tags after removing this row's schema tag (for PATCH). Removes all occurrences of `tagToRemove`.
+ */
+export function tagsAfterRemovingAISearchRowSchemaTag(
+  tags: string[] | undefined,
+  schemaTagTrimmed: string,
+): string[] {
+  const t = norm(schemaTagTrimmed);
+  if (!t) {
+    return tags ?? [];
+  }
+  return (tags ?? []).filter(tag => tag !== t);
 }
 
 /**

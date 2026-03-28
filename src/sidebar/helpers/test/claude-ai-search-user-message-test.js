@@ -8,7 +8,10 @@ import {
   countAISearchRowPendingAnnotations,
   countAISearchRowTotalAnnotations,
   dedupeTagQueryRows,
+  deleteAllActionForAISearchRowMatch,
   filterAiSearchQuotesAgainstExisting,
+  listSavedAnnotationsMatchingAISearchRow,
+  tagsAfterRemovingAISearchRowSchemaTag,
 } from '../claude-ai-search-user-message';
 
 describe('sidebar/helpers/claude-ai-search-user-message', () => {
@@ -483,7 +486,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
   });
 
   describe('countAISearchRowPendingAnnotations / countAISearchRowTotalAnnotations', () => {
-    it('counts pending only for ai-pending with matching tag and query', () => {
+    it('counts pending only for strict ai-pending tag shape with matching query', () => {
       const pending = textQuoteAnn({
         id: 'p1',
         tags: ['ai-pending', 'schema'],
@@ -501,6 +504,22 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       assert.equal(
         countAISearchRowTotalAnnotations([pending, approved], pdf, 'schema', 'find me'),
         2,
+      );
+    });
+
+    it('does not count pending when ai-pending tag order does not match strict shape', () => {
+      const wrongOrder = textQuoteAnn({
+        id: 'w1',
+        tags: ['schema', 'ai-pending'],
+        text: 'find me',
+      });
+      assert.equal(
+        countAISearchRowPendingAnnotations([wrongOrder], pdf, 'schema', 'find me'),
+        0,
+      );
+      assert.equal(
+        countAISearchRowTotalAnnotations([wrongOrder], pdf, 'schema', 'find me'),
+        1,
       );
     });
 
@@ -528,6 +547,58 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'q',
       });
       assert.equal(countAISearchRowTotalAnnotations([reply, other], pdf, 'x', 'q'), 0);
+    });
+  });
+
+  describe('deleteAllActionForAISearchRowMatch / listSavedAnnotationsMatchingAISearchRow / tagsAfterRemovingAISearchRowSchemaTag', () => {
+    it('deleteAll: empty schema row always deletes', () => {
+      const ann = textQuoteAnn({
+        id: 'e1',
+        tags: ['ai-pending'],
+        text: 'q',
+      });
+      assert.equal(deleteAllActionForAISearchRowMatch(ann, ''), 'deleteAnnotation');
+    });
+
+    it('deleteAll: multiple content tags yields removeRowTag', () => {
+      const ann = textQuoteAnn({
+        id: 'm1',
+        tags: ['ai-pending', 'a', 'b'],
+        text: 'q',
+      });
+      assert.equal(deleteAllActionForAISearchRowMatch(ann, 'a'), 'removeRowTag');
+    });
+
+    it('deleteAll: single content tag yields deleteAnnotation', () => {
+      const ann = textQuoteAnn({
+        id: 's1',
+        tags: ['schema', 'ai-user-approved'],
+        text: 'q',
+      });
+      assert.equal(deleteAllActionForAISearchRowMatch(ann, 'schema'), 'deleteAnnotation');
+    });
+
+    it('listSavedAnnotationsMatchingAISearchRow returns Total matches', () => {
+      const a = textQuoteAnn({
+        id: '1',
+        tags: ['t', 'ai-user-approved'],
+        text: 'qq',
+      });
+      const b = textQuoteAnn({
+        id: '2',
+        tags: ['other'],
+        text: 'xx',
+      });
+      const list = listSavedAnnotationsMatchingAISearchRow([a, b], pdf, 't', 'qq');
+      assert.lengthOf(list, 1);
+      assert.equal(list[0].id, '1');
+    });
+
+    it('tagsAfterRemovingAISearchRowSchemaTag removes the schema tag', () => {
+      assert.deepEqual(
+        tagsAfterRemovingAISearchRowSchemaTag(['ai-pending', 'a', 'b'], 'a'),
+        ['ai-pending', 'b'],
+      );
     });
   });
 
