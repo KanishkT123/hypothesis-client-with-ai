@@ -1,6 +1,10 @@
 import { createStore } from '../../store/create-store';
 import { sidebarPanelsModule } from '../../store/modules/sidebar-panels';
 import {
+  parseExperimentLogState,
+  EXPERIMENT_LOG_STORAGE_KEY,
+} from '../experiment-log';
+import {
   AI_SEARCH_NEGATIVE_EXAMPLES_KEY,
   AI_SEARCH_STORAGE_KEY,
   parseAISearchNegativeExamplesState,
@@ -61,10 +65,46 @@ describe('parseAISearchNegativeExamplesState', () => {
   });
 });
 
+describe('parseExperimentLogState', () => {
+  it('returns null for non-objects or wrong version', () => {
+    assert.isNull(parseExperimentLogState(null));
+    assert.isNull(parseExperimentLogState({ version: 2, events: [], annotationStatuses: {} }));
+  });
+
+  it('returns null when events or annotationStatuses are invalid', () => {
+    assert.isNull(
+      parseExperimentLogState({ version: 1, events: {}, annotationStatuses: {} }),
+    );
+    assert.isNull(
+      parseExperimentLogState({ version: 1, events: [], annotationStatuses: [] }),
+    );
+  });
+
+  it('accepts a valid flat experiment log', () => {
+    const log = {
+      version: 1,
+      events: [
+        {
+          type: 'search',
+          timestamp: '2020-01-01T00:00:00.000Z',
+          documentUri: 'http://d',
+          searchRowId: 'r',
+          query: 'q',
+          schemaTag: 't',
+          annotationIdsCreated: [],
+        },
+      ],
+      annotationStatuses: {},
+    };
+    assert.deepEqual(parseExperimentLogState(log), log);
+  });
+});
+
 describe('PersistedAISearchService', () => {
   let fakeLocalStorage;
   let store;
   let fakeWindow;
+  let fakeToastMessenger;
   /** @type {Record<string, Function[]>} */
   let listeners;
 
@@ -77,6 +117,10 @@ describe('PersistedAISearchService', () => {
 
   beforeEach(() => {
     listeners = {};
+    fakeToastMessenger = {
+      error: sinon.stub(),
+      warning: sinon.stub(),
+    };
     fakeWindow = {
       document: {
         visibilityState: 'visible',
@@ -96,11 +140,17 @@ describe('PersistedAISearchService', () => {
     fakeLocalStorage = {
       getObject: sinon.stub(),
       setObject: sinon.stub(),
+      removeItem: sinon.stub(),
     };
   });
 
   function createService() {
-    return new PersistedAISearchService(fakeLocalStorage, store, fakeWindow);
+    return new PersistedAISearchService(
+      fakeLocalStorage,
+      store,
+      fakeWindow,
+      fakeToastMessenger,
+    );
   }
 
   describe('#init', () => {
@@ -205,6 +255,92 @@ describe('PersistedAISearchService', () => {
 
       assert.calledWith(fakeWindow.addEventListener, 'storage', sinon.match.func);
     });
+
+    it('hydrates experiment log from localStorage when data is valid', () => {
+      fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns(null);
+      const expLog = {
+        version: 1,
+        events: [
+          {
+            type: 'search',
+            timestamp: '2020-01-01T00:00:00.000Z',
+            documentUri: 'http://d',
+            searchRowId: 'r',
+            query: 'q',
+            schemaTag: 't',
+            annotationIdsCreated: [],
+          },
+        ],
+        annotationStatuses: {},
+      };
+      fakeLocalStorage.getObject.withArgs(EXPERIMENT_LOG_STORAGE_KEY).returns(expLog);
+
+      createService().init();
+
+      assert.deepEqual(store.getState().sidebarPanels.experimentLog, expLog);
+    });
+
+    it('persists when experimentLog changes after init', () => {
+      fakeLocalStorage.getObject.returns(null);
+      createService().init();
+
+      const nextLog = {
+        version: 1,
+        events: [
+          {
+            type: 'search',
+            timestamp: '2020-01-01T00:00:00.000Z',
+            documentUri: 'http://d',
+            searchRowId: 'r',
+            query: 'q',
+            schemaTag: 't',
+            annotationIdsCreated: [],
+          },
+        ],
+        annotationStatuses: {},
+      };
+      store.setExperimentLog(nextLog);
+
+      assert.calledWith(
+        fakeLocalStorage.setObject,
+        EXPERIMENT_LOG_STORAGE_KEY,
+        nextLog,
+      );
+    });
+
+    it('surfaces QuotaExceededError when persisting experiment log', () => {
+      fakeLocalStorage.getObject.returns(null);
+      fakeLocalStorage.setObject.callsFake(key => {
+        if (key === EXPERIMENT_LOG_STORAGE_KEY) {
+          const err = new Error('Simulated quota exceeded');
+          err.name = 'QuotaExceededError';
+          throw err;
+        }
+      });
+
+      createService().init();
+
+      store.setExperimentLog({
+        version: 1,
+        events: [
+          {
+            type: 'search',
+            timestamp: '2020-01-01T00:00:00.000Z',
+            documentUri: 'http://d',
+            searchRowId: 'r',
+            query: 'q',
+            schemaTag: 't',
+            annotationIdsCreated: [],
+          },
+        ],
+        annotationStatuses: {},
+      });
+
+      assert.calledWith(
+        fakeToastMessenger.error,
+        'Could not save the experiment log: storage is full. Download or clear the log.',
+      );
+    });
   });
 
   describe('when another tab updates storage', () => {
@@ -259,6 +395,31 @@ describe('PersistedAISearchService', () => {
       );
     });
 
+    it('hydrates experiment log from storage event payload', () => {
+      fakeLocalStorage.getObject.returns(null);
+
+      createService().init();
+
+      const next = {
+        version: 1,
+        events: [
+          {
+            type: 'rerun-search',
+            timestamp: '2020-01-02T00:00:00.000Z',
+            documentUri: 'http://d',
+            searchRowId: 'r',
+            query: 'q',
+            schemaTag: 't',
+          },
+        ],
+        annotationStatuses: {},
+      };
+
+      triggerStorage(EXPERIMENT_LOG_STORAGE_KEY, JSON.stringify(next));
+
+      assert.deepEqual(store.getState().sidebarPanels.experimentLog, next);
+    });
+
     it('does not hydrate when payload matches current state', () => {
       const initial = {
         rows: [],
@@ -299,6 +460,40 @@ describe('PersistedAISearchService', () => {
       assert.deepEqual(store.getState().sidebarPanels.aiSearch, {
         rows: [],
         schemaTagColors: {},
+      });
+    });
+
+    it('hydrates empty experiment log when key is removed', () => {
+      const persisted = {
+        version: 1,
+        events: [
+          {
+            type: 'search',
+            timestamp: '2020-01-01T00:00:00.000Z',
+            documentUri: 'http://d',
+            searchRowId: 'r',
+            query: 'q',
+            schemaTag: 't',
+            annotationIdsCreated: [],
+          },
+        ],
+        annotationStatuses: {},
+      };
+      fakeLocalStorage.getObject.callsFake(key => {
+        if (key === EXPERIMENT_LOG_STORAGE_KEY) {
+          return persisted;
+        }
+        return null;
+      });
+
+      createService().init();
+
+      triggerStorage(EXPERIMENT_LOG_STORAGE_KEY, null);
+
+      assert.deepEqual(store.getState().sidebarPanels.experimentLog, {
+        version: 1,
+        events: [],
+        annotationStatuses: {},
       });
     });
   });

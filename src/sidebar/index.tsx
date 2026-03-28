@@ -34,6 +34,7 @@ import { PersistedDefaultsService } from './services/persisted-defaults';
 import { RouterService } from './services/router';
 // import { ReductoService } from './services/reducto';
 import { ClaudeService } from './services/claude';
+import { ExperimentLogService } from './services/experiment-log';
 import { ServiceURLService } from './services/service-url';
 import { SessionService } from './services/session';
 import { StreamFilter } from './services/stream-filter';
@@ -191,7 +192,8 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('threadsService', ThreadsService)
     .register('thumbnailService', ThumbnailService)
     .register('toastMessenger', ToastMessengerService)
-    .register('store', { factory: createSidebarStore });
+    .register('store', { factory: createSidebarStore })
+    .register('experimentLog', ExperimentLogService);
 
   // Register utility values/classes.
   //

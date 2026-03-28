@@ -21,6 +21,7 @@ import {
 import type { SidebarStore } from '../store';
 import type { AnnotationActivityService } from './annotation-activity';
 import type { APIService } from './api';
+import type { ExperimentLogService } from './experiment-log';
 
 export type MentionsOptions =
   | {
@@ -43,17 +44,20 @@ export type MentionsOptions =
 export class AnnotationsService {
   private _activity: AnnotationActivityService;
   private _api: APIService;
+  private _experimentLog: ExperimentLogService;
   private _settings: SidebarSettings;
   private _store: SidebarStore;
 
   constructor(
     annotationActivity: AnnotationActivityService,
     api: APIService,
+    experimentLog: ExperimentLogService,
     settings: SidebarSettings,
     store: SidebarStore,
   ) {
     this._activity = annotationActivity;
     this._api = api;
+    this._experimentLog = experimentLog;
     this._settings = settings;
     this._store = store;
   }
@@ -235,11 +239,31 @@ export class AnnotationsService {
 
   /**
    * Delete an annotation via the API and update the store.
+   * @param skipExperimentLog — set true when reject already logged (avoid duplicate delete event).
    */
-  async delete(annotation: SavedAnnotation) {
+  async delete(
+    annotation: SavedAnnotation,
+    opts?: { skipExperimentLog?: boolean },
+  ) {
     await this._api.annotation.delete({ id: annotation.id });
     this._activity.reportActivity('delete', annotation);
     this._store.removeAnnotations([annotation]);
+
+    if (!opts?.skipExperimentLog) {
+      const tags = annotation.tags ?? [];
+      const isAi =
+        tags.includes('ai-pending') || tags.includes('ai-user-approved');
+      if (isAi && annotation.id) {
+        const schemaTag =
+          tags.find(t => t !== 'ai-pending' && t !== 'ai-user-approved') ?? '';
+        this._experimentLog.logAnnotationDeleted({
+          annotationId: annotation.id,
+          quoteText: metadata.quote(annotation) ?? '',
+          schemaTag,
+          documentUri: annotation.uri,
+        });
+      }
+    }
   }
 
   /**
@@ -359,6 +383,15 @@ export class AnnotationsService {
       }
 
       this._store.addAnnotations([savedAnnotation]);
+
+      this._experimentLog.logAccept({
+        annotationId: savedAnnotation.id!,
+        quoteText: metadata.quote(savedAnnotation) ?? '',
+        schemaTag:
+          tags.find(t => t !== 'ai-pending' && t !== 'ai-user-approved') ?? '',
+        documentUri: savedAnnotation.uri,
+      });
+
       return savedAnnotation;
     }
 
@@ -378,7 +411,16 @@ export class AnnotationsService {
           });
         }
       }
-      await this.delete(annotation);
+
+      this._experimentLog.logReject({
+        annotationId: annotation.id!,
+        quoteText: metadata.quote(annotation) ?? '',
+        schemaTag:
+          tags.find(t => t !== 'ai-pending' && t !== 'ai-user-approved') ?? '',
+        documentUri: annotation.uri,
+      });
+
+      await this.delete(annotation, { skipExperimentLog: true });
       return annotation;
     }
 

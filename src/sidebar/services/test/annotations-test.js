@@ -91,6 +91,12 @@ describe('AnnotationsService', () => {
 
     setLoggedIn(true);
 
+    const fakeExperimentLog = {
+      logAccept: sinon.stub(),
+      logReject: sinon.stub(),
+      logAnnotationDeleted: sinon.stub(),
+    };
+
     $imports.$mock({
       '../helpers/annotation-metadata': fakeMetadata,
       '../helpers/permissions': {
@@ -104,6 +110,7 @@ describe('AnnotationsService', () => {
     svc = new AnnotationsService(
       fakeAnnotationActivity,
       fakeApi,
+      fakeExperimentLog,
       fakeSettings,
       fakeStore,
     );

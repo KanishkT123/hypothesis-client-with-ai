@@ -36,6 +36,84 @@ export type AISearchState = {
   schemaTagColors: Record<string, string>;
 };
 
+/** Single-participant HCI experiment log (persisted via `PersistedAISearchService`). */
+export type ExperimentEvent =
+  | {
+      type: 'search';
+      timestamp: string;
+      documentUri: string;
+      searchRowId: string;
+      query: string;
+      schemaTag: string;
+      annotationIdsCreated: string[];
+    }
+  | {
+      type: 'accept';
+      timestamp: string;
+      documentUri: string;
+      annotationId: string;
+      quoteText: string;
+      schemaTag: string;
+    }
+  | {
+      type: 'reject';
+      timestamp: string;
+      documentUri: string;
+      annotationId: string;
+      quoteText: string;
+      schemaTag: string;
+    }
+  | {
+      type: 'rerun-search';
+      timestamp: string;
+      documentUri: string;
+      searchRowId: string;
+      query: string;
+      schemaTag: string;
+    }
+  | {
+      type: 'delete-pending';
+      timestamp: string;
+      documentUri: string;
+      searchRowId: string;
+      query: string;
+      schemaTag: string;
+    }
+  | {
+      type: 'delete-all';
+      timestamp: string;
+      documentUri: string;
+      searchRowId: string;
+      query: string;
+      schemaTag: string;
+    }
+  | {
+      type: 'annotation-deleted';
+      timestamp: string;
+      documentUri: string;
+      annotationId: string;
+      quoteText: string;
+      schemaTag: string;
+    };
+
+export type ExperimentAnnotationStatus = {
+  annotationId: string;
+  documentUri: string;
+  schemaTag: string;
+  quoteText: string;
+  searchRowId: string;
+  query: string;
+  status: 'suggested' | 'accepted' | 'rejected';
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+export type ExperimentLogState = {
+  version: 1;
+  events: ExperimentEvent[];
+  annotationStatuses: Record<string, ExperimentAnnotationStatus>;
+};
+
 export type State = {
   /**
    * The `panelName` of the currently-active sidebar panel.
@@ -56,6 +134,9 @@ export type State = {
    * Persisted separately from `aiSearch`; see `PersistedAISearchService`.
    */
   aiSearchNegativeExamples: AISearchNegativeExample[];
+
+  /** AI search experiment log; persisted under `hypothesis.aiSearch.experimentLog`. */
+  experimentLog: ExperimentLogState;
 };
 
 const initialAiSearch: AISearchState = {
@@ -63,10 +144,17 @@ const initialAiSearch: AISearchState = {
   schemaTagColors: {},
 };
 
+export const emptyExperimentLog = (): ExperimentLogState => ({
+  version: 1,
+  events: [],
+  annotationStatuses: {},
+});
+
 const initialState: State = {
   activePanelName: null,
   aiSearch: initialAiSearch, //TODO: Rename
   aiSearchNegativeExamples: [],
+  experimentLog: emptyExperimentLog(),
 };
 
 const reducers = {
@@ -278,6 +366,18 @@ const reducers = {
       aiSearchNegativeExamples: action.examples,
     };
   },
+
+  SET_EXPERIMENT_LOG(state: State, action: { experimentLog: ExperimentLogState }) {
+    return {
+      experimentLog: action.experimentLog,
+    };
+  },
+
+  HYDRATE_EXPERIMENT_LOG(state: State, action: { experimentLog: ExperimentLogState }) {
+    return {
+      experimentLog: action.experimentLog,
+    };
+  },
 };
 
 /**
@@ -362,6 +462,14 @@ function hydrateAISearchNegativeExamples(examples: AISearchNegativeExample[]) {
   });
 }
 
+function setExperimentLog(experimentLog: ExperimentLogState) {
+  return makeAction(reducers, 'SET_EXPERIMENT_LOG', { experimentLog });
+}
+
+function hydrateExperimentLog(experimentLog: ExperimentLogState) {
+  return makeAction(reducers, 'HYDRATE_EXPERIMENT_LOG', { experimentLog });
+}
+
 /**
  * Is the panel indicated by `panelName` currently active (open)?
  */
@@ -379,6 +487,10 @@ function aiSearchSchemaTagColors(state: State) {
 
 function aiSearchNegativeExamples(state: State) {
   return state.aiSearchNegativeExamples;
+}
+
+function experimentLog(state: State) {
+  return state.experimentLog;
 }
 
 export const sidebarPanelsModule = createStoreModule(initialState, {
@@ -399,6 +511,8 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     addAISearchNegativeExample,
     removeAISearchNegativeExample,
     hydrateAISearchNegativeExamples,
+    setExperimentLog,
+    hydrateExperimentLog,
   },
 
   selectors: {
@@ -406,5 +520,6 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     aiSearchRows,
     aiSearchSchemaTagColors,
     aiSearchNegativeExamples,
+    experimentLog,
   },
 });

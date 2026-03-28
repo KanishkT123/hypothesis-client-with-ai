@@ -29,6 +29,15 @@ describe('sidebar/store/modules/sidebar-panels', () => {
         [],
       );
     });
+
+    it('sets initial `experimentLog` to empty version-1 state', () => {
+      const log = getSidebarPanelsState().experimentLog;
+      assert.deepEqual(log, {
+        version: 1,
+        events: [],
+        annotationStatuses: {},
+      });
+    });
   });
 
   describe('reducers', () => {

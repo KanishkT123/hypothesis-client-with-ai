@@ -31,9 +31,11 @@ import {
   listStrictAISearchRowPendingAnnotations,
   tagsAfterRemovingAISearchRowSchemaTag,
 } from '../../helpers/claude-ai-search-user-message';
+import { quote as annotationQuote } from '../../helpers/annotation-metadata';
 import { mergeAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
 import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
+import type { ExperimentLogService } from '../../services/experiment-log';
 import type { SavedAnnotation } from '../../../types/api';
 import type { AnnotationsService } from '../../services/annotations';
 import type { APIService } from '../../services/api';
@@ -52,6 +54,7 @@ import SearchField from './SearchField';
 
 type AISearchPanelProps = {
   annotationsService: AnnotationsService;
+  experimentLog: ExperimentLogService;
   frameSync: FrameSyncService;
   // reducto: ReductoService;
   claude: ClaudeService;
@@ -61,6 +64,7 @@ type AISearchPanelProps = {
 
 function AISearchPanel({
   annotationsService,
+  experimentLog,
   frameSync,
   // reducto,
   claude,
@@ -174,17 +178,28 @@ function AISearchPanel({
         .map(a => a.id)
         .filter((id): id is string => typeof id === 'string');
 
+      const rowId = options?.replaceRowId ?? crypto.randomUUID();
+
       if (options?.replaceRowId) {
         store.setAISearchRowAnnotationIds(options.replaceRowId, newIds);
       } else {
         const row: AISearchRow = {
-          id: crypto.randomUUID(),
+          id: rowId,
           schemaTag: schemaTagForRow,
           query,
           annotationIds: newIds,
         };
         store.addAISearchRow(row);
       }
+
+      experimentLog.logSearch({
+        query,
+        schemaTag: schemaTagForRow,
+        searchRowId: rowId,
+        documentUri: documentURL,
+        annotationIdsCreated: newIds,
+        quoteTexts: created.map(a => annotationQuote(a) ?? ''),
+      });
 
       let successMsg = `Created ${created.length} annotation(s) from AI results.`;
       if (skippedDuplicate > 0) {
@@ -247,6 +262,13 @@ function AISearchPanel({
         store.removeAnnotationIdsFromAISearchRows(deletedIds);
       }
 
+      experimentLog.logRerunSearch({
+        searchRowId: row.id,
+        query: row.query,
+        schemaTag: row.schemaTag,
+        documentUri: documentURL,
+      });
+
       await runAISearch(row.schemaTag, row.query, { replaceRowId: row.id });
     } catch (err) {
       console.error(err);
@@ -279,6 +301,12 @@ function AISearchPanel({
       }
       if (deletedIds.length) {
         store.removeAnnotationIdsFromAISearchRows(deletedIds);
+        experimentLog.logDeletePending({
+          searchRowId: row.id,
+          query: row.query,
+          schemaTag: row.schemaTag,
+          documentUri: documentURL,
+        });
         toastMessenger.success(
           `Deleted ${deletedIds.length} pending annotation(s).`,
           { visuallyHidden: true },
@@ -347,6 +375,14 @@ function AISearchPanel({
         store.removeAnnotationIdsFromAISearchRows(touchedIds);
       }
       store.removeAISearchRow(row.id);
+
+      experimentLog.logDeleteAll({
+        searchRowId: row.id,
+        query: row.query,
+        schemaTag: row.schemaTag,
+        documentUri: documentURL,
+      });
+
       toastMessenger.success('AI search row removed.', { visuallyHidden: true });
     } catch (err) {
       console.error(err);
@@ -721,6 +757,7 @@ function AISearchPanel({
 
 export default withServices(AISearchPanel, [
   'annotationsService',
+  'experimentLog',
   'frameSync',
   // 'reducto',
   'claude',

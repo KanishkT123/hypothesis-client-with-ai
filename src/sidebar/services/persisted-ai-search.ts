@@ -2,9 +2,16 @@ import type { SidebarStore } from '../store';
 import type {
   AISearchNegativeExample,
   AISearchState,
+  ExperimentLogState,
 } from '../store/modules/sidebar-panels';
+import { emptyExperimentLog } from '../store/modules/sidebar-panels';
 import { watch } from '../util/watch';
+import {
+  EXPERIMENT_LOG_STORAGE_KEY,
+  parseExperimentLogState,
+} from './experiment-log';
 import type { LocalStorageService } from './local-storage';
+import type { ToastMessengerService } from './toast-messenger';
 
 /** `localStorage` key for persisted AI search rows and tag colors. */
 export const AI_SEARCH_STORAGE_KEY = 'hypothesis.aiSearch.history';
@@ -12,6 +19,8 @@ export const AI_SEARCH_STORAGE_KEY = 'hypothesis.aiSearch.history';
 /** `localStorage` key for locally stored declined ai-pending snapshots. */
 export const AI_SEARCH_NEGATIVE_EXAMPLES_KEY =
   'hypothesis.aiSearch.negativeExamples';
+
+export { EXPERIMENT_LOG_STORAGE_KEY } from './experiment-log';
 
 const emptyAiSearch = (): AISearchState => ({
   rows: [],
@@ -136,15 +145,18 @@ export class PersistedAISearchService {
   private _storage: LocalStorageService;
   private _store: SidebarStore;
   private _window: Window;
+  private _toastMessenger: ToastMessengerService;
 
   constructor(
     localStorage: LocalStorageService,
     store: SidebarStore,
     $window: Window,
+    toastMessenger: ToastMessengerService,
   ) {
     this._storage = localStorage;
     this._store = store;
     this._window = $window;
+    this._toastMessenger = toastMessenger;
   }
 
   private _syncFromLocalStorage<T>(
@@ -205,6 +217,12 @@ export class PersistedAISearchService {
       this._store.hydrateAISearchNegativeExamples(negParsed);
     }
 
+    const expRaw = this._storage.getObject<unknown>(EXPERIMENT_LOG_STORAGE_KEY);
+    const expParsed = parseExperimentLogState(expRaw);
+    if (expParsed) {
+      this._store.hydrateExperimentLog(expParsed);
+    }
+
     watch(
       this._store.subscribe,
       () => this._store.getState().sidebarPanels.aiSearch,
@@ -219,6 +237,26 @@ export class PersistedAISearchService {
       () => this._store.getState().sidebarPanels.aiSearchNegativeExamples,
       current => {
         this._storage.setObject(AI_SEARCH_NEGATIVE_EXAMPLES_KEY, current);
+      },
+      (a, b) => JSON.stringify(a) === JSON.stringify(b),
+    );
+
+    watch(
+      this._store.subscribe,
+      () => this._store.getState().sidebarPanels.experimentLog,
+      current => {
+        try {
+          this._storage.setObject(EXPERIMENT_LOG_STORAGE_KEY, current);
+        } catch (e: unknown) {
+          const name = e instanceof DOMException ? e.name : (e as Error)?.name;
+          if (name === 'QuotaExceededError') {
+            this._toastMessenger.error(
+              'Could not save the experiment log: storage is full. Download or clear the log.',
+            );
+          } else {
+            console.warn('[experimentLog] Failed to persist', e);
+          }
+        }
       },
       (a, b) => JSON.stringify(a) === JSON.stringify(b),
     );
@@ -248,21 +286,37 @@ export class PersistedAISearchService {
         e,
       );
 
+    const syncExperimentLog = (e?: StorageEvent) =>
+      this._syncFromLocalStorage(
+        {
+          storageKey: EXPERIMENT_LOG_STORAGE_KEY,
+          parse: parseExperimentLogState,
+          empty: emptyExperimentLog,
+          getCurrent: () =>
+            this._store.getState().sidebarPanels.experimentLog,
+          hydrate: v => this._store.hydrateExperimentLog(v),
+        },
+        e,
+      );
+
     this._window.addEventListener('storage', (e: StorageEvent) => {
       syncHistory(e);
       syncNegatives(e);
+      syncExperimentLog(e);
     });
 
     this._window.document.addEventListener('visibilitychange', () => {
       if (this._window.document.visibilityState === 'visible') {
         syncHistory();
         syncNegatives();
+        syncExperimentLog();
       }
     });
 
     this._window.addEventListener('focus', () => {
       syncHistory();
       syncNegatives();
+      syncExperimentLog();
     });
   }
 }
