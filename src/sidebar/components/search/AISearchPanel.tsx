@@ -34,6 +34,7 @@ import {
 } from '../../helpers/claude-ai-search-user-message';
 import { quote as annotationQuote } from '../../helpers/annotation-metadata';
 import { mergeAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
+import { formatSidebarTagFilter } from '../../helpers/filter-query-for-tag';
 import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
 import type { ExperimentLogService } from '../../services/experiment-log';
@@ -701,7 +702,26 @@ function AISearchPanel({
                             />
                           </td>
                           <td className="py-1 pr-2 align-middle break-all min-w-0 text-xs leading-snug">
-                            {row.schemaTag || (
+                            {tagKey ? (
+                              <button
+                                type="button"
+                                className={classnames(
+                                  'm-0 w-full max-w-full min-w-0 border-0 bg-transparent p-0',
+                                  'text-left font-inherit text-xs leading-snug text-color-text',
+                                  'cursor-pointer break-all hover:text-color-text hover:underline',
+                                  'rounded focus-visible-ring',
+                                )}
+                                title={`Show annotations with tag: ${tagKey}`}
+                                aria-label={`Filter sidebar to annotations tagged ${tagKey}`}
+                                onClick={() => {
+                                  store.setFilterQuery(
+                                    formatSidebarTagFilter(tagKey),
+                                  );
+                                }}
+                              >
+                                {row.schemaTag}
+                              </button>
+                            ) : (
                               <span className="text-color-text-light">—</span>
                             )}
                           </td>
