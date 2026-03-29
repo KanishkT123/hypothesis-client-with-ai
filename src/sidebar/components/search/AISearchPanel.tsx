@@ -52,6 +52,9 @@ import SidebarPanel from '../SidebarPanel';
 import FilterControls from './FilterControls';
 import SearchField from './SearchField';
 
+const aiSearchHistoryActionButtonClass =
+  'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring';
+
 type AISearchPanelProps = {
   annotationsService: AnnotationsService;
   experimentLog: ExperimentLogService;
@@ -467,40 +470,44 @@ function AISearchPanel({
             />
             {aiRows.length > 0 && (
               <div className="flex flex-col gap-y-1">
-                <table className="w-full border-collapse text-left text-sm text-color-text">
+                <table className="w-full table-auto border-collapse text-left text-sm text-color-text">
+                  <colgroup>
+                    <col className="w-14" />
+                    <col />
+                    <col />
+                    <col className="w-[5.5rem]" />
+                    <col className="w-11" />
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-grey-3 text-color-text-light">
-                      <th className="py-1 w-10" scope="col">
-                        <span className="sr-only">Rerun</span>
-                      </th>
                       <th className="py-1 pr-2 font-normal" scope="col">
                         Color
                       </th>
-                      <th className="py-1 pr-2 font-normal" scope="col">
+                      <th
+                        className="py-1 pr-2 font-normal text-xs leading-snug"
+                        scope="col"
+                      >
                         Tag
                       </th>
-                      <th className="py-1 pr-2 font-normal" scope="col">
+                      <th
+                        className="py-1 pr-2 font-normal text-xs leading-snug"
+                        scope="col"
+                      >
                         Query
                       </th>
                       <th
                         className="py-1 pr-2 text-right font-normal tabular-nums"
                         scope="col"
-                        title="AI-generated pending annotations"
+                        title="Pending (strict AI) and total matching annotations for this tag and query"
                       >
-                        Pending
+                        Counts
                       </th>
                       <th
-                        className="py-1 pr-2 text-right font-normal tabular-nums"
+                        className="py-1 text-center font-normal"
                         scope="col"
-                        title="All annotations matching this tag and query"
+                        title="Rerun search, delete pending, delete all"
                       >
-                        Total
-                      </th>
-                      <th className="py-1 w-10" scope="col">
-                        <span className="sr-only">Delete pending</span>
-                      </th>
-                      <th className="py-1 w-10" scope="col">
-                        <span className="sr-only">Delete all</span>
+                        Actions
                       </th>
                     </tr>
                   </thead>
@@ -531,28 +538,6 @@ function AISearchPanel({
                           className="border-b border-grey-2 last:border-0"
                         >
                           <td className="py-1 pr-2 align-middle">
-                            <button
-                              type="button"
-                              className={classnames(
-                                'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2',
-                                'transition-colors duration-200 focus-visible-ring',
-                              )}
-                              disabled={
-                                aiSearchBusy ||
-                                deletingRowId === row.id ||
-                                rerunningRowId === row.id
-                              }
-                              title="Rerun search"
-                              aria-label="Rerun search"
-                              onClick={() => onRerunRow(row)}
-                            >
-                              <RedoIcon
-                                className="w-em h-em"
-                                title="Rerun search"
-                              />
-                            </button>
-                          </td>
-                          <td className="py-1 pr-2 align-middle">
                             <input
                               aria-label={`Highlight color for tag ${tagKey || '(empty)'}`}
                               className="h-8 w-10 cursor-pointer rounded border border-grey-3 bg-transparent p-0"
@@ -576,81 +561,92 @@ function AISearchPanel({
                               }}
                             />
                           </td>
-                          <td className="py-1 pr-2 align-middle break-all">
+                          <td className="py-1 pr-2 align-middle break-all min-w-0 text-xs leading-snug">
                             {row.schemaTag || (
                               <span className="text-color-text-light">—</span>
                             )}
                           </td>
-                          <td className="py-1 pr-2 align-middle break-all">
+                          <td className="py-1 pr-2 align-middle break-all min-w-0 text-xs leading-snug">
                             {row.query}
                           </td>
                           <td className="py-1 pr-2 text-right align-middle tabular-nums">
-                            {documentURL
-                              ? countAISearchRowPendingAnnotations(
-                                  savedAnnotations,
-                                  documentURL,
-                                  row.schemaTag,
-                                  row.query,
-                                )
-                              : 0}
-                          </td>
-                          <td className="py-1 pr-2 text-right align-middle tabular-nums">
-                            {documentURL
-                              ? countAISearchRowTotalAnnotations(
-                                  savedAnnotations,
-                                  documentURL,
-                                  row.schemaTag,
-                                  row.query,
-                                )
-                              : 0}
+                            <span
+                              className="cursor-default"
+                              title="Strict AI-pending annotations for this tag and query on this document"
+                              aria-label={`${pendingCount} pending`}
+                            >
+                              {pendingCount}
+                            </span>
+                            <span className="text-color-text-light" aria-hidden="true">
+                              {' '}
+                              |{' '}
+                            </span>
+                            <span
+                              className="cursor-default"
+                              title="Total matching annotations on this document: manual, accepted suggestions, and pending suggestions"
+                              aria-label={`${totalCount} total`}
+                            >
+                              {totalCount}
+                            </span>
                           </td>
                           <td className="py-1 align-middle">
-                            <button
-                              type="button"
-                              className={classnames(
-                                'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2',
-                                'transition-colors duration-200 focus-visible-ring',
-                              )}
-                              disabled={
-                                aiSearchBusy ||
-                                deletingRowId === row.id ||
-                                rerunningRowId === row.id ||
-                                !documentURL ||
-                                pendingCount === 0
-                              }
-                              title="Delete pending AI annotations for this tag and query"
-                              aria-label="Delete pending"
-                              onClick={() => onDeletePending(row)}
-                            >
-                              <CancelIcon
-                                className="w-em h-em"
-                                title="Delete pending"
-                              />
-                            </button>
-                          </td>
-                          <td className="py-1 align-middle">
-                            <button
-                              type="button"
-                              className={classnames(
-                                'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2',
-                                'transition-colors duration-200 focus-visible-ring',
-                              )}
-                              disabled={
-                                aiSearchBusy ||
-                                deletingRowId === row.id ||
-                                rerunningRowId === row.id ||
-                                !documentURL ||
-                                totalCount === 0
-                              }
-                              title="Delete all matching annotations for this tag and query"
-                              aria-label="Delete all"
-                              onClick={() => onDeleteAll(row)}
-                            >
-                              <TrashIcon
-                                className="w-em h-em"
-                                title="Delete all"
-                              />
-                            </button>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <button
+                                type="button"
+                                className={aiSearchHistoryActionButtonClass}
+                                disabled={
+                                  aiSearchBusy ||
+                                  deletingRowId === row.id ||
+                                  rerunningRowId === row.id
+                                }
+                                title="Rerun search"
+                                aria-label="Rerun search"
+                                onClick={() => onRerunRow(row)}
+                              >
+                                <RedoIcon
+                                  className="w-em h-em"
+                                  title="Rerun search"
+                                />
+                              </button>
+                              <button
+                                type="button"
+                                className={aiSearchHistoryActionButtonClass}
+                                disabled={
+                                  aiSearchBusy ||
+                                  deletingRowId === row.id ||
+                                  rerunningRowId === row.id ||
+                                  !documentURL ||
+                                  pendingCount === 0
+                                }
+                                title="Delete pending AI annotations for this tag and query"
+                                aria-label="Delete pending"
+                                onClick={() => onDeletePending(row)}
+                              >
+                                <CancelIcon
+                                  className="w-em h-em"
+                                  title="Delete pending"
+                                />
+                              </button>
+                              <button
+                                type="button"
+                                className={aiSearchHistoryActionButtonClass}
+                                disabled={
+                                  aiSearchBusy ||
+                                  deletingRowId === row.id ||
+                                  rerunningRowId === row.id ||
+                                  !documentURL ||
+                                  totalCount === 0
+                                }
+                                title="Delete all matching annotations for this tag and query"
+                                aria-label="Delete all"
+                                onClick={() => onDeleteAll(row)}
+                              >
+                                <TrashIcon
+                                  className="w-em h-em"
+                                  title="Delete all"
+                                />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -658,12 +654,10 @@ function AISearchPanel({
                   </tbody>
                 </table>
                 <p className="text-color-text-light text-xs leading-snug">
-                  Highlight color is per tag; rows that share a tag share this
-                  color. Pending counts strict ai-pending annotations for this tag
-                  and query; Total includes approved, pending, and manual
-                  annotations with the same tag and query on this document. Delete
-                  all removes this row’s tag or deletes annotations when it is the
-                  only content tag (see confirmation).
+                  Highlight color is per tag (rows sharing a tag share the color).
+                  Hover the numbers under Counts or the action icons for details.
+                  Delete all may remove this row’s tag or delete annotations when
+                  it is the only content tag—see the confirmation dialog.
                 </p>
               </div>
             )}
