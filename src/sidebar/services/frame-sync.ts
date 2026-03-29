@@ -455,9 +455,12 @@ export class FrameSyncService {
     });
 
     // Anchoring an annotation in the frame completed
-    guestRPC.on('syncAnchoringStatus', ({ $tag, $orphan }: AnnotationData) => {
+    guestRPC.on('syncAnchoringStatus', (ann: AnnotationData) => {
+      const { $tag, $orphan } = ann;
       this._inFrame.add($tag);
       this._updateAnchorStatus($tag, $orphan ? 'orphan' : 'anchored');
+
+      this._store.addAnnotations([ann]);
 
       if ($tag === this._pendingHoverTag) {
         this._pendingHoverTag = null;

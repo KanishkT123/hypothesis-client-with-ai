@@ -167,6 +167,7 @@ describe('FrameSyncService', () => {
           this.setState({ contentInfo: info });
         },
 
+        addAnnotations: sinon.stub(),
         findIDsForTags: sinon.stub().returns([]),
         focusedGroup: sinon.stub().returns({ id: 'foobar' }),
         getFocusFilters: sinon.stub().returns({}),
@@ -752,6 +753,25 @@ describe('FrameSyncService', () => {
       expireDebounceTimeout(clock);
 
       assert.calledWith(fakeStore.updateAnchorStatus, { t1: 'anchored' });
+    });
+
+    it('merges full annotation payload into the store', () => {
+      const ann = {
+        $tag: 't1',
+        $orphan: false,
+        id: 'id1',
+        target: [
+          {
+            selector: [
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+              { type: 'TextQuoteSelector', exact: 'hello' },
+            ],
+          },
+        ],
+      };
+      emitGuestEvent('syncAnchoringStatus', ann);
+
+      assert.calledWith(fakeStore.addAnnotations, [ann]);
     });
 
     it('coalesces multiple "syncAnchoringStatus" messages', () => {

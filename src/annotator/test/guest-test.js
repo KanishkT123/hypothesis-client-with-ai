@@ -190,7 +190,7 @@ describe('Guest', () => {
       getAnnotatableRange: sinon.stub().returnsArg(0),
       canStyleClusteredHighlights: sinon.stub().returns(false),
       contentContainer: sinon.stub().returns({}),
-      describe: sinon.stub(),
+      describe: sinon.stub().resolves([]),
       destroy: sinon.stub(),
       fitSideBySide: sinon.stub().returns(false),
       getMetadata: sinon.stub().resolves({
@@ -1899,6 +1899,50 @@ describe('Guest', () => {
       const anchors = await guest.anchor({ target: [target] });
 
       assert.equal(anchors.length, 1);
+    });
+
+    it('merges TextPositionSelector and PageSelector from describe for quote-only targets', async () => {
+      const guest = createGuest();
+      fakeIntegration.anchor.resolves(range);
+      const pos = { type: 'TextPositionSelector', start: 10, end: 15 };
+      const page = { type: 'PageSelector', index: 2 };
+      fakeIntegration.describe.resolves([pos, page]);
+
+      const target = {
+        selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+      };
+      await guest.anchor({ target: [target] });
+
+      assert.include(
+        target.selector,
+        pos,
+        'merged TextPositionSelector from describe',
+      );
+      assert.include(
+        target.selector,
+        page,
+        'merged PageSelector from describe',
+      );
+      assert.equal(
+        target.selector.filter(s => s.type === 'TextQuoteSelector').length,
+        1,
+      );
+    });
+
+    it('does not call describe to enrich when selectors are not quote-only', async () => {
+      const guest = createGuest();
+      fakeIntegration.anchor.resolves(range);
+      fakeIntegration.describe.resetHistory();
+
+      const target = {
+        selector: [
+          { type: 'TextQuoteSelector', exact: 'hello' },
+          { type: 'TextPositionSelector', start: 0, end: 5 },
+        ],
+      };
+      await guest.anchor({ target: [target] });
+
+      assert.notCalled(fakeIntegration.describe);
     });
 
     it('returns anchors for an annotation with a shape selector', async () => {

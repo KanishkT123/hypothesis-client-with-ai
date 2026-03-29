@@ -46,6 +46,10 @@ import {
 import { SelectionObserver } from './selection-observer';
 import { frameFillsAncestor } from './util/frame';
 import { isEditableContext } from './util/node';
+import {
+  isQuoteOnlySelectors,
+  mergeAnchoringSelectors,
+} from './util/merge-anchoring-selectors';
 import { normalizeURI } from './util/url';
 
 /** HTML element created by the highlighter with an associated annotation. */
@@ -911,6 +915,38 @@ export class Guest
   private _globalKeyboardListenerCleanup?: () => void;
 
   /**
+   * After quote-only targets anchor, derive TextPositionSelector / PageSelector
+   * via describe(trimmedRange) so the sidebar can sort by location.
+   */
+  private async _enrichQuoteOnlyTargets(anchors: Anchor[]): Promise<void> {
+    for (const anchor of anchors) {
+      if (!anchor.region || !isRange(anchor.region)) {
+        continue;
+      }
+      const { target } = anchor;
+      if (!isQuoteOnlySelectors(target.selector)) {
+        continue;
+      }
+      try {
+        const range = resolveAnchor(anchor);
+        if (!range) {
+          continue;
+        }
+        const trimmed = this._integration.getAnnotatableRange(range);
+        if (!trimmed) {
+          continue;
+        }
+        const described = await Promise.resolve(
+          this._integration.describe(this.element, trimmed),
+        );
+        target.selector = mergeAnchoringSelectors(target.selector, described);
+      } catch {
+        // Leave selectors unchanged (quote-only).
+      }
+    }
+  }
+
+  /**
    * Anchor an annotation's selectors in the document.
    *
    * _Anchoring_ resolves a set of selectors to a concrete region of the document
@@ -1010,6 +1046,8 @@ export class Guest
     if (!this._annotations.has(annotation.$tag)) {
       return [];
     }
+
+    await this._enrichQuoteOnlyTargets(anchors);
 
     for (const anchor of anchors) {
       highlight(anchor);
