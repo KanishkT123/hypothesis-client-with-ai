@@ -55,6 +55,10 @@ import SearchField from './SearchField';
 const aiSearchHistoryActionButtonClass =
   'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring';
 
+/** Native title / aria-label for the history-table rerun (redo) control */
+const aiSearchRerunButtonHelpText =
+  'Delete all pending suggestions for this tag and query, then re-run the AI search using updated positive and negative annotation examples from all tags on this document.';
+
 type AISearchPanelProps = {
   annotationsService: AnnotationsService;
   experimentLog: ExperimentLogService;
@@ -472,40 +476,34 @@ function AISearchPanel({
               <div className="flex flex-col gap-y-1">
                 <table className="w-full table-auto border-collapse text-left text-sm text-color-text">
                   <colgroup>
-                    <col className="w-14" />
+                    <col className="w-min" />
                     <col />
                     <col />
-                    <col className="w-[5.5rem]" />
-                    <col className="w-11" />
+                    <col className="w-min" />
+                    <col className="w-min" />
                   </colgroup>
                   <thead>
                     <tr className="border-b border-grey-3 text-color-text-light">
-                      <th className="py-1 pr-2 font-normal" scope="col">
-                        Color
+                      <th className="py-1 pr-2 text-sm font-normal" scope="col">
+                        <span className="sr-only">Color</span>
                       </th>
-                      <th
-                        className="py-1 pr-2 font-normal text-xs leading-snug"
-                        scope="col"
-                      >
+                      <th className="py-1 pr-2 text-sm font-normal" scope="col">
                         Tag
                       </th>
-                      <th
-                        className="py-1 pr-2 font-normal text-xs leading-snug"
-                        scope="col"
-                      >
+                      <th className="py-1 pr-2 text-sm font-normal" scope="col">
                         Query
                       </th>
                       <th
-                        className="py-1 pr-2 text-right font-normal tabular-nums"
+                        className="py-1 pr-2 text-right text-sm font-normal tabular-nums whitespace-nowrap"
                         scope="col"
                         title="Pending (strict AI) and total matching annotations for this tag and query"
                       >
                         Counts
                       </th>
                       <th
-                        className="py-1 text-center font-normal"
+                        className="py-1 text-center text-sm font-normal whitespace-nowrap"
                         scope="col"
-                        title="Rerun search, delete pending, delete all"
+                        title="Rerun AI search (hover the top icon for details), delete pending, delete all"
                       >
                         Actions
                       </th>
@@ -532,12 +530,25 @@ function AISearchPanel({
                             row.query,
                           )
                         : 0;
+                      const actionRowBusy =
+                        aiSearchBusy ||
+                        deletingRowId === row.id ||
+                        rerunningRowId === row.id;
+                      const rerunDisabled = actionRowBusy;
+                      const deletePendingDisabled =
+                        actionRowBusy ||
+                        !documentURL ||
+                        pendingCount === 0;
+                      const deleteAllDisabled =
+                        actionRowBusy ||
+                        !documentURL ||
+                        totalCount === 0;
                       return (
                         <tr
                           key={row.id}
                           className="border-b border-grey-2 last:border-0"
                         >
-                          <td className="py-1 pr-2 align-middle">
+                          <td className="py-1 pr-2 align-middle whitespace-nowrap w-min">
                             <input
                               aria-label={`Highlight color for tag ${tagKey || '(empty)'}`}
                               className="h-8 w-10 cursor-pointer rounded border border-grey-3 bg-transparent p-0"
@@ -569,10 +580,10 @@ function AISearchPanel({
                           <td className="py-1 pr-2 align-middle break-all min-w-0 text-xs leading-snug">
                             {row.query}
                           </td>
-                          <td className="py-1 pr-2 text-right align-middle tabular-nums">
+                          <td className="w-min py-1 pr-2 text-right align-middle tabular-nums whitespace-nowrap">
                             <span
-                              className="cursor-default"
                               title="Strict AI-pending annotations for this tag and query on this document"
+                              className="cursor-help tabular-nums"
                               aria-label={`${pendingCount} pending`}
                             >
                               {pendingCount}
@@ -582,69 +593,76 @@ function AISearchPanel({
                               |{' '}
                             </span>
                             <span
-                              className="cursor-default"
                               title="Total matching annotations on this document: manual, accepted suggestions, and pending suggestions"
+                              className="cursor-help tabular-nums"
                               aria-label={`${totalCount} total`}
                             >
                               {totalCount}
                             </span>
                           </td>
-                          <td className="py-1 align-middle">
-                            <div className="flex flex-col items-center gap-0.5">
+                          <td className="w-min py-1 align-middle whitespace-nowrap">
+                            <div className="flex w-min flex-col items-center gap-0.5">
                               <button
                                 type="button"
-                                className={aiSearchHistoryActionButtonClass}
-                                disabled={
-                                  aiSearchBusy ||
-                                  deletingRowId === row.id ||
-                                  rerunningRowId === row.id
-                                }
-                                title="Rerun search"
-                                aria-label="Rerun search"
-                                onClick={() => onRerunRow(row)}
+                                aria-disabled={rerunDisabled}
+                                tabIndex={rerunDisabled ? -1 : undefined}
+                                className={classnames(
+                                  aiSearchHistoryActionButtonClass,
+                                  rerunDisabled && 'opacity-50 cursor-not-allowed',
+                                )}
+                                title={aiSearchRerunButtonHelpText}
+                                aria-label={aiSearchRerunButtonHelpText}
+                                onClick={e => {
+                                  if (rerunDisabled) {
+                                    e.preventDefault();
+                                    return;
+                                  }
+                                  onRerunRow(row);
+                                }}
                               >
-                                <RedoIcon
-                                  className="w-em h-em"
-                                  title="Rerun search"
-                                />
+                                <RedoIcon className="w-em h-em" />
                               </button>
                               <button
                                 type="button"
-                                className={aiSearchHistoryActionButtonClass}
-                                disabled={
-                                  aiSearchBusy ||
-                                  deletingRowId === row.id ||
-                                  rerunningRowId === row.id ||
-                                  !documentURL ||
-                                  pendingCount === 0
-                                }
+                                aria-disabled={deletePendingDisabled}
+                                tabIndex={deletePendingDisabled ? -1 : undefined}
+                                className={classnames(
+                                  aiSearchHistoryActionButtonClass,
+                                  deletePendingDisabled &&
+                                    'opacity-50 cursor-not-allowed',
+                                )}
                                 title="Delete pending AI annotations for this tag and query"
                                 aria-label="Delete pending"
-                                onClick={() => onDeletePending(row)}
+                                onClick={e => {
+                                  if (deletePendingDisabled) {
+                                    e.preventDefault();
+                                    return;
+                                  }
+                                  onDeletePending(row);
+                                }}
                               >
-                                <CancelIcon
-                                  className="w-em h-em"
-                                  title="Delete pending"
-                                />
+                                <CancelIcon className="w-em h-em" />
                               </button>
                               <button
                                 type="button"
-                                className={aiSearchHistoryActionButtonClass}
-                                disabled={
-                                  aiSearchBusy ||
-                                  deletingRowId === row.id ||
-                                  rerunningRowId === row.id ||
-                                  !documentURL ||
-                                  totalCount === 0
-                                }
+                                aria-disabled={deleteAllDisabled}
+                                tabIndex={deleteAllDisabled ? -1 : undefined}
+                                className={classnames(
+                                  aiSearchHistoryActionButtonClass,
+                                  deleteAllDisabled &&
+                                    'opacity-50 cursor-not-allowed',
+                                )}
                                 title="Delete all matching annotations for this tag and query"
                                 aria-label="Delete all"
-                                onClick={() => onDeleteAll(row)}
+                                onClick={e => {
+                                  if (deleteAllDisabled) {
+                                    e.preventDefault();
+                                    return;
+                                  }
+                                  onDeleteAll(row);
+                                }}
                               >
-                                <TrashIcon
-                                  className="w-em h-em"
-                                  title="Delete all"
-                                />
+                                <TrashIcon className="w-em h-em" />
                               </button>
                             </div>
                           </td>
