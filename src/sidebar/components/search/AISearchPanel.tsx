@@ -72,11 +72,9 @@ function emitThrottledProgress(
   const isFirst = index === 0;
   const isLast = index === total - 1;
   const now = Date.now();
-  if (isFirst || isLast || now - lastEmitMs.current >= 1000) {
+  if (isFirst || isLast || now - lastEmitMs.current >= 5000) {
     lastEmitMs.current = now;
-    toastMessenger.notice(`${prefix} ${index + 1}/${total}`, {
-      autoDismiss: false,
-    });
+    toastMessenger.notice(`${prefix} ${index + 1}/${total}`);
   }
 }
 
@@ -197,7 +195,7 @@ function AISearchPanel({
       setClaudeRunStartedAt(Date.now());
       let claudeResult: ClaudeSearchResult;
       try {
-        toastMessenger.notice('Waiting on model', { autoDismiss: false });
+        toastMessenger.notice('Waiting on model');
         // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
         claudeResult = await claude.AISearchDocument({
           query: fullUserMessage,
@@ -229,7 +227,7 @@ function AISearchPanel({
 
       const tags = expectedTagsForStrictAISearchPending(tagTrim);
 
-      toastMessenger.notice('Creating annotations…', { autoDismiss: false });
+      toastMessenger.notice('Creating annotations…');
 
       const created = [];
       for (const quote of quotes) {

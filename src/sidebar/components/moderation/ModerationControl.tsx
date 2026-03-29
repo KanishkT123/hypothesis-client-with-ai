@@ -55,7 +55,7 @@ function ModerationControl({
       }
 
       if (messageType === 'notice') {
-        toastMessenger.notice(message, { autoDismiss: false });
+        toastMessenger.notice(message);
       } else {
         toastMessenger.error(message);
       }

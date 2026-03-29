@@ -248,13 +248,9 @@ export class ImportAnnotationsService {
     if (messageType === 'success') {
       this._toastMessenger.success(message);
     } else if (messageType === 'notice') {
-      this._toastMessenger.notice(message, {
-        autoDismiss: false,
-      });
+      this._toastMessenger.notice(message);
     } else if (messageType === 'error') {
-      this._toastMessenger.error(message, {
-        autoDismiss: false,
-      });
+      this._toastMessenger.error(message);
     }
 
     return results;
