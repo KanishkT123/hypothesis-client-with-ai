@@ -532,8 +532,8 @@ function AISearchPanel({
                         : 0;
                       const actionRowBusy =
                         aiSearchBusy ||
-                        deletingRowId === row.id ||
-                        rerunningRowId === row.id;
+                        deletingRowId !== null ||
+                        rerunningRowId !== null;
                       const rerunDisabled = actionRowBusy;
                       const deletePendingDisabled =
                         actionRowBusy ||
