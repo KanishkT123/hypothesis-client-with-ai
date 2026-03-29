@@ -1,17 +1,9 @@
 import type { SidebarStore } from '../store';
-import type {
-  ExperimentAnnotationStatus,
-  ExperimentEvent,
-  ExperimentLogState,
-} from '../store/modules/sidebar-panels';
+import type { ExperimentEvent, ExperimentLogState } from '../store/modules/sidebar-panels';
 import { emptyExperimentLog } from '../store/modules/sidebar-panels';
 import type { ToastMessengerService } from './toast-messenger';
 
-export type {
-  ExperimentAnnotationStatus,
-  ExperimentEvent,
-  ExperimentLogState,
-} from '../store/modules/sidebar-panels';
+export type { ExperimentEvent, ExperimentLogState } from '../store/modules/sidebar-panels';
 
 /** Persisted with other AI search data; see `PersistedAISearchService`. */
 export const EXPERIMENT_LOG_STORAGE_KEY = 'hypothesis.aiSearch.experimentLog';
@@ -25,7 +17,7 @@ let lastQuotaWarningAt = 0;
 let lastSizeWarningAt = 0;
 
 /**
- * Validate flat experiment log JSON from `localStorage`.
+ * Validate experiment log JSON from `localStorage`.
  */
 export function parseExperimentLogState(raw: unknown): ExperimentLogState | null {
   if (!raw || typeof raw !== 'object') {
@@ -38,25 +30,14 @@ export function parseExperimentLogState(raw: unknown): ExperimentLogState | null
   if (!Array.isArray(v.events)) {
     return null;
   }
-  if (
-    !v.annotationStatuses ||
-    typeof v.annotationStatuses !== 'object' ||
-    Array.isArray(v.annotationStatuses)
-  ) {
-    return null;
-  }
   return {
     version: 1,
     events: v.events as ExperimentEvent[],
-    annotationStatuses: v.annotationStatuses as Record<
-      string,
-      ExperimentAnnotationStatus
-    >,
   };
 }
 
 /**
- * HCI experiment log: append-only events and annotation status snapshots.
+ * HCI experiment log: append-only events.
  * State lives in the store; `PersistedAISearchService` syncs to `localStorage`.
  *
  * @inject
@@ -134,22 +115,8 @@ export class ExperimentLogService {
       query: params.query,
       schemaTag: params.schemaTag,
       annotationIdsCreated: params.annotationIdsCreated,
+      quoteTexts: params.quoteTexts,
     });
-
-    for (let i = 0; i < params.annotationIdsCreated.length; i++) {
-      const annId = params.annotationIdsCreated[i];
-      log.annotationStatuses[annId] = {
-        annotationId: annId,
-        documentUri: params.documentUri,
-        schemaTag: params.schemaTag,
-        quoteText: params.quoteTexts[i] ?? '',
-        searchRowId: params.searchRowId,
-        query: params.query,
-        status: 'suggested',
-        createdAt: now,
-        resolvedAt: null,
-      };
-    }
 
     this._commit(log);
   }
@@ -172,12 +139,6 @@ export class ExperimentLogService {
       schemaTag: params.schemaTag,
     });
 
-    const status = log.annotationStatuses[params.annotationId];
-    if (status) {
-      status.status = 'accepted';
-      status.resolvedAt = now;
-    }
-
     this._commit(log);
   }
 
@@ -198,12 +159,6 @@ export class ExperimentLogService {
       quoteText: params.quoteText,
       schemaTag: params.schemaTag,
     });
-
-    const status = log.annotationStatuses[params.annotationId];
-    if (status) {
-      status.status = 'rejected';
-      status.resolvedAt = now;
-    }
 
     this._commit(log);
   }
@@ -226,7 +181,6 @@ export class ExperimentLogService {
       quoteText: params.quoteText,
       schemaTag: params.schemaTag,
     });
-    delete log.annotationStatuses[params.annotationId];
     this._commit(log);
   }
 

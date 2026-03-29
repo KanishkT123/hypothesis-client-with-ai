@@ -35,7 +35,6 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       assert.deepEqual(log, {
         version: 1,
         events: [],
-        annotationStatuses: {},
       });
     });
   });

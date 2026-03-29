@@ -46,6 +46,8 @@ export type ExperimentEvent =
       query: string;
       schemaTag: string;
       annotationIdsCreated: string[];
+      /** Parallel to `annotationIdsCreated` (same length when present). Omitted in older logs. */
+      quoteTexts?: string[];
     }
   | {
       type: 'accept';
@@ -96,22 +98,9 @@ export type ExperimentEvent =
       schemaTag: string;
     };
 
-export type ExperimentAnnotationStatus = {
-  annotationId: string;
-  documentUri: string;
-  schemaTag: string;
-  quoteText: string;
-  searchRowId: string;
-  query: string;
-  status: 'suggested' | 'accepted' | 'rejected';
-  createdAt: string;
-  resolvedAt: string | null;
-};
-
 export type ExperimentLogState = {
   version: 1;
   events: ExperimentEvent[];
-  annotationStatuses: Record<string, ExperimentAnnotationStatus>;
 };
 
 export type State = {
@@ -147,7 +136,6 @@ const initialAiSearch: AISearchState = {
 export const emptyExperimentLog = (): ExperimentLogState => ({
   version: 1,
   events: [],
-  annotationStatuses: {},
 });
 
 const initialState: State = {

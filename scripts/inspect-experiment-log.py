@@ -16,33 +16,100 @@ from datetime import datetime
 from typing import Any
 
 
+def reconstruct_annotation_statuses(events: list[Any]) -> dict[str, dict[str, Any]]:
+    """Replay the event stream to derive per-annotation status snapshots for summaries."""
+    statuses: dict[str, dict[str, Any]] = {}
+    sorted_events = sorted(
+        (e for e in events if isinstance(e, dict)),
+        key=lambda e: str(e.get("timestamp", "")),
+    )
+    for e in sorted_events:
+        et = e.get("type")
+        if et == "search":
+            ids = e.get("annotationIdsCreated") or []
+            quotes = e.get("quoteTexts") or []
+            ts = e.get("timestamp") or ""
+            doc_uri = e.get("documentUri", "")
+            schema = e.get("schemaTag", "")
+            row_id = e.get("searchRowId", "")
+            query = e.get("query", "")
+            for i, ann_id in enumerate(ids):
+                if not ann_id:
+                    continue
+                aid = str(ann_id)
+                statuses[aid] = {
+                    "annotationId": aid,
+                    "documentUri": doc_uri,
+                    "schemaTag": schema,
+                    "quoteText": quotes[i] if i < len(quotes) else "",
+                    "searchRowId": row_id,
+                    "query": query,
+                    "status": "suggested",
+                    "createdAt": ts,
+                    "resolvedAt": None,
+                }
+        elif et == "accept":
+            ann_id = e.get("annotationId")
+            if not ann_id:
+                continue
+            aid = str(ann_id)
+            ts = e.get("timestamp") or ""
+            if aid not in statuses:
+                statuses[aid] = {
+                    "annotationId": aid,
+                    "documentUri": e.get("documentUri", ""),
+                    "schemaTag": e.get("schemaTag", ""),
+                    "quoteText": e.get("quoteText", ""),
+                    "searchRowId": "",
+                    "query": "",
+                    "status": "suggested",
+                    "createdAt": ts,
+                    "resolvedAt": None,
+                }
+            st = statuses[aid]
+            st["status"] = "accepted"
+            st["resolvedAt"] = ts
+        elif et == "reject":
+            ann_id = e.get("annotationId")
+            if not ann_id:
+                continue
+            aid = str(ann_id)
+            ts = e.get("timestamp") or ""
+            if aid not in statuses:
+                statuses[aid] = {
+                    "annotationId": aid,
+                    "documentUri": e.get("documentUri", ""),
+                    "schemaTag": e.get("schemaTag", ""),
+                    "quoteText": e.get("quoteText", ""),
+                    "searchRowId": "",
+                    "query": "",
+                    "status": "suggested",
+                    "createdAt": ts,
+                    "resolvedAt": None,
+                }
+            st = statuses[aid]
+            st["status"] = "rejected"
+            st["resolvedAt"] = ts
+        elif et == "annotation-deleted":
+            ann_id = e.get("annotationId")
+            if ann_id and str(ann_id) in statuses:
+                del statuses[str(ann_id)]
+
+    return statuses
+
+
 def load_and_merge(paths: list[str]) -> dict[str, Any]:
     """Load one or more log files and merge into one flat document."""
     merged: dict[str, Any] = {
         "version": 1,
         "events": [],
-        "annotationStatuses": {},
     }
     for path in paths:
         with open(path, encoding="utf-8") as f:
             log = json.load(f)
-        # Flat export (current)
-        if "users" not in log and isinstance(log.get("events"), list):
-            merged["events"].extend(log.get("events", []))
-            statuses = log.get("annotationStatuses") or {}
-            if isinstance(statuses, dict):
-                merged["annotationStatuses"].update(statuses)
+        if not isinstance(log, dict) or not isinstance(log.get("events"), list):
             continue
-        # Legacy per-user shape: fold into single stream
-        users = log.get("users") or {}
-        if isinstance(users, dict):
-            for _user, user_log in users.items():
-                if not isinstance(user_log, dict):
-                    continue
-                merged["events"].extend(user_log.get("events", []))
-                us = user_log.get("annotationStatuses") or {}
-                if isinstance(us, dict):
-                    merged["annotationStatuses"].update(us)
+        merged["events"].extend(log["events"])
 
     merged["events"].sort(key=lambda e: str(e.get("timestamp", "")))
     return merged
@@ -71,9 +138,9 @@ EVENT_TYPES_ORDER = [
 
 def inspect(log: dict[str, Any]) -> None:
     events = log.get("events") or []
-    statuses = log.get("annotationStatuses") or {}
-    if not events and not statuses:
-        print("Log is empty (no events or statuses).")
+    statuses = reconstruct_annotation_statuses(events)
+    if not events:
+        print("Log is empty (no events).")
         return
 
     exported_at = log.get("exportedAt")
@@ -92,14 +159,13 @@ def inspect(log: dict[str, Any]) -> None:
             print(f"    {et:20s} {n}")
     print(f"    {'TOTAL':20s} {len(events)}")
 
-    if isinstance(statuses, dict):
-        status_counts = Counter(
-            s.get("status", "?") for s in statuses.values() if isinstance(s, dict)
-        )
-        print_subsection("Annotation statuses")
-        for status in ["suggested", "accepted", "rejected"]:
-            print(f"    {status:20s} {status_counts.get(status, 0)}")
-        print(f"    {'TOTAL':20s} {len(statuses)}")
+    status_counts = Counter(
+        s.get("status", "?") for s in statuses.values() if isinstance(s, dict)
+    )
+    print_subsection("Annotation statuses (replayed from events)")
+    for status in ["suggested", "accepted", "rejected"]:
+        print(f"    {status:20s} {status_counts.get(status, 0)}")
+    print(f"    {'TOTAL':20s} {len(statuses)}")
 
     doc_events: dict[str, list] = {}
     for e in events:
@@ -109,12 +175,11 @@ def inspect(log: dict[str, Any]) -> None:
         doc_events.setdefault(str(uri), []).append(e)
 
     doc_statuses: dict[str, list] = {}
-    if isinstance(statuses, dict):
-        for s in statuses.values():
-            if not isinstance(s, dict):
-                continue
-            uri = s.get("documentUri", "(unknown)")
-            doc_statuses.setdefault(str(uri), []).append(s)
+    for s in statuses.values():
+        if not isinstance(s, dict):
+            continue
+        uri = s.get("documentUri", "(unknown)")
+        doc_statuses.setdefault(str(uri), []).append(s)
 
     all_uris = sorted(set(doc_events) | set(doc_statuses))
     if len(all_uris) > 1:
@@ -162,13 +227,16 @@ def inspect(log: dict[str, Any]) -> None:
                     f"has no matching search event (ids created)"
                 )
 
-    if isinstance(statuses, dict):
-        suggested = [s for s in statuses.values() if isinstance(s, dict) and s.get("status") == "suggested"]
-        if suggested:
-            warnings.append(
-                f"{len(suggested)} annotation(s) still in 'suggested' state "
-                f"(never accepted or rejected)"
-            )
+    suggested = [
+        s
+        for s in statuses.values()
+        if isinstance(s, dict) and s.get("status") == "suggested"
+    ]
+    if suggested:
+        warnings.append(
+            f"{len(suggested)} annotation(s) still in 'suggested' state "
+            f"(never accepted or rejected)"
+        )
 
     seen_events: set[tuple[Any, ...]] = set()
     for e in events:

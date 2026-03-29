@@ -68,16 +68,11 @@ describe('parseAISearchNegativeExamplesState', () => {
 describe('parseExperimentLogState', () => {
   it('returns null for non-objects or wrong version', () => {
     assert.isNull(parseExperimentLogState(null));
-    assert.isNull(parseExperimentLogState({ version: 2, events: [], annotationStatuses: {} }));
+    assert.isNull(parseExperimentLogState({ version: 2, events: [] }));
   });
 
-  it('returns null when events or annotationStatuses are invalid', () => {
-    assert.isNull(
-      parseExperimentLogState({ version: 1, events: {}, annotationStatuses: {} }),
-    );
-    assert.isNull(
-      parseExperimentLogState({ version: 1, events: [], annotationStatuses: [] }),
-    );
+  it('returns null when events are invalid', () => {
+    assert.isNull(parseExperimentLogState({ version: 1, events: {} }));
   });
 
   it('accepts a valid flat experiment log', () => {
@@ -92,12 +87,13 @@ describe('parseExperimentLogState', () => {
           query: 'q',
           schemaTag: 't',
           annotationIdsCreated: [],
+          quoteTexts: [],
         },
       ],
-      annotationStatuses: {},
     };
     assert.deepEqual(parseExperimentLogState(log), log);
   });
+
 });
 
 describe('PersistedAISearchService', () => {
@@ -269,9 +265,9 @@ describe('PersistedAISearchService', () => {
             query: 'q',
             schemaTag: 't',
             annotationIdsCreated: [],
+            quoteTexts: [],
           },
         ],
-        annotationStatuses: {},
       };
       fakeLocalStorage.getObject.withArgs(EXPERIMENT_LOG_STORAGE_KEY).returns(expLog);
 
@@ -295,9 +291,9 @@ describe('PersistedAISearchService', () => {
             query: 'q',
             schemaTag: 't',
             annotationIdsCreated: [],
+            quoteTexts: [],
           },
         ],
-        annotationStatuses: {},
       };
       store.setExperimentLog(nextLog);
 
@@ -331,9 +327,9 @@ describe('PersistedAISearchService', () => {
             query: 'q',
             schemaTag: 't',
             annotationIdsCreated: [],
+            quoteTexts: [],
           },
         ],
-        annotationStatuses: {},
       });
 
       assert.calledWith(
@@ -412,7 +408,6 @@ describe('PersistedAISearchService', () => {
             schemaTag: 't',
           },
         ],
-        annotationStatuses: {},
       };
 
       triggerStorage(EXPERIMENT_LOG_STORAGE_KEY, JSON.stringify(next));
@@ -475,9 +470,9 @@ describe('PersistedAISearchService', () => {
             query: 'q',
             schemaTag: 't',
             annotationIdsCreated: [],
+            quoteTexts: [],
           },
         ],
-        annotationStatuses: {},
       };
       fakeLocalStorage.getObject.callsFake(key => {
         if (key === EXPERIMENT_LOG_STORAGE_KEY) {
@@ -493,7 +488,6 @@ describe('PersistedAISearchService', () => {
       assert.deepEqual(store.getState().sidebarPanels.experimentLog, {
         version: 1,
         events: [],
-        annotationStatuses: {},
       });
     });
   });

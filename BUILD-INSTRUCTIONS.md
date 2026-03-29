@@ -63,7 +63,7 @@ Re-run build steps 1 and 2, then refresh the extension in Chrome.
 
 ## Experiment Log
 
-The HCI experiment log is stored in `localStorage` under **`hypothesis.aiSearch.experimentLog`**. The document is a single-participant, flat JSON object: `version` (currently `1`), `events` (array), and `annotationStatuses` (object keyed by annotation id).
+The HCI experiment log is stored in `localStorage` under **`hypothesis.aiSearch.experimentLog`**. The document is a single-participant, flat JSON object: `version` (currently `1`) and `events` (append-only array; each `search` event includes `quoteTexts` parallel to `annotationIdsCreated`).
 
 - **Download:** Use **Download experiment log** in the sidebar top bar (after Help; not gated on login). This saves a JSON file (filename like `experiment-log-YYYY-MM-DD.json`).
 - **Clear:** Use **Clear experiment log** next to it; you must confirm before the log is wiped. Other tabs pick up the empty state via the same `storage` sync used for AI search history.
@@ -74,7 +74,7 @@ To inspect a downloaded log (or merge several exports into one stream):
 python scripts/inspect-experiment-log.py experiment-log-2026-03-27.json
 ```
 
-Supports merging multiple log files (events concatenated and sorted by timestamp; `annotationStatuses` merged with later files overriding keys):
+Supports merging multiple log files (events concatenated and sorted by timestamp):
 
 ```bash
 python scripts/inspect-experiment-log.py log1.json log2.json
