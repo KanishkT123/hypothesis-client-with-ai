@@ -624,18 +624,21 @@ function AISearchPanel({
                         Query
                       </th>
                       <th
-                        className="py-1 pr-2 text-right text-sm font-normal tabular-nums whitespace-nowrap"
+                        className="py-1 pr-2 text-right text-sm font-normal tabular-nums"
                         scope="col"
-                        title="Pending (strict AI) and total matching annotations for this tag and query"
                       >
-                        Counts
+                        <span className="sr-only">
+                          Pending and total matching annotations for this tag and
+                          query
+                        </span>
                       </th>
                       <th
-                        className="py-1 text-center text-sm font-normal whitespace-nowrap"
+                        className="py-1 text-center text-sm font-normal"
                         scope="col"
-                        title="Rerun AI search (hover the top icon for details), delete pending, delete all"
                       >
-                        Actions
+                        <span className="sr-only">
+                          Rerun AI search, delete pending, delete all
+                        </span>
                       </th>
                     </tr>
                   </thead>
@@ -800,7 +803,7 @@ function AISearchPanel({
                 </table>
                 <p className="text-color-text-light text-xs leading-snug">
                   Highlight color is per tag (rows sharing a tag share the color).
-                  Hover the numbers under Counts or the action icons for details.
+                  Hover the pending/total numbers or the action icons for details.
                   Delete all may remove this row’s tag or delete annotations when
                   it is the only content tag—see the confirmation dialog.
                 </p>
