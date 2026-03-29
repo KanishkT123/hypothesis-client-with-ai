@@ -803,9 +803,6 @@ function AISearchPanel({
                 </table>
                 <p className="text-color-text-light text-xs leading-snug">
                   Highlight color is per tag (rows sharing a tag share the color).
-                  Hover the pending/total numbers or the action icons for details.
-                  Delete all may remove this row’s tag or delete annotations when
-                  it is the only content tag—see the confirmation dialog.
                 </p>
               </div>
             )}
