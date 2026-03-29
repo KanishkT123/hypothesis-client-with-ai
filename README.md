@@ -1,5 +1,7 @@
-Hypothesis client
+Hypothesis client --- with AI suggestions
 =================
+
+The following README is almost entirely the README of the open source Hypothesis client our code extends. The extensions, as well as updates to the links below, will be added shortly.
 
 [![npm version](https://img.shields.io/npm/v/hypothesis.svg)][npm]
 [![BSD licensed](https://img.shields.io/badge/license-BSD-blue.svg)][license]
