@@ -7,7 +7,7 @@ import {
   useSyncedRef,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
-import type { RefObject, JSX } from 'preact';
+import type { ComponentChildren, RefObject, JSX } from 'preact';
 import { useState } from 'preact/hooks';
 
 import { useShortcut } from '../../../shared/shortcut';
@@ -49,6 +49,12 @@ export type SearchFieldProps = {
    * below the field with this label (e.g. AI search panel).
    */
   fullWidthSubmitLabel?: string;
+
+  /**
+   * When set with `fullWidthSubmitLabel`, renders this content in the same row as
+   * the submit button: submit uses ~4/5 width, trailing ~1/5.
+   */
+  fullWidthSubmitTrailing?: ComponentChildren;
 };
 
 /**
@@ -59,6 +65,7 @@ export default function SearchField({
   classes,
   disabled = false,
   fullWidthSubmitLabel,
+  fullWidthSubmitTrailing,
   inputRef,
   multiline = false,
   onClearSearch,
@@ -205,19 +212,37 @@ export default function SearchField({
           />
         )}
       </div>
-      {useAiSubmitLayout && (
-        <Button
-          classes={classnames(
-            'w-full justify-center text-center',
-            fieldDisabled && 'opacity-50 cursor-not-allowed',
-          )}
-          data-testid="search-submit-button"
-          disabled={fieldDisabled}
-          type="submit"
-        >
-          {fullWidthSubmitLabel}
-        </Button>
-      )}
+      {useAiSubmitLayout &&
+        (fullWidthSubmitTrailing != null ? (
+          <div className="flex min-w-0 items-stretch gap-2">
+            <Button
+              classes={classnames(
+                'flex-[4] min-w-0 justify-center text-center',
+                fieldDisabled && 'opacity-50 cursor-not-allowed',
+              )}
+              data-testid="search-submit-button"
+              disabled={fieldDisabled}
+              type="submit"
+            >
+              {fullWidthSubmitLabel}
+            </Button>
+            <div className="flex min-w-0 flex-[1] shrink-0 items-center justify-end gap-2">
+              {fullWidthSubmitTrailing}
+            </div>
+          </div>
+        ) : (
+          <Button
+            classes={classnames(
+              'w-full justify-center text-center',
+              fieldDisabled && 'opacity-50 cursor-not-allowed',
+            )}
+            data-testid="search-submit-button"
+            disabled={fieldDisabled}
+            type="submit"
+          >
+            {fullWidthSubmitLabel}
+          </Button>
+        ))}
     </form>
   );
 }

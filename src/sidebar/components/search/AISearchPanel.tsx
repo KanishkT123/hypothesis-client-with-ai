@@ -1,4 +1,5 @@
 import {
+  Button,
   CancelIcon,
   Card,
   CardContent,
@@ -559,6 +560,35 @@ function AISearchPanel({
               inputRef={inputRef}
               classes="grow"
               fullWidthSubmitLabel="Ask the AI"
+              fullWidthSubmitTrailing={
+                <>
+                  <span
+                    className="min-w-[2.5rem] text-right tabular-nums text-xs text-color-text-light"
+                    aria-live={claudeRunStartedAt !== null ? 'polite' : 'off'}
+                    aria-atomic="true"
+                  >
+                    {claudeRunStartedAt !== null
+                      ? claudeWaitElapsedLabel
+                      : '0:00'}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    data-testid="ai-search-stop-button"
+                    disabled={claudeRunStartedAt === null}
+                    title={
+                      claudeRunStartedAt === null
+                        ? 'No AI search in progress'
+                        : 'Stop AI search'
+                    }
+                    classes="shrink-0"
+                    onClick={() => abortAllClaudeRuns()}
+                  >
+                    Stop
+                  </Button>
+                </>
+              }
               multiline
               placeholder="ask AI to highlight…"
               rows={4}
@@ -572,40 +602,6 @@ function AISearchPanel({
                 }
               }}
             />
-            <div className="flex items-center justify-end gap-2">
-              <span
-                className="tabular-nums text-xs text-color-text-light min-w-[2.5rem] text-right"
-                aria-live={claudeRunStartedAt !== null ? 'polite' : 'off'}
-                aria-atomic="true"
-              >
-                {claudeRunStartedAt !== null
-                  ? claudeWaitElapsedLabel
-                  : '0:00'}
-              </span>
-              <button
-                type="button"
-                disabled={claudeRunStartedAt === null}
-                className={classnames(
-                  'touch:min-w-touch-minimum p-1 rounded',
-                  'text-grey-7 hover:text-color-text hover:bg-grey-2',
-                  'transition-colors duration-200 focus-visible-ring',
-                  'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent',
-                )}
-                title={
-                  claudeRunStartedAt === null
-                    ? 'No AI search in progress'
-                    : 'Stop AI search'
-                }
-                aria-label={
-                  claudeRunStartedAt === null
-                    ? 'Stop AI search (no search in progress)'
-                    : 'Stop AI search'
-                }
-                onClick={() => abortAllClaudeRuns()}
-              >
-                <CancelIcon className="w-em h-em" />
-              </button>
-            </div>
             {aiRows.length > 0 && (
               <div className="flex flex-col gap-y-1">
                 <table className="w-full table-auto border-collapse text-left text-sm text-color-text">
