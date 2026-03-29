@@ -10,7 +10,7 @@ import {
   TrashIcon,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import {
   hexColorInputToRgba,
@@ -53,7 +53,7 @@ import type {
 } from '../../store/modules/sidebar-panels';
 import SidebarPanel from '../SidebarPanel';
 import FilterControls from './FilterControls';
-import { registerClaudeRun } from './ai-search-claude-runs';
+import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
 import SearchField from './SearchField';
 
 function isAbortError(err: unknown): boolean {
@@ -77,6 +77,13 @@ function emitThrottledProgress(
       autoDismiss: false,
     });
   }
+}
+
+function formatClaudeWaitElapsed(anchorMs: number, nowMs: number): string {
+  const elapsedSec = Math.max(0, Math.floor((nowMs - anchorMs) / 1000));
+  const m = Math.floor(elapsedSec / 60);
+  const s = elapsedSec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 const aiSearchHistoryActionButtonClass =
@@ -116,6 +123,11 @@ function AISearchPanel({
   const [rerunningRowId, setRerunningRowId] = useState<string | null>(null);
   const [userDeniedSectionOpen, setUserDeniedSectionOpen] = useState(false);
   const rerunLockRef = useRef(false);
+  /** Wall time when the current Claude API request started; drives panel timer + Stop. */
+  const [claudeRunStartedAt, setClaudeRunStartedAt] = useState<number | null>(
+    null,
+  );
+  const [claudeTimerTick, setClaudeTimerTick] = useState(0);
 
   const aiRows = store.aiSearchRows();
   const savedAnnotations = store.savedAnnotations();
@@ -131,6 +143,22 @@ function AISearchPanel({
     runAISearchInFlight ||
     rerunningRowId !== null ||
     deletingRowId !== null;
+
+  useEffect(() => {
+    if (claudeRunStartedAt === null) {
+      return undefined;
+    }
+    const id = window.setInterval(() => setClaudeTimerTick(t => t + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [claudeRunStartedAt]);
+
+  const claudeWaitElapsedLabel = useMemo(() => {
+    if (claudeRunStartedAt === null) {
+      return '';
+    }
+    return formatClaudeWaitElapsed(claudeRunStartedAt, Date.now());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- claudeTimerTick advances the clock display
+  }, [claudeRunStartedAt, claudeTimerTick]);
 
   const clearSearch = () => {
     store.closeSidebarPanel('aiSearchAnnotations');
@@ -165,6 +193,7 @@ function AISearchPanel({
       });
 
       const { signal, finish } = registerClaudeRun();
+      setClaudeRunStartedAt(Date.now());
       let claudeResult: ClaudeSearchResult;
       try {
         toastMessenger.notice('Waiting on model', { autoDismiss: false });
@@ -177,6 +206,7 @@ function AISearchPanel({
         });
       } finally {
         finish();
+        setClaudeRunStartedAt(null);
       }
 
       if (signal.aborted) {
@@ -542,6 +572,40 @@ function AISearchPanel({
                 }
               }}
             />
+            <div className="flex items-center justify-end gap-2">
+              <span
+                className="tabular-nums text-xs text-color-text-light min-w-[2.5rem] text-right"
+                aria-live={claudeRunStartedAt !== null ? 'polite' : 'off'}
+                aria-atomic="true"
+              >
+                {claudeRunStartedAt !== null
+                  ? claudeWaitElapsedLabel
+                  : '0:00'}
+              </span>
+              <button
+                type="button"
+                disabled={claudeRunStartedAt === null}
+                className={classnames(
+                  'touch:min-w-touch-minimum p-1 rounded',
+                  'text-grey-7 hover:text-color-text hover:bg-grey-2',
+                  'transition-colors duration-200 focus-visible-ring',
+                  'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent',
+                )}
+                title={
+                  claudeRunStartedAt === null
+                    ? 'No AI search in progress'
+                    : 'Stop AI search'
+                }
+                aria-label={
+                  claudeRunStartedAt === null
+                    ? 'Stop AI search (no search in progress)'
+                    : 'Stop AI search'
+                }
+                onClick={() => abortAllClaudeRuns()}
+              >
+                <CancelIcon className="w-em h-em" />
+              </button>
+            </div>
             {aiRows.length > 0 && (
               <div className="flex flex-col gap-y-1">
                 <table className="w-full table-auto border-collapse text-left text-sm text-color-text">
