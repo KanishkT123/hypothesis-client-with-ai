@@ -54,7 +54,6 @@ import type {
   AISearchRow,
 } from '../../store/modules/sidebar-panels';
 import SidebarPanel from '../SidebarPanel';
-import FilterControls from './FilterControls';
 import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
 import SearchField from './SearchField';
 
@@ -910,7 +909,6 @@ function AISearchPanel({
               </div>
             )}
           </div>
-          <FilterControls />
         </CardContent>
       </Card>
     </SidebarPanel>
