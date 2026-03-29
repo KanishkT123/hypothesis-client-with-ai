@@ -41,7 +41,10 @@ import type { AnnotationsService } from '../../services/annotations';
 import type { APIService } from '../../services/api';
 import type { FrameSyncService } from '../../services/frame-sync';
 // import type { ReductoService } from '../../services/reducto';
-import type { ClaudeService } from '../../services/claude';
+import type {
+  ClaudeSearchResult,
+  ClaudeService,
+} from '../../services/claude';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
 import type {
@@ -50,7 +53,31 @@ import type {
 } from '../../store/modules/sidebar-panels';
 import SidebarPanel from '../SidebarPanel';
 import FilterControls from './FilterControls';
+import { registerClaudeRun } from './ai-search-claude-runs';
 import SearchField from './SearchField';
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
+}
+
+/** At most one progress toast per second; always emit first and last index. */
+function emitThrottledProgress(
+  toastMessenger: ToastMessengerService,
+  prefix: string,
+  index: number,
+  total: number,
+  lastEmitMs: { current: number },
+) {
+  const isFirst = index === 0;
+  const isLast = index === total - 1;
+  const now = Date.now();
+  if (isFirst || isLast || now - lastEmitMs.current >= 1000) {
+    lastEmitMs.current = now;
+    toastMessenger.notice(`${prefix} ${index + 1}/${total}`, {
+      autoDismiss: false,
+    });
+  }
+}
 
 const aiSearchHistoryActionButtonClass =
   'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring';
@@ -81,14 +108,14 @@ function AISearchPanel({
   const store = useSidebarStore();
   const filterQuery = store.filterQuery();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const hasSelection = store.hasSelectedAnnotations();
-  const [aiSearchBusy, setAiSearchBusy] = useState(false);
+  const [runAISearchInFlight, setRunAISearchInFlight] = useState(false);
   // const [reductoAPIKey, setReductoAPIKey] = useState('');
   const [claudeAPIKey, setClaudeAPIKey] = useState('');
   const [schemaTag, setSchemaTag] = useState('');
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
   const [rerunningRowId, setRerunningRowId] = useState<string | null>(null);
   const [userDeniedSectionOpen, setUserDeniedSectionOpen] = useState(false);
+  const rerunLockRef = useRef(false);
 
   const aiRows = store.aiSearchRows();
   const savedAnnotations = store.savedAnnotations();
@@ -100,6 +127,11 @@ function AISearchPanel({
         .filter(ex => ex.documentUri === documentURL)
     : [];
 
+  const globalRowLock =
+    runAISearchInFlight ||
+    rerunningRowId !== null ||
+    deletingRowId !== null;
+
   const clearSearch = () => {
     store.closeSidebarPanel('aiSearchAnnotations');
   };
@@ -109,6 +141,7 @@ function AISearchPanel({
     query: string,
     options?: { replaceRowId?: string },
   ) {
+    setRunAISearchInFlight(true);
     try {
       const userid = store.profile().userid;
       const groupId = store.focusedGroupId();
@@ -131,13 +164,24 @@ function AISearchPanel({
         negativeExamples: negativeExamplesForDoc,
       });
 
-      // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
-      const claudeResult = await claude.AISearchDocument({
-        query: fullUserMessage,
-        candidateURIs: store.searchUris(),
-        apiKey: claudeAPIKey,
-      });
-      console.log('claudeResult', claudeResult);
+      const { signal, finish } = registerClaudeRun();
+      let claudeResult: ClaudeSearchResult;
+      try {
+        toastMessenger.notice('Waiting on model', { autoDismiss: false });
+        // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
+        claudeResult = await claude.AISearchDocument({
+          query: fullUserMessage,
+          candidateURIs: store.searchUris(),
+          apiKey: claudeAPIKey,
+          signal,
+        });
+      } finally {
+        finish();
+      }
+
+      if (signal.aborted) {
+        return;
+      }
 
       const rawQuotes = ((claudeResult.answer as any).result?.[0]?.quotes ??
         []) as Array<{ text?: string }>;
@@ -153,6 +197,8 @@ function AISearchPanel({
       );
 
       const tags = expectedTagsForStrictAISearchPending(tagTrim);
+
+      toastMessenger.notice('Creating annotations…', { autoDismiss: false });
 
       const created = [];
       for (const quote of quotes) {
@@ -214,74 +260,91 @@ function AISearchPanel({
       }
       toastMessenger.success(successMsg);
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       console.error('Error creating annotations from AI results:', error);
       toastMessenger.error('Failed to create annotations from AI results.');
+    } finally {
+      setRunAISearchInFlight(false);
     }
   }
 
   async function onAISearch(query: string) {
-    setAiSearchBusy(true);
-    try {
-      const tagKey = schemaTag.trim();
-      const queryKey = query.trim();
-      const matchingRow = aiRows.find(
-        r => r.schemaTag.trim() === tagKey && r.query.trim() === queryKey,
-      );
-      if (matchingRow) {
-        await onRerunRow(matchingRow);
-      } else {
-        await runAISearch(schemaTag, query);
-      }
-    } finally {
-      setAiSearchBusy(false);
+    const tagKey = schemaTag.trim();
+    const queryKey = query.trim();
+    const matchingRow = aiRows.find(
+      r => r.schemaTag.trim() === tagKey && r.query.trim() === queryKey,
+    );
+    if (matchingRow) {
+      await onRerunRow(matchingRow);
+    } else {
+      await runAISearch(schemaTag, query);
     }
   }
 
   async function onRerunRow(row: AISearchRow) {
-    const userid = store.profile().userid;
-    const groupId = store.focusedGroupId();
-    const documentURL = claude.firstPDFURI(store.searchUris());
-
-    if (!userid || !groupId || !documentURL) {
-      toastMessenger.error('Missing user, group, or PDF URL');
+    if (rerunLockRef.current) {
       return;
     }
-
-    setRerunningRowId(row.id);
+    rerunLockRef.current = true;
     try {
-      store.mergeAISearchRowsWithSameTagQuery(row.id);
+      const userid = store.profile().userid;
+      const groupId = store.focusedGroupId();
+      const documentURL = claude.firstPDFURI(store.searchUris());
 
-      const pending = listStrictAISearchRowPendingAnnotations(
-        store.savedAnnotations() as SavedAnnotation[],
-        documentURL,
-        row.schemaTag,
-        row.query,
-      );
+      if (!userid || !groupId || !documentURL) {
+        toastMessenger.error('Missing user, group, or PDF URL');
+        return;
+      }
 
-      const deletedIds: string[] = [];
-      for (const ann of pending) {
-        if (ann.id) {
-          await annotationsService.delete(ann);
-          deletedIds.push(ann.id);
+      setRerunningRowId(row.id);
+      try {
+        store.mergeAISearchRowsWithSameTagQuery(row.id);
+
+        const pending = listStrictAISearchRowPendingAnnotations(
+          store.savedAnnotations() as SavedAnnotation[],
+          documentURL,
+          row.schemaTag,
+          row.query,
+        );
+
+        const deletedIds: string[] = [];
+        const progressEmit = { current: 0 };
+        for (let i = 0; i < pending.length; i++) {
+          const ann = pending[i];
+          emitThrottledProgress(
+            toastMessenger,
+            'Deleting pending…',
+            i,
+            pending.length,
+            progressEmit,
+          );
+          if (ann.id) {
+            await annotationsService.delete(ann);
+            deletedIds.push(ann.id);
+          }
         }
-      }
-      if (deletedIds.length) {
-        store.removeAnnotationIdsFromAISearchRows(deletedIds);
-      }
+        if (deletedIds.length) {
+          store.removeAnnotationIdsFromAISearchRows(deletedIds);
+        }
 
-      experimentLog.logRerunSearch({
-        searchRowId: row.id,
-        query: row.query,
-        schemaTag: row.schemaTag,
-        documentUri: documentURL,
-      });
+        experimentLog.logRerunSearch({
+          searchRowId: row.id,
+          query: row.query,
+          schemaTag: row.schemaTag,
+          documentUri: documentURL,
+        });
 
-      await runAISearch(row.schemaTag, row.query, { replaceRowId: row.id });
-    } catch (err) {
-      console.error(err);
-      toastMessenger.error('Failed to rerun AI search.');
+        await runAISearch(row.schemaTag, row.query, { replaceRowId: row.id });
+      } catch (err) {
+        console.error(err);
+        toastMessenger.error('Failed to rerun AI search.');
+      } finally {
+        setRerunningRowId(null);
+      }
     } finally {
-      setRerunningRowId(null);
+      rerunLockRef.current = false;
     }
   }
 
@@ -300,7 +363,16 @@ function AISearchPanel({
         row.query,
       );
       const deletedIds: string[] = [];
-      for (const ann of pending) {
+      const progressEmit = { current: 0 };
+      for (let i = 0; i < pending.length; i++) {
+        const ann = pending[i];
+        emitThrottledProgress(
+          toastMessenger,
+          'Deleting pending…',
+          i,
+          pending.length,
+          progressEmit,
+        );
         if (ann.id) {
           await annotationsService.delete(ann as SavedAnnotation);
           deletedIds.push(ann.id);
@@ -460,9 +532,7 @@ function AISearchPanel({
               multiline
               placeholder="ask AI to highlight…"
               rows={4}
-              // Disable the input when there is a selection, as the selection
-              // replaces any other filters.
-              disabled={hasSelection || aiSearchBusy}
+              disabled={globalRowLock}
               query={filterQuery || null}
               onClearSearch={clearSearch}
               onSearch={onAISearch}
@@ -530,17 +600,14 @@ function AISearchPanel({
                             row.query,
                           )
                         : 0;
-                      const actionRowBusy =
-                        aiSearchBusy ||
-                        deletingRowId !== null ||
-                        rerunningRowId !== null;
-                      const rerunDisabled = actionRowBusy;
+                      const rerunDisabled =
+                        globalRowLock || !documentURL;
                       const deletePendingDisabled =
-                        actionRowBusy ||
+                        globalRowLock ||
                         !documentURL ||
                         pendingCount === 0;
                       const deleteAllDisabled =
-                        actionRowBusy ||
+                        globalRowLock ||
                         !documentURL ||
                         totalCount === 0;
                       return (

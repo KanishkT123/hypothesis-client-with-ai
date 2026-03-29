@@ -12,8 +12,9 @@ import GroupList from './GroupList';
 import SortMenu from './SortMenu';
 import TopBarToggleButton from './TopBarToggleButton';
 import UserMenu from './UserMenu';
-import SearchIconButton from './search/SearchIconButton';
+import AISearchClaudeControls from './search/AISearchClaudeControls';
 import AISearchIconButton from './search/AISearchIconButton';
+import SearchIconButton from './search/SearchIconButton';
 import StreamSearchInput from './search/StreamSearchInput';
 
 export type TopBarProps = {
@@ -112,6 +113,7 @@ function TopBar({
         <div className="grow flex items-center justify-end">
           {isSidebar && (
             <>
+              <AISearchClaudeControls />
               <AISearchIconButton />
               <SearchIconButton />
               <SortMenu />

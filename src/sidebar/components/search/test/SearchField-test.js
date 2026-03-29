@@ -226,6 +226,12 @@ describe('SearchField', () => {
       wrapper.find('button').map(btn => btn.prop('disabled')),
       [true, true],
     );
+    const submitClasses = wrapper
+      .find('[data-testid="search-submit-button"]')
+      .first()
+      .prop('classes');
+    assert.include(submitClasses, 'opacity-50');
+    assert.include(submitClasses, 'cursor-not-allowed');
   });
 
   it(

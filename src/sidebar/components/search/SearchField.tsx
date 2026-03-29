@@ -207,7 +207,10 @@ export default function SearchField({
       </div>
       {useAiSubmitLayout && (
         <Button
-          classes="w-full justify-center text-center"
+          classes={classnames(
+            'w-full justify-center text-center',
+            fieldDisabled && 'opacity-50 cursor-not-allowed',
+          )}
           data-testid="search-submit-button"
           disabled={fieldDisabled}
           type="submit"

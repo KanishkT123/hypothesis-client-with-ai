@@ -20,6 +20,8 @@ export type ClaudeSearchRequest = {
   candidateURIs: string[];
   query: string;
   apiKey: string;
+  /** When aborted, the request should be cancelled; callers must skip post-Claude work. */
+  signal?: AbortSignal;
 };
 
 // Match the shape that AISearchPanel expects: answer.result[0].quotes
@@ -44,7 +46,7 @@ export class ClaudeService {
   async AISearchDocument(
     request: ClaudeSearchRequest,
   ): Promise<ClaudeSearchResult> {
-    const {query, candidateURIs, apiKey} = request;
+    const {query, candidateURIs, apiKey, signal} = request;
     const documentURL = this.firstPDFURI(candidateURIs);
     if (!documentURL) {
       throw new Error('No PDF URL found in candidateURIs');
@@ -58,31 +60,34 @@ export class ClaudeService {
     console.log('[ClaudeService] start call', {documentURL, query});
     const startedAt = Date.now();
     try {
-      const message = await client.messages.parse({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
-        system:
-          'You return verbatim quotes from the document at hand that answers or otherwise fulfills the user query.',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'document',
-                source: {type: 'url', url: documentURL},
-                cache_control: {type: 'ephemeral'},
-              } as any,
-              {
-                type: 'text',
-                text: query,
-              },
-            ],
+      const message = await client.messages.parse(
+        {
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2000,
+          system:
+            'You return verbatim quotes from the document at hand that answers or otherwise fulfills the user query.',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'document',
+                  source: {type: 'url', url: documentURL},
+                  cache_control: {type: 'ephemeral'},
+                } as any,
+                {
+                  type: 'text',
+                  text: query,
+                },
+              ],
+            },
+          ],
+          output_config: {
+            format: zodOutputFormat(PassagesSchema),
           },
-        ],
-        output_config: {
-          format: zodOutputFormat(PassagesSchema),
         },
-      });
+        signal ? {signal} : undefined,
+      );
 
       console.log('[ClaudeService] success', {
         elapsedMs: Date.now() - startedAt,
@@ -97,7 +102,18 @@ export class ClaudeService {
       // Wrap in the Reducto-compatible shape: { result: [{ quotes: [...] }] }
       const quotes = passages.map(p => ({text: p.text}));
       return {answer: {result: [{quotes}]}};
-    } catch (error) {
+    } catch (error: unknown) {
+      const aborted =
+        signal?.aborted ||
+        (error instanceof Error && error.name === 'AbortError');
+      if (aborted) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw error;
+        }
+        const abortErr = new Error('Aborted');
+        abortErr.name = 'AbortError';
+        throw abortErr;
+      }
       console.error('[ClaudeService] Error:', {
         elapsedMs: Date.now() - startedAt,
         error,
