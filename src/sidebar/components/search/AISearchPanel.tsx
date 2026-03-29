@@ -113,7 +113,10 @@ function AISearchPanel({
   toastMessenger,
 }: AISearchPanelProps) {
   const store = useSidebarStore();
-  const filterQuery = store.filterQuery();
+  /** AI prompt text only; not the global sidebar filter query (see setFilterQuery). */
+  const [aiSearchFieldQuery, setAiSearchFieldQuery] = useState<string | null>(
+    null,
+  );
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [runAISearchInFlight, setRunAISearchInFlight] = useState(false);
   // const [reductoAPIKey, setReductoAPIKey] = useState('');
@@ -519,6 +522,7 @@ function AISearchPanel({
       onActiveChanged={active => {
         if (!active) {
           store.setFilterQuery(null);
+          setAiSearchFieldQuery(null);
         } else {
           frameSync.setTagHighlightPalette(
             mergeAISearchTagHighlightPalette(store.aiSearchSchemaTagColors()),
@@ -592,7 +596,7 @@ function AISearchPanel({
               placeholder="ask AI to highlight…"
               rows={4}
               disabled={globalRowLock}
-              query={filterQuery || null}
+              query={aiSearchFieldQuery}
               onClearSearch={clearSearch}
               onSearch={onAISearch}
               onKeyDown={e => {
@@ -708,7 +712,8 @@ function AISearchPanel({
                                 className={classnames(
                                   'm-0 w-full max-w-full min-w-0 border-0 bg-transparent p-0',
                                   'text-left font-inherit text-xs leading-snug text-color-text',
-                                  'cursor-pointer break-words hover:text-color-text hover:underline',
+                                  'cursor-pointer break-words underline underline-offset-2',
+                                  'hover:text-color-text',
                                   'rounded focus-visible-ring',
                                 )}
                                 title={`Show annotations with tag: ${tagKey}`}

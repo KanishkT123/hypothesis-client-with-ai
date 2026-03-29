@@ -236,26 +236,60 @@ describe('SidebarView', () => {
   });
 
   describe('filter controls', () => {
+    beforeEach(() => {
+      fakeStore.hasAppliedFilter.returns(false);
+    });
+
     [
       {
         searchPanelOpen: false,
+        aiSearchPanelOpen: false,
+        hasAppliedFilter: false,
         showControls: true,
       },
       {
         searchPanelOpen: true,
+        aiSearchPanelOpen: false,
+        hasAppliedFilter: false,
         showControls: false,
       },
-    ].forEach(({ searchPanelOpen, showControls }) => {
-      it(`renders filter controls when search panel is not open`, () => {
-        fakeStore.isSidebarPanelOpen
-          .withArgs('searchAnnotations')
-          .returns(searchPanelOpen);
+      {
+        searchPanelOpen: false,
+        aiSearchPanelOpen: true,
+        hasAppliedFilter: false,
+        showControls: false,
+      },
+      {
+        searchPanelOpen: false,
+        aiSearchPanelOpen: true,
+        hasAppliedFilter: true,
+        showControls: true,
+      },
+    ].forEach(
+      ({
+        searchPanelOpen,
+        aiSearchPanelOpen,
+        hasAppliedFilter,
+        showControls,
+      }) => {
+        it(`renders FilterControls when search=${searchPanelOpen} aiSearch=${aiSearchPanelOpen} hasAppliedFilter=${hasAppliedFilter}`, () => {
+          fakeStore.isSidebarPanelOpen.callsFake(name => {
+            if (name === 'searchAnnotations') {
+              return searchPanelOpen;
+            }
+            if (name === 'aiSearchAnnotations') {
+              return aiSearchPanelOpen;
+            }
+            return false;
+          });
+          fakeStore.hasAppliedFilter.returns(hasAppliedFilter);
 
-        const wrapper = createComponent();
+          const wrapper = createComponent();
 
-        assert.equal(wrapper.exists('FilterControls'), showControls);
-      });
-    });
+          assert.equal(wrapper.exists('FilterControls'), showControls);
+        });
+      },
+    );
   });
 
   describe('streamer', () => {
