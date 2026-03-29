@@ -21,7 +21,10 @@ const TAB_SORTKEY_DEFAULT: Record<TabName, SortKey> = {
 };
 
 function defaultSortKeyForTab(tab: TabName, commentsMode?: boolean) {
-  return commentsMode ? 'newest' : TAB_SORTKEY_DEFAULT[tab];
+  if (commentsMode && tab === 'note') {
+    return 'newest';
+  }
+  return TAB_SORTKEY_DEFAULT[tab];
 }
 
 function initialSelection(settings: SidebarSettings): BooleanMap {
@@ -74,12 +77,13 @@ export type State = {
 };
 
 function initialState(settings: SidebarSettings): State {
+  const selectedTab = settings.commentsMode ? 'note' : 'annotation';
   return {
     selected: initialSelection(settings),
     expanded: initialSelection(settings),
     forcedVisible: {},
-    selectedTab: settings.commentsMode ? 'note' : 'annotation',
-    sortKey: defaultSortKeyForTab('annotation', settings.commentsMode),
+    selectedTab,
+    sortKey: defaultSortKeyForTab(selectedTab, settings.commentsMode),
     focusRequest: null,
     commentsMode: settings.commentsMode,
   };
@@ -373,11 +377,11 @@ function sortKey(state: State) {
  */
 const sortKeys = createSelector(
   (state: State) => state.selectedTab,
-  (state: State) => state.commentsMode,
-  (selectedTab, commentsMode) => {
+  selectedTab => {
     const sortKeysForTab: SortKey[] = ['newest', 'oldest'];
-    if (selectedTab !== 'note' && !commentsMode) {
-      // Location is inapplicable to Notes tab or comments mode
+    // Page notes have no document anchor; location sort is only for tabs
+    // that show anchored annotations.
+    if (selectedTab !== 'note') {
       sortKeysForTab.push('location');
     }
     return sortKeysForTab;
