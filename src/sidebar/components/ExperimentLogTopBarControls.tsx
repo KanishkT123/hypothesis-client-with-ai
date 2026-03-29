@@ -1,4 +1,9 @@
-import { confirm } from '@hypothesis/frontend-shared';
+import {
+  confirm,
+  DownloadIcon,
+  IconButton,
+  TrashIcon,
+} from '@hypothesis/frontend-shared';
 
 import { withServices } from '../service-context';
 import type { ExperimentLogService } from '../services/experiment-log';
@@ -13,21 +18,21 @@ type Props = {
 function ExperimentLogTopBarControls({ experimentLog }: Props) {
   return (
     <div
-      className="flex items-center gap-x-2 px-1"
+      className="flex items-center gap-x-1 px-1"
       data-testid="experiment-log-topbar"
     >
-      <button
-        type="button"
-        className="text-[11px] text-grey-7 hover:text-grey-9 underline"
+      <IconButton
+        icon={DownloadIcon}
+        size="custom"
+        classes="touch:min-w-touch-minimum p-1"
         title="Download experiment log as JSON"
         data-testid="experiment-log-download"
         onClick={() => experimentLog.downloadLog()}
-      >
-        Download log
-      </button>
-      <button
-        type="button"
-        className="text-[11px] text-grey-7 hover:text-grey-9 underline"
+      />
+      <IconButton
+        icon={TrashIcon}
+        size="custom"
+        classes="touch:min-w-touch-minimum p-1"
         title="Clear experiment log"
         data-testid="experiment-log-clear"
         onClick={async () => {
@@ -41,9 +46,7 @@ function ExperimentLogTopBarControls({ experimentLog }: Props) {
             experimentLog.clearLog();
           }
         }}
-      >
-        Clear log
-      </button>
+      />
     </div>
   );
 }
