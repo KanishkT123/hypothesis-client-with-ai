@@ -36,6 +36,16 @@ export class ClaudeService {
         return uri;
       }
     }
+    const hasPDFFingerprint = candidateURIs.some(u =>
+      u.startsWith('urn:x-pdf:'),
+    );
+    if (hasPDFFingerprint) {
+      for (const uri of candidateURIs) {
+        if (/^https?:\/\//i.test(uri)) {
+          return uri;
+        }
+      }
+    }
     return null;
   }
 
