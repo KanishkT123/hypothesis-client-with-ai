@@ -1049,10 +1049,6 @@ export class Guest
 
     await this._enrichQuoteOnlyTargets(anchors);
 
-    for (const anchor of anchors) {
-      highlight(anchor);
-    }
-
     // Set flag indicating whether anchoring succeeded. For each target,
     // anchoring is successful either if there are no selectors (ie. this is a
     // Page Note) or we successfully resolved the selectors to a range.
@@ -1060,10 +1056,16 @@ export class Guest
       anchors.length > 0 &&
       anchors.every(anchor => anchor.target.selector && !anchor.region);
 
-    this._updateAnchors(this.anchors.concat(anchors), true /* notify */);
-
-    // Let other frames (eg. the sidebar) know about the new annotation.
+    // Merge enriched selectors into the sidebar store before highlights paint so
+    // location-based ordering matches the resolved geometry without waiting for
+    // the highlight loop (and so sort updates before the PDF repaints).
     this._sidebarRPC.call('syncAnchoringStatus', annotation);
+
+    for (const anchor of anchors) {
+      highlight(anchor);
+    }
+
+    this._updateAnchors(this.anchors.concat(anchors), true /* notify */);
 
     return anchors;
   }
