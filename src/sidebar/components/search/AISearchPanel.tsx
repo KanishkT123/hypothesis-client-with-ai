@@ -606,7 +606,7 @@ function AISearchPanel({
                 <table className="w-full table-auto border-collapse text-left text-sm text-color-text">
                   <colgroup>
                     <col className="w-min" />
-                    <col />
+                    <col className="min-w-[10rem]" />
                     <col />
                     <col className="w-min" />
                     <col className="w-min" />
@@ -701,14 +701,14 @@ function AISearchPanel({
                               }}
                             />
                           </td>
-                          <td className="py-1 pr-2 align-middle break-all min-w-0 text-xs leading-snug">
+                          <td className="py-1 pr-2 align-middle break-words text-xs leading-snug">
                             {tagKey ? (
                               <button
                                 type="button"
                                 className={classnames(
                                   'm-0 w-full max-w-full min-w-0 border-0 bg-transparent p-0',
                                   'text-left font-inherit text-xs leading-snug text-color-text',
-                                  'cursor-pointer break-all hover:text-color-text hover:underline',
+                                  'cursor-pointer break-words hover:text-color-text hover:underline',
                                   'rounded focus-visible-ring',
                                 )}
                                 title={`Show annotations with tag: ${tagKey}`}
@@ -725,7 +725,7 @@ function AISearchPanel({
                               <span className="text-color-text-light">—</span>
                             )}
                           </td>
-                          <td className="py-1 pr-2 align-middle break-all min-w-0 text-xs leading-snug">
+                          <td className="py-1 pr-2 align-middle break-words min-w-0 text-xs leading-snug">
                             {row.query}
                           </td>
                           <td className="w-min py-1 pr-2 text-right align-middle tabular-nums whitespace-nowrap">
@@ -866,15 +866,15 @@ function AISearchPanel({
                             key={ex.id}
                             className="border-b border-grey-2 last:border-0"
                           >
-                            <td className="py-1 pr-2 align-middle break-all max-w-[8rem]">
+                            <td className="py-1 pr-2 align-middle break-words min-w-[10rem] max-w-[14rem]">
                               {ex.schemaTag || (
                                 <span className="text-color-text-light">—</span>
                               )}
                             </td>
-                            <td className="py-1 pr-2 align-middle break-all max-w-[10rem]">
+                            <td className="py-1 pr-2 align-middle break-words max-w-[10rem]">
                               {ex.query}
                             </td>
-                            <td className="py-1 pr-2 align-middle break-all max-w-[12rem]">
+                            <td className="py-1 pr-2 align-middle break-words max-w-[12rem]">
                               {ex.quote}
                             </td>
                             <td className="py-1 align-middle">
