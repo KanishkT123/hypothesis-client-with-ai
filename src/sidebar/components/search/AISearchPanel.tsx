@@ -609,8 +609,9 @@ function AISearchPanel({
                 <table className="w-full table-auto border-collapse text-left text-sm text-color-text">
                   <colgroup>
                     <col className="w-min" />
-                    <col className="min-w-[10rem]" />
-                    <col />
+                    {/* min: short tags fit on one line; max: do not outgrow the query column */}
+                    <col className="min-w-[7rem] max-w-[11rem]" />
+                    <col className="w-full min-w-0" />
                     <col className="w-min" />
                     <col className="w-min" />
                   </colgroup>
@@ -729,7 +730,7 @@ function AISearchPanel({
                               <span className="text-color-text-light">—</span>
                             )}
                           </td>
-                          <td className="py-1 pr-2 align-middle break-words min-w-0 text-xs leading-snug">
+                          <td className="py-1 pr-2 align-middle break-words text-xs leading-snug">
                             {row.query}
                           </td>
                           <td className="w-min py-1 pr-2 text-right align-middle tabular-nums whitespace-nowrap">
