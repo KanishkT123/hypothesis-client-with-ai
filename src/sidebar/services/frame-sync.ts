@@ -460,7 +460,29 @@ export class FrameSyncService {
       this._inFrame.add($tag);
       this._updateAnchorStatus($tag, $orphan ? 'orphan' : 'anchored');
 
-      this._store.addAnnotations([ann]);
+      // The guest keeps a minimal in-memory copy (often `tags: []` from creation).
+      // `ADD_ANNOTATIONS` merges with Object.assign — a later `syncAnchoringStatus`
+      // would otherwise overwrite sidebar tags / text with that stale payload.
+      const existing: Annotation | undefined =
+        (ann.id && this._store.findAnnotationByID(ann.id)) ||
+        (ann.$tag
+          ? this._store.allAnnotations().find(a => a.$tag === ann.$tag)
+          : undefined);
+
+      const merged =
+        existing === undefined
+          ? ann
+          : (() => {
+              const draft = this._store.getDraft(existing);
+              return {
+                ...existing,
+                ...ann,
+                tags: draft ? draft.tags : (existing.tags ?? ann.tags),
+                text: draft ? draft.text : (existing.text ?? ann.text),
+              };
+            })();
+
+      this._store.addAnnotations([merged as Annotation]);
 
       if ($tag === this._pendingHoverTag) {
         this._pendingHoverTag = null;

@@ -115,7 +115,8 @@ function mergeAnnotationsWithSameId(annotations: Annotation[]): Annotation[] {
   for (const annot of annotations) {
     if (annot.id) {
       const prev = byId.get(annot.id);
-      byId.set(annot.id, prev ? Object.assign({}, prev, annot) : annot);
+      const merged = prev ? Object.assign({}, prev, annot) : annot;
+      byId.set(annot.id, merged);
     } else {
       withoutId.push(annot);
     }
@@ -191,7 +192,8 @@ const reducers = {
       if (existing) {
         // Merge the updated annotation with the private fields from the local
         // annotation
-        updated.push(Object.assign({}, existing, annot));
+        const merged = Object.assign({}, existing, annot);
+        updated.push(merged);
         if (annot.id) {
           updatedIDs.add(annot.id);
         }

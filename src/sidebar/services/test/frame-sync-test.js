@@ -168,6 +168,8 @@ describe('FrameSyncService', () => {
         },
 
         addAnnotations: sinon.stub(),
+        findAnnotationByID: sinon.stub().returns(null),
+        getDraft: sinon.stub().returns(null),
         findIDsForTags: sinon.stub().returns([]),
         focusedGroup: sinon.stub().returns({ id: 'foobar' }),
         getFocusFilters: sinon.stub().returns({}),
@@ -772,6 +774,42 @@ describe('FrameSyncService', () => {
       emitGuestEvent('syncAnchoringStatus', ann);
 
       assert.calledWith(fakeStore.addAnnotations, [ann]);
+    });
+
+    it('preserves sidebar tags when guest sends stale empty tags on syncAnchoringStatus', () => {
+      fakeStore.findAnnotationByID = sinon
+        .stub()
+        .withArgs('id1')
+        .returns({
+          id: 'id1',
+          $tag: 't1',
+          tags: ['keep-me'],
+          text: '',
+          target: [],
+        });
+
+      const ann = {
+        $tag: 't1',
+        $orphan: false,
+        id: 'id1',
+        tags: [],
+        target: [
+          {
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      emitGuestEvent('syncAnchoringStatus', ann);
+
+      assert.calledWith(
+        fakeStore.addAnnotations,
+        sinon.match([
+          sinon.match({
+            id: 'id1',
+            tags: ['keep-me'],
+          }),
+        ]),
+      );
     });
 
     it('coalesces multiple "syncAnchoringStatus" messages', () => {
