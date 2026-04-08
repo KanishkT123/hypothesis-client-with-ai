@@ -8781,9 +8781,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"hypothesis@workspace:.":
+"hypothesis-with-ai@workspace:.":
   version: 0.0.0-use.local
-  resolution: "hypothesis@workspace:."
+  resolution: "hypothesis-with-ai@workspace:."
   dependencies:
     "@anthropic-ai/sdk": ^0.80.0
     "@aws-sdk/client-s3": ^3.504.0
