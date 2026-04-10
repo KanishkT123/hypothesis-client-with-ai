@@ -197,6 +197,60 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       assert.lengthOf(getSidebarPanelsState().aiSearch.rows, 1);
     });
 
+    it('sets and clears row hidden flag', () => {
+      store.addAISearchRow({
+        id: 'r1',
+        schemaTag: 's',
+        query: 'q',
+        annotationIds: [],
+      });
+      store.setAISearchRowHidden('r1', true);
+      let row = getSidebarPanelsState().aiSearch.rows[0];
+      assert.isTrue(row.hidden);
+      store.setAISearchRowHidden('r1', false);
+      row = getSidebarPanelsState().aiSearch.rows[0];
+      assert.notProperty(row, 'hidden');
+    });
+
+    it('merge clears hidden when any duplicate is non-hidden', () => {
+      store.addAISearchRow({
+        id: 'keep',
+        schemaTag: 't',
+        query: 'q',
+        annotationIds: ['a1'],
+        hidden: true,
+      });
+      store.addAISearchRow({
+        id: 'dup',
+        schemaTag: 't',
+        query: 'q',
+        annotationIds: ['a2'],
+      });
+      store.mergeAISearchRowsWithSameTagQuery('keep');
+      const merged = getSidebarPanelsState().aiSearch.rows[0];
+      assert.notProperty(merged, 'hidden');
+    });
+
+    it('merge keeps hidden when every duplicate is hidden', () => {
+      store.addAISearchRow({
+        id: 'keep',
+        schemaTag: 't',
+        query: 'q',
+        annotationIds: ['a1'],
+        hidden: true,
+      });
+      store.addAISearchRow({
+        id: 'dup',
+        schemaTag: 't',
+        query: 'q',
+        annotationIds: ['a2'],
+        hidden: true,
+      });
+      store.mergeAISearchRowsWithSameTagQuery('keep');
+      const merged = getSidebarPanelsState().aiSearch.rows[0];
+      assert.isTrue(merged.hidden);
+    });
+
     it('sets annotation ids on a single row', () => {
       store.addAISearchRow({
         id: 'r1',

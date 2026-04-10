@@ -37,6 +37,63 @@ describe('parseAISearchState', () => {
     };
     assert.deepEqual(parseAISearchState(state), state);
   });
+
+  it('accepts rows with hidden true and omits hidden when false', () => {
+    const withHidden = {
+      rows: [
+        {
+          id: '1',
+          schemaTag: 't',
+          query: 'q',
+          annotationIds: ['a'],
+          hidden: true,
+        },
+      ],
+      schemaTagColors: {},
+    };
+    assert.deepEqual(parseAISearchState(withHidden), withHidden);
+
+    const withHiddenFalse = {
+      rows: [
+        {
+          id: '1',
+          schemaTag: 't',
+          query: 'q',
+          annotationIds: ['a'],
+          hidden: false,
+        },
+      ],
+      schemaTagColors: {},
+    };
+    assert.deepEqual(parseAISearchState(withHiddenFalse), {
+      rows: [
+        {
+          id: '1',
+          schemaTag: 't',
+          query: 'q',
+          annotationIds: ['a'],
+        },
+      ],
+      schemaTagColors: {},
+    });
+  });
+
+  it('returns null when hidden is not a boolean', () => {
+    assert.isNull(
+      parseAISearchState({
+        rows: [
+          {
+            id: '1',
+            schemaTag: 't',
+            query: 'q',
+            annotationIds: [],
+            hidden: 'yes',
+          },
+        ],
+        schemaTagColors: {},
+      }),
+    );
+  });
 });
 
 describe('parseAISearchNegativeExamplesState', () => {

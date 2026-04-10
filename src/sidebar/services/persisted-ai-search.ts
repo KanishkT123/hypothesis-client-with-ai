@@ -1,8 +1,8 @@
 import type { SidebarStore } from '../store';
 import type {
   AISearchNegativeExample,
+  AISearchRow,
   AISearchState,
-  ExperimentLogState,
 } from '../store/modules/sidebar-panels';
 import { emptyExperimentLog } from '../store/modules/sidebar-panels';
 import { watch } from '../util/watch';
@@ -66,12 +66,19 @@ export function parseAISearchState(raw: unknown): AISearchState | null {
     if (!r.annotationIds.every((id: unknown) => typeof id === 'string')) {
       return null;
     }
-    rows.push({
+    if ('hidden' in r && typeof r.hidden !== 'boolean') {
+      return null;
+    }
+    const parsed: AISearchRow = {
       id: r.id,
       schemaTag: r.schemaTag,
       query: r.query,
       annotationIds: r.annotationIds as string[],
-    });
+    };
+    if (r.hidden === true) {
+      parsed.hidden = true;
+    }
+    rows.push(parsed);
   }
   const schemaTagColors: Record<string, string> = {};
   for (const [k, c] of Object.entries(v.schemaTagColors as Record<string, unknown>)) {

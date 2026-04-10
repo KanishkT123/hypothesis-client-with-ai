@@ -20,6 +20,8 @@ export type AISearchRow = {
   schemaTag: string;
   query: string;
   annotationIds: string[];
+  /** When true, row can be filtered out of the history table (see AISearchPanel). */
+  hidden?: boolean;
 };
 
 /** Local snapshot from a user-denied ai-pending annotation (not persisted on server). */
@@ -207,6 +209,31 @@ const reducers = {
     };
   },
 
+  SET_AI_SEARCH_ROW_HIDDEN(
+    state: State,
+    action: { rowId: string; hidden: boolean },
+  ) {
+    return {
+      aiSearch: {
+        ...state.aiSearch,
+        rows: state.aiSearch.rows.map(r => {
+          if (r.id !== action.rowId) {
+            return r;
+          }
+          if (action.hidden) {
+            return { ...r, hidden: true };
+          }
+          if (!('hidden' in r)) {
+            return r;
+          }
+          const next = { ...r };
+          delete next.hidden;
+          return next;
+        }),
+      },
+    };
+  },
+
   REMOVE_AI_SEARCH_ROW(state: State, action: { rowId: string }) {
     const removed = state.aiSearch.rows.find(r => r.id === action.rowId);
     const rows = state.aiSearch.rows.filter(r => r.id !== action.rowId);
@@ -267,15 +294,29 @@ const reducers = {
     const sameKey = (r: AISearchRow) =>
       r.schemaTag.trim() === tagKey && r.query.trim() === queryKey;
 
+    const duplicates = rows.filter(sameKey);
     const unionIds = [
-      ...new Set(rows.filter(sameKey).flatMap(r => r.annotationIds)),
+      ...new Set(duplicates.flatMap(r => r.annotationIds)),
     ];
+    const allHidden = duplicates.every(r => r.hidden === true);
 
     const newRows = rows
       .filter(r => !(sameKey(r) && r.id !== action.keepRowId))
-      .map(r =>
-        r.id === action.keepRowId ? { ...r, annotationIds: unionIds } : r,
-      );
+      .map(r => {
+        if (r.id !== action.keepRowId) {
+          return r;
+        }
+        const merged = { ...r, annotationIds: unionIds };
+        if (allHidden) {
+          return { ...merged, hidden: true as const };
+        }
+        if (!('hidden' in merged)) {
+          return merged;
+        }
+        const next = { ...merged };
+        delete next.hidden;
+        return next;
+      });
 
     return {
       aiSearch: {
@@ -404,6 +445,10 @@ function removeAISearchRow(rowId: string) {
   return makeAction(reducers, 'REMOVE_AI_SEARCH_ROW', { rowId });
 }
 
+function setAISearchRowHidden(rowId: string, hidden: boolean) {
+  return makeAction(reducers, 'SET_AI_SEARCH_ROW_HIDDEN', { rowId, hidden });
+}
+
 function setAISearchSchemaTagColor(schemaTag: string, rgba: string) {
   return makeAction(reducers, 'SET_AI_SEARCH_SCHEMA_TAG_COLOR', {
     schemaTag,
@@ -491,6 +536,7 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     toggleSidebarPanel,
     addAISearchRow,
     removeAISearchRow,
+    setAISearchRowHidden,
     setAISearchSchemaTagColor,
     hydrateAISearch,
     mergeAISearchRowsWithSameTagQuery,

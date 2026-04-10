@@ -4,10 +4,12 @@ import {
   Card,
   CardContent,
   confirm,
+  HideIcon,
   Input,
   MenuCollapseIcon,
   MenuExpandIcon,
   RedoIcon,
+  ShowIcon,
   TrashIcon,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
@@ -130,6 +132,8 @@ function AISearchPanel({
     null,
   );
   const [claudeTimerTick, setClaudeTimerTick] = useState(0);
+  /** When true, rows marked `hidden` are included in the history table. */
+  const [showHiddenRows, setShowHiddenRows] = useState(true);
 
   const aiRows = store.aiSearchRows();
   const savedAnnotations = store.savedAnnotations();
@@ -145,6 +149,22 @@ function AISearchPanel({
     runAISearchInFlight ||
     rerunningRowId !== null ||
     deletingRowId !== null;
+
+  const displayRows = useMemo(
+    () =>
+      showHiddenRows ? aiRows : aiRows.filter(r => !r.hidden),
+    [aiRows, showHiddenRows],
+  );
+  const hasAnyHiddenRows = useMemo(
+    () => aiRows.some(r => r.hidden === true),
+    [aiRows],
+  );
+  const hiddenRowsToggleDisabled = !hasAnyHiddenRows;
+  const hiddenRowsToggleTitle = hiddenRowsToggleDisabled
+    ? 'No hidden rows'
+    : showHiddenRows
+      ? 'Hide rows marked hidden from this list'
+      : 'Show rows marked hidden in this list';
 
   useEffect(() => {
     if (claudeRunStartedAt === null) {
@@ -267,6 +287,7 @@ function AISearchPanel({
 
       if (options?.replaceRowId) {
         store.setAISearchRowAnnotationIds(options.replaceRowId, newIds);
+        store.setAISearchRowHidden(options.replaceRowId, false);
       } else {
         const row: AISearchRow = {
           id: rowId,
@@ -646,7 +667,7 @@ function AISearchPanel({
                     </tr>
                   </thead>
                   <tbody>
-                    {aiRows.map(row => {
+                    {displayRows.map(row => {
                       const tagKey = row.schemaTag.trim();
                       const rgba = colorForRow(row);
                       const hex = rgbaStringToHexColorInput(rgba);
@@ -673,37 +694,70 @@ function AISearchPanel({
                         !documentURL ||
                         pendingCount === 0;
                       const deleteAllDisabled =
-                        globalRowLock ||
-                        !documentURL ||
-                        totalCount === 0;
+                        globalRowLock || !documentURL;
                       return (
                         <tr
                           key={row.id}
-                          className="border-b border-grey-2 last:border-0"
+                          className={classnames(
+                            'border-b border-grey-2 last:border-0',
+                            row.hidden && 'opacity-70',
+                          )}
                         >
                           <td className="py-1 pr-2 align-middle whitespace-nowrap w-min">
-                            <input
-                              aria-label={`Highlight color for tag ${tagKey || '(empty)'}`}
-                              className="h-8 w-10 cursor-pointer rounded border border-grey-3 bg-transparent p-0"
-                              disabled={!tagKey}
-                              title={
-                                tagKey
-                                  ? undefined
-                                  : 'Set a schema tag to customize color'
-                              }
-                              type="color"
-                              value={hex}
-                              onInput={(e: Event) => {
-                                if (!tagKey) {
-                                  return;
+                            <div className="flex flex-col items-center gap-0.5">
+                              <input
+                                aria-label={`Highlight color for tag ${tagKey || '(empty)'}`}
+                                className="h-8 w-10 cursor-pointer rounded border border-grey-3 bg-transparent p-0"
+                                disabled={!tagKey}
+                                title={
+                                  tagKey
+                                    ? undefined
+                                    : 'Set a schema tag to customize color'
                                 }
-                                const v = (e.target as HTMLInputElement).value;
-                                store.setAISearchSchemaTagColor(
-                                  tagKey,
-                                  hexColorInputToRgba(v, TAG_HIGHLIGHT_ALPHA),
-                                );
-                              }}
-                            />
+                                type="color"
+                                value={hex}
+                                onInput={(e: Event) => {
+                                  if (!tagKey) {
+                                    return;
+                                  }
+                                  const v = (e.target as HTMLInputElement)
+                                    .value;
+                                  store.setAISearchSchemaTagColor(
+                                    tagKey,
+                                    hexColorInputToRgba(v, TAG_HIGHLIGHT_ALPHA),
+                                  );
+                                }}
+                              />
+                              <button
+                                type="button"
+                                className={classnames(
+                                  aiSearchHistoryActionButtonClass,
+                                  'shrink-0',
+                                )}
+                                title={
+                                  row.hidden
+                                    ? 'Show this row in the list'
+                                    : 'Hide this row from the list'
+                                }
+                                aria-label={
+                                  row.hidden
+                                    ? 'Show row in history'
+                                    : 'Hide row from history'
+                                }
+                                onClick={() =>
+                                  store.setAISearchRowHidden(
+                                    row.id,
+                                    !row.hidden,
+                                  )
+                                }
+                              >
+                                {row.hidden ? (
+                                  <ShowIcon className="w-em h-em" />
+                                ) : (
+                                  <HideIcon className="w-em h-em" />
+                                )}
+                              </button>
+                            </div>
                           </td>
                           <td className="py-1 pr-2 align-middle break-words text-xs leading-snug">
                             {tagKey ? (
@@ -824,9 +878,34 @@ function AISearchPanel({
                     })}
                   </tbody>
                 </table>
-                <p className="text-color-text-light text-xs leading-snug">
-                  Highlight color is per tag (rows sharing a tag share the color).
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                  <p className="text-color-text-light text-xs leading-snug m-0 grow min-w-[12rem]">
+                    Highlight color is per tag (rows sharing a tag share the
+                    color).
+                  </p>
+                  <button
+                    type="button"
+                    disabled={hiddenRowsToggleDisabled}
+                    title={hiddenRowsToggleTitle}
+                    aria-label={hiddenRowsToggleTitle}
+                    className={classnames(
+                      'shrink-0 text-xs rounded px-2 py-1 border border-grey-3',
+                      'text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring',
+                      hiddenRowsToggleDisabled &&
+                        'opacity-50 cursor-not-allowed',
+                    )}
+                    onClick={() => {
+                      if (hiddenRowsToggleDisabled) {
+                        return;
+                      }
+                      setShowHiddenRows(v => !v);
+                    }}
+                  >
+                    {showHiddenRows
+                      ? 'Hide hidden rows'
+                      : 'Show hidden rows'}
+                  </button>
+                </div>
               </div>
             )}
             {negativeExamplesForDoc.length > 0 && (
