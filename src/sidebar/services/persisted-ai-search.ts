@@ -28,13 +28,9 @@ const emptyAiSearch = (): AISearchState => ({
 });
 
 /**
- * Validate and return `AISearchState` from parsed JSON, or `null` if invalid.
+ * Validate `rows` and `schemaTagColors` on a persisted object (no `revision`).
  */
-export function parseAISearchState(raw: unknown): AISearchState | null {
-  if (!raw || typeof raw !== 'object') {
-    return null;
-  }
-  const v = raw as Record<string, unknown>;
+function parseAISearchStatePayload(v: Record<string, unknown>): AISearchState | null {
   if (!Array.isArray(v.rows)) {
     return null;
   }
@@ -88,6 +84,41 @@ export function parseAISearchState(raw: unknown): AISearchState | null {
     schemaTagColors[k] = c;
   }
   return { rows, schemaTagColors };
+}
+
+export type ParsedAISearchPersisted = {
+  revision: number;
+  aiSearch: AISearchState;
+};
+
+/**
+ * Validate persisted AI search history JSON `{ revision, rows, schemaTagColors }`.
+ */
+export function parseAISearchPersisted(raw: unknown): ParsedAISearchPersisted | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  const v = raw as Record<string, unknown>;
+  const rev = v.revision;
+  if (typeof rev !== 'number' || !Number.isInteger(rev) || rev < 0) {
+    return null;
+  }
+  const aiSearch = parseAISearchStatePayload(v);
+  if (!aiSearch) {
+    return null;
+  }
+  return { revision: rev, aiSearch };
+}
+
+function readAISearchRevisionFromStorageRaw(raw: unknown): number {
+  if (!raw || typeof raw !== 'object') {
+    return 0;
+  }
+  const r = (raw as Record<string, unknown>).revision;
+  if (typeof r === 'number' && Number.isInteger(r) && r >= 0) {
+    return r;
+  }
+  return 0;
 }
 
 /**
@@ -153,6 +184,8 @@ export class PersistedAISearchService {
   private _store: SidebarStore;
   private _window: Window;
   private _toastMessenger: ToastMessengerService;
+  /** Monotonic revision for `AI_SEARCH_STORAGE_KEY`; ignores stale sync reads. */
+  private _aiSearchRevision = 0;
 
   constructor(
     localStorage: LocalStorageService,
@@ -209,11 +242,71 @@ export class PersistedAISearchService {
     hydrate(next);
   }
 
+  private _syncAISearchFromLocalStorage(e?: StorageEvent) {
+    const storageKey = AI_SEARCH_STORAGE_KEY;
+    let raw: unknown;
+
+    if (e) {
+      if (e.key !== null && e.key !== storageKey) {
+        return;
+      }
+      if (e.key === storageKey && e.newValue !== null) {
+        try {
+          raw = JSON.parse(e.newValue);
+        } catch {
+          return;
+        }
+      } else if (e.key === storageKey && e.newValue === null) {
+        raw = null;
+      } else {
+        raw = this._storage.getObject<unknown>(storageKey);
+      }
+    } else {
+      raw = this._storage.getObject<unknown>(storageKey);
+    }
+
+    const empty = emptyAiSearch();
+    const getCurrent = () => this._store.getState().sidebarPanels.aiSearch;
+
+    if (raw === null) {
+      this._aiSearchRevision = 0;
+      if (JSON.stringify(empty) !== JSON.stringify(getCurrent())) {
+        this._store.hydrateAISearch(empty);
+      }
+      return;
+    }
+
+    const parsed = parseAISearchPersisted(raw);
+    if (!parsed) {
+      return;
+    }
+
+    const { revision: incomingRevision, aiSearch } = parsed;
+
+    if (incomingRevision < this._aiSearchRevision) {
+      return;
+    }
+
+    if (JSON.stringify(aiSearch) === JSON.stringify(getCurrent())) {
+      this._aiSearchRevision = Math.max(
+        this._aiSearchRevision,
+        incomingRevision,
+      );
+      return;
+    }
+
+    this._store.hydrateAISearch(aiSearch);
+    this._aiSearchRevision = incomingRevision;
+  }
+
   init() {
     const persisted = this._storage.getObject<unknown>(AI_SEARCH_STORAGE_KEY);
-    const parsed = parseAISearchState(persisted);
+    const parsed = parseAISearchPersisted(persisted);
     if (parsed) {
-      this._store.hydrateAISearch(parsed);
+      this._store.hydrateAISearch(parsed.aiSearch);
+      this._aiSearchRevision = parsed.revision;
+    } else {
+      this._aiSearchRevision = 0;
     }
 
     const negRaw = this._storage.getObject<unknown>(
@@ -234,7 +327,13 @@ export class PersistedAISearchService {
       this._store.subscribe,
       () => this._store.getState().sidebarPanels.aiSearch,
       current => {
-        this._storage.setObject(AI_SEARCH_STORAGE_KEY, current);
+        const lsRaw = this._storage.getObject<unknown>(AI_SEARCH_STORAGE_KEY);
+        const readRev = readAISearchRevisionFromStorageRaw(lsRaw);
+        this._aiSearchRevision = Math.max(this._aiSearchRevision, readRev) + 1;
+        this._storage.setObject(AI_SEARCH_STORAGE_KEY, {
+          revision: this._aiSearchRevision,
+          ...current,
+        });
       },
       (a, b) => JSON.stringify(a) === JSON.stringify(b),
     );
@@ -268,17 +367,7 @@ export class PersistedAISearchService {
       (a, b) => JSON.stringify(a) === JSON.stringify(b),
     );
 
-    const syncHistory = (e?: StorageEvent) =>
-      this._syncFromLocalStorage(
-        {
-          storageKey: AI_SEARCH_STORAGE_KEY,
-          parse: parseAISearchState,
-          empty: emptyAiSearch,
-          getCurrent: () => this._store.getState().sidebarPanels.aiSearch,
-          hydrate: v => this._store.hydrateAISearch(v),
-        },
-        e,
-      );
+    const syncHistory = (e?: StorageEvent) => this._syncAISearchFromLocalStorage(e);
 
     const syncNegatives = (e?: StorageEvent) =>
       this._syncFromLocalStorage(

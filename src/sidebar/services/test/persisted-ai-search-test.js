@@ -8,23 +8,58 @@ import {
   AI_SEARCH_NEGATIVE_EXAMPLES_KEY,
   AI_SEARCH_STORAGE_KEY,
   parseAISearchNegativeExamplesState,
-  parseAISearchState,
+  parseAISearchPersisted,
   PersistedAISearchService,
 } from '../persisted-ai-search';
 
-describe('parseAISearchState', () => {
+describe('parseAISearchPersisted', () => {
   it('returns null for non-objects', () => {
-    assert.isNull(parseAISearchState(null));
-    assert.isNull(parseAISearchState('x'));
+    assert.isNull(parseAISearchPersisted(null));
+    assert.isNull(parseAISearchPersisted('x'));
+  });
+
+  it('returns null when revision is missing or not a non-negative integer', () => {
+    assert.isNull(
+      parseAISearchPersisted({
+        rows: [],
+        schemaTagColors: {},
+      }),
+    );
+    assert.isNull(
+      parseAISearchPersisted({
+        revision: 1.5,
+        rows: [],
+        schemaTagColors: {},
+      }),
+    );
+    assert.isNull(
+      parseAISearchPersisted({
+        revision: -1,
+        rows: [],
+        schemaTagColors: {},
+      }),
+    );
   });
 
   it('returns null when rows or schemaTagColors are invalid', () => {
-    assert.isNull(parseAISearchState({ rows: 'nope', schemaTagColors: {} }));
-    assert.isNull(parseAISearchState({ rows: [], schemaTagColors: [] }));
+    assert.isNull(
+      parseAISearchPersisted({
+        revision: 0,
+        rows: 'nope',
+        schemaTagColors: {},
+      }),
+    );
+    assert.isNull(
+      parseAISearchPersisted({
+        revision: 0,
+        rows: [],
+        schemaTagColors: [],
+      }),
+    );
   });
 
-  it('accepts a valid AISearchState shape', () => {
-    const state = {
+  it('accepts a valid persisted envelope', () => {
+    const aiSearch = {
       rows: [
         {
           id: '1',
@@ -35,7 +70,10 @@ describe('parseAISearchState', () => {
       ],
       schemaTagColors: { t: 'rgba(0,0,0,0.38)' },
     };
-    assert.deepEqual(parseAISearchState(state), state);
+    assert.deepEqual(parseAISearchPersisted({ revision: 2, ...aiSearch }), {
+      revision: 2,
+      aiSearch,
+    });
   });
 
   it('accepts rows with hidden true and omits hidden when false', () => {
@@ -51,7 +89,10 @@ describe('parseAISearchState', () => {
       ],
       schemaTagColors: {},
     };
-    assert.deepEqual(parseAISearchState(withHidden), withHidden);
+    assert.deepEqual(parseAISearchPersisted({ revision: 0, ...withHidden }), {
+      revision: 0,
+      aiSearch: withHidden,
+    });
 
     const withHiddenFalse = {
       rows: [
@@ -65,22 +106,29 @@ describe('parseAISearchState', () => {
       ],
       schemaTagColors: {},
     };
-    assert.deepEqual(parseAISearchState(withHiddenFalse), {
-      rows: [
-        {
-          id: '1',
-          schemaTag: 't',
-          query: 'q',
-          annotationIds: ['a'],
+    assert.deepEqual(
+      parseAISearchPersisted({ revision: 1, ...withHiddenFalse }),
+      {
+        revision: 1,
+        aiSearch: {
+          rows: [
+            {
+              id: '1',
+              schemaTag: 't',
+              query: 'q',
+              annotationIds: ['a'],
+            },
+          ],
+          schemaTagColors: {},
         },
-      ],
-      schemaTagColors: {},
-    });
+      },
+    );
   });
 
   it('returns null when hidden is not a boolean', () => {
     assert.isNull(
-      parseAISearchState({
+      parseAISearchPersisted({
+        revision: 0,
         rows: [
           {
             id: '1',
@@ -208,7 +256,7 @@ describe('PersistedAISearchService', () => {
 
   describe('#init', () => {
     it('hydrates from localStorage when data is valid', () => {
-      const persisted = {
+      const aiSearch = {
         rows: [
           {
             id: 'r1',
@@ -219,13 +267,14 @@ describe('PersistedAISearchService', () => {
         ],
         schemaTagColors: { methods: 'rgba(1,2,3,0.38)' },
       };
+      const persisted = { revision: 4, ...aiSearch };
       fakeLocalStorage.getObject
         .withArgs(AI_SEARCH_STORAGE_KEY)
         .returns(persisted);
 
       createService().init();
 
-      assert.deepEqual(store.getState().sidebarPanels.aiSearch, persisted);
+      assert.deepEqual(store.getState().sidebarPanels.aiSearch, aiSearch);
     });
 
     it('hydrates negative examples from localStorage when data is valid', () => {
@@ -253,6 +302,7 @@ describe('PersistedAISearchService', () => {
 
     it('does not hydrate when stored data is invalid', () => {
       fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns({
+        revision: 0,
         rows: 'bad',
         schemaTagColors: {},
       });
@@ -276,7 +326,10 @@ describe('PersistedAISearchService', () => {
       assert.calledWith(
         fakeLocalStorage.setObject,
         AI_SEARCH_STORAGE_KEY,
-        store.getState().sidebarPanels.aiSearch,
+        {
+          revision: 1,
+          ...store.getState().sidebarPanels.aiSearch,
+        },
       );
     });
 
@@ -402,7 +455,7 @@ describe('PersistedAISearchService', () => {
 
       createService().init();
 
-      const next = {
+      const aiSearch = {
         rows: [
           {
             id: 'x',
@@ -413,13 +466,14 @@ describe('PersistedAISearchService', () => {
         ],
         schemaTagColors: { remote: 'rgba(9,9,9,0.38)' },
       };
+      const next = { revision: 1, ...aiSearch };
 
       triggerStorage(
         AI_SEARCH_STORAGE_KEY,
         JSON.stringify(next),
       );
 
-      assert.deepEqual(store.getState().sidebarPanels.aiSearch, next);
+      assert.deepEqual(store.getState().sidebarPanels.aiSearch, aiSearch);
     });
 
     it('hydrates negative examples from storage event payload', () => {
@@ -474,6 +528,7 @@ describe('PersistedAISearchService', () => {
 
     it('does not hydrate when payload matches current state', () => {
       const initial = {
+        revision: 0,
         rows: [],
         schemaTagColors: {},
       };
@@ -493,6 +548,7 @@ describe('PersistedAISearchService', () => {
 
     it('hydrates empty state when key is removed', () => {
       const persisted = {
+        revision: 1,
         rows: [
           {
             id: 'r1',
@@ -512,6 +568,75 @@ describe('PersistedAISearchService', () => {
       assert.deepEqual(store.getState().sidebarPanels.aiSearch, {
         rows: [],
         schemaTagColors: {},
+      });
+    });
+
+    it('does not hydrate when storage revision is older than local', () => {
+      fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns(null);
+
+      createService().init();
+
+      store.addAISearchRow({
+        id: 'r1',
+        schemaTag: 't',
+        query: 'q',
+        annotationIds: [],
+      });
+
+      sinon.spy(store, 'hydrateAISearch');
+
+      const stale = {
+        revision: 0,
+        rows: [
+          {
+            id: 'stale',
+            schemaTag: 'x',
+            query: 'y',
+            annotationIds: [],
+          },
+        ],
+        schemaTagColors: {},
+      };
+
+      triggerStorage(AI_SEARCH_STORAGE_KEY, JSON.stringify(stale));
+
+      assert.notCalled(store.hydrateAISearch);
+      assert.equal(store.getState().sidebarPanels.aiSearch.rows[0].id, 'r1');
+    });
+
+    it('hydrates when storage revision is newer than local', () => {
+      fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns(null);
+
+      createService().init();
+
+      store.addAISearchRow({
+        id: 'r1',
+        schemaTag: 't',
+        query: 'q',
+        annotationIds: [],
+      });
+
+      const remote = {
+        revision: 5,
+        rows: [
+          {
+            id: 'remote',
+            schemaTag: 'a',
+            query: 'b',
+            annotationIds: ['z'],
+          },
+        ],
+        schemaTagColors: { a: 'rgba(1,1,1,0.38)' },
+      };
+
+      triggerStorage(
+        AI_SEARCH_STORAGE_KEY,
+        JSON.stringify(remote),
+      );
+
+      assert.deepEqual(store.getState().sidebarPanels.aiSearch, {
+        rows: remote.rows,
+        schemaTagColors: remote.schemaTagColors,
       });
     });
 
