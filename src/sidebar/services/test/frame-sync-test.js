@@ -168,6 +168,11 @@ describe('FrameSyncService', () => {
         },
 
         addAnnotations: sinon.stub(),
+        addAISearchRow: sinon.stub(),
+        aiSearchPanelAnnotateManually: sinon.stub().returns(false),
+        aiSearchPanelQueryInput: sinon.stub().returns(null),
+        aiSearchPanelSchemaTagInput: sinon.stub().returns(''),
+        aiSearchRows: sinon.stub().returns([]),
         findAnnotationByID: sinon.stub().returns(null),
         getDraft: sinon.stub().returns(null),
         findIDsForTags: sinon.stub().returns([]),
@@ -175,6 +180,7 @@ describe('FrameSyncService', () => {
         getFocusFilters: sinon.stub().returns({}),
         hoverAnnotations: sinon.stub(),
         isLoggedIn: sinon.stub().returns(false),
+        mergeAISearchRowsWithSameTagQuery: sinon.stub(),
         openSidebarPanel: sinon.stub(),
         selectAnnotations: sinon.stub(),
         selectTab: sinon.stub(),
@@ -549,6 +555,32 @@ describe('FrameSyncService', () => {
       );
     });
 
+    it('re-sends existing annotations when tag classes change', async () => {
+      const frameInfo = fixtures.htmlDocumentInfo;
+      await connectGuest();
+      emitGuestEvent('documentInfoChanged', frameInfo);
+
+      const before = {
+        ...fixtures.ann,
+        id: 'a1',
+        tags: ['tag-a'],
+      };
+      const after = {
+        ...before,
+        tags: ['tag-b'],
+      };
+      fakeStore.setState({ annotations: [before] });
+      guestRPC().call.resetHistory();
+
+      fakeStore.setState({ annotations: [after] });
+
+      assert.calledWithMatch(
+        guestRPC().call,
+        'loadAnnotations',
+        sinon.match([formatAnnot(after)]),
+      );
+    });
+
     it('does not send a "loadAnnotations" message for replies', async () => {
       await connectGuest();
 
@@ -664,6 +696,50 @@ describe('FrameSyncService', () => {
         emitGuestEvent('createAnnotation', ann);
 
         assert.calledWith(fakeAnnotationsService.create, ann);
+      });
+
+      it('injects schema tag and creates history row when manual annotate toggle is enabled', () => {
+        fakeStore.isLoggedIn.returns(true);
+        fakeStore.aiSearchPanelAnnotateManually.returns(true);
+        fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+        fakeStore.aiSearchPanelQueryInput.returns('query');
+        fakeStore.aiSearchRows.returns([]);
+        const ann = { $tag: 't1', target: [], tags: [] };
+
+        emitGuestEvent('createAnnotation', ann);
+
+        assert.deepEqual(ann.tags, ['methods']);
+        assert.calledWith(fakeStore.addAISearchRow, {
+          id: 'manual-t1',
+          schemaTag: 'methods',
+          query: 'query',
+          annotationIds: [],
+        });
+        assert.calledWith(fakeStore.mergeAISearchRowsWithSameTagQuery, 'manual-t1');
+      });
+
+      it('reuses and merges existing matching history row instead of creating another', () => {
+        fakeStore.isLoggedIn.returns(true);
+        fakeStore.aiSearchPanelAnnotateManually.returns(true);
+        fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+        fakeStore.aiSearchPanelQueryInput.returns('query');
+        fakeStore.aiSearchRows.returns([
+          {
+            id: 'existing',
+            schemaTag: 'methods',
+            query: 'query',
+            annotationIds: [],
+          },
+        ]);
+        const ann = { $tag: 't1', target: [], tags: [] };
+
+        emitGuestEvent('createAnnotation', ann);
+
+        assert.notCalled(fakeStore.addAISearchRow);
+        assert.calledWith(
+          fakeStore.mergeAISearchRowsWithSameTagQuery,
+          'existing',
+        );
       });
 
       it('opens the sidebar ready for the user to edit the draft', async () => {

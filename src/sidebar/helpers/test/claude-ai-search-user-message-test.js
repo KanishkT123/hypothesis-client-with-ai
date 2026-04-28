@@ -533,6 +533,24 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       assert.equal(countAISearchRowTotalAnnotations([manual], pdf, 't1', 'q'), 1);
     });
 
+    it('does not include empty-text manual annotation for non-empty query rows', () => {
+      const manual = textQuoteAnn({
+        id: 'm2',
+        tags: ['t1'],
+        text: '',
+      });
+      assert.equal(countAISearchRowTotalAnnotations([manual], pdf, 't1', 'q'), 0);
+    });
+
+    it('includes empty-text manual annotation for empty-query rows', () => {
+      const manual = textQuoteAnn({
+        id: 'm3',
+        tags: ['t1'],
+        text: '',
+      });
+      assert.equal(countAISearchRowTotalAnnotations([manual], pdf, 't1', ''), 1);
+    });
+
     it('excludes replies and wrong uri', () => {
       const reply = textQuoteAnn({
         id: 'r1',

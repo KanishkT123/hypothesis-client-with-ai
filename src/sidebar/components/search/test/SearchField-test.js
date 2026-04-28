@@ -164,7 +164,7 @@ describe('SearchField', () => {
   it('renders a textarea and full-width submit when multiline and label are set', () => {
     const wrapper = createSearchField({
       multiline: true,
-      fullWidthSubmitLabel: 'Ask the AI',
+      fullWidthSubmitLabel: 'Ask AI for Annotations',
       query: null,
       onSearch: sinon.stub(),
       onClearSearch: sinon.stub(),
@@ -173,7 +173,29 @@ describe('SearchField', () => {
     assert.isFalse(wrapper.find('input').exists());
     assert.equal(
       wrapper.find('[data-testid="search-submit-button"]').first().text(),
-      'Ask the AI',
+      'Ask AI for Annotations',
+    );
+  });
+
+  it('renders leading content before submit button in AI layout', () => {
+    const wrapper = createSearchField({
+      multiline: true,
+      fullWidthSubmitLabel: 'Ask AI for Annotations',
+      fullWidthSubmitLeading: (
+        <button data-testid="leading-control" type="button">
+          Annotate Manually
+        </button>
+      ),
+      query: null,
+      onSearch: sinon.stub(),
+      onClearSearch: sinon.stub(),
+    });
+
+    const row = wrapper.find('form > div').at(1);
+    assert.equal(row.find('[data-testid="leading-control"]').exists(), true);
+    assert.equal(
+      row.find('[data-testid="search-submit-button"]').exists(),
+      true,
     );
   });
 
@@ -183,7 +205,7 @@ describe('SearchField', () => {
       query: 'foo',
       onSearch,
       multiline: true,
-      fullWidthSubmitLabel: 'Ask the AI',
+      fullWidthSubmitLabel: 'Ask AI for Annotations',
       onClearSearch: sinon.stub(),
     });
     typeQueryTextarea(wrapper, 'new-query');
@@ -200,7 +222,7 @@ describe('SearchField', () => {
       query: 'foo',
       onSearch,
       multiline: true,
-      fullWidthSubmitLabel: 'Ask the AI',
+      fullWidthSubmitLabel: 'Ask AI for Annotations',
       onClearSearch: sinon.stub(),
     });
     typeQueryTextarea(wrapper, 'new-query');
@@ -217,7 +239,7 @@ describe('SearchField', () => {
       disabled: true,
       query,
       multiline: true,
-      fullWidthSubmitLabel: 'Ask the AI',
+      fullWidthSubmitLabel: 'Ask AI for Annotations',
       onSearch: sinon.stub(),
       onClearSearch: sinon.stub(),
     });
@@ -252,7 +274,7 @@ describe('SearchField', () => {
         content: () =>
           createSearchField({
             multiline: true,
-            fullWidthSubmitLabel: 'Ask the AI',
+            fullWidthSubmitLabel: 'Ask AI for Annotations',
             query: 'q',
             onSearch: sinon.stub(),
             onClearSearch: sinon.stub(),

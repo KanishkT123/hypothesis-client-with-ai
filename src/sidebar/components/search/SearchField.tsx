@@ -26,6 +26,9 @@ export type SearchFieldProps = {
   /** Callback for when the current filter query changes */
   onSearch: (value: string) => void | Promise<void>;
 
+  /** Callback for input value changes before submit. */
+  onQueryChange?: (value: string) => void;
+
   /** Callback for when a key is pressed in the input itself */
   onKeyDown?: JSX.KeyboardEventHandler<HTMLInputElement | HTMLTextAreaElement>;
 
@@ -51,8 +54,13 @@ export type SearchFieldProps = {
   fullWidthSubmitLabel?: string;
 
   /**
+   * Optional content rendered before the full-width submit button in AI layout.
+   */
+  fullWidthSubmitLeading?: ComponentChildren;
+
+  /**
    * When set with `fullWidthSubmitLabel`, renders this content in the same row as
-   * the submit button: submit uses ~4/5 width, trailing ~1/5.
+   * the submit button.
    */
   fullWidthSubmitTrailing?: ComponentChildren;
 };
@@ -65,12 +73,14 @@ export default function SearchField({
   classes,
   disabled = false,
   fullWidthSubmitLabel,
+  fullWidthSubmitLeading,
   fullWidthSubmitTrailing,
   inputRef,
   multiline = false,
   onClearSearch,
   onKeyDown,
   onSearch,
+  onQueryChange,
   placeholder = 'Search…',
   query,
   rows = 4,
@@ -171,9 +181,11 @@ export default function SearchField({
             ref={input as RefObject<HTMLTextAreaElement>}
             rows={rows}
             value={pendingQuery || ''}
-            onInput={(e: Event) =>
-              setPendingQuery((e.target as HTMLTextAreaElement).value)
-            }
+            onInput={(e: Event) => {
+              const value = (e.target as HTMLTextAreaElement).value;
+              setPendingQuery(value);
+              onQueryChange?.(value);
+            }}
             onKeyDown={handleKeyDown}
           />
         ) : (
@@ -191,9 +203,11 @@ export default function SearchField({
             disabled={fieldDisabled}
             elementRef={input as RefObject<HTMLInputElement>}
             value={pendingQuery || ''}
-            onInput={(e: Event) =>
-              setPendingQuery((e.target as HTMLInputElement).value)
-            }
+            onInput={(e: Event) => {
+              const value = (e.target as HTMLInputElement).value;
+              setPendingQuery(value);
+              onQueryChange?.(value);
+            }}
             onKeyDown={onKeyDown}
           />
         )}
@@ -213,11 +227,20 @@ export default function SearchField({
         )}
       </div>
       {useAiSubmitLayout &&
-        (fullWidthSubmitTrailing != null ? (
+        ((fullWidthSubmitLeading !== null &&
+          fullWidthSubmitLeading !== undefined) ||
+        (fullWidthSubmitTrailing !== null &&
+          fullWidthSubmitTrailing !== undefined) ? (
           <div className="flex min-w-0 items-stretch gap-2">
+            {fullWidthSubmitLeading !== null &&
+              fullWidthSubmitLeading !== undefined && (
+              <div className="flex shrink-0 items-stretch">
+                {fullWidthSubmitLeading}
+              </div>
+              )}
             <Button
               classes={classnames(
-                'flex-[4] min-w-0 justify-center text-center',
+                'flex-1 min-w-0 justify-center text-center',
                 fieldDisabled && 'opacity-50 cursor-not-allowed',
               )}
               data-testid="search-submit-button"
@@ -227,7 +250,7 @@ export default function SearchField({
               {fullWidthSubmitLabel}
             </Button>
             <div className="flex min-w-0 flex-[1] shrink-0 items-center justify-end gap-2">
-              {fullWidthSubmitTrailing}
+              {fullWidthSubmitTrailing ?? null}
             </div>
           </div>
         ) : (

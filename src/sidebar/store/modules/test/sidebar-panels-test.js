@@ -94,6 +94,24 @@ describe('sidebar/store/modules/sidebar-panels', () => {
   });
 
   describe('aiSearch reducers', () => {
+    it('prepends newly added rows to the top of history', () => {
+      store.addAISearchRow({
+        id: 'older',
+        schemaTag: 'methods',
+        query: 'q1',
+        annotationIds: [],
+      });
+      store.addAISearchRow({
+        id: 'newer',
+        schemaTag: 'results',
+        query: 'q2',
+        annotationIds: [],
+      });
+
+      const rows = getSidebarPanelsState().aiSearch.rows;
+      assert.deepEqual(rows.map(r => r.id), ['newer', 'older']);
+    });
+
     it('adds a row and assigns a default color for a new schema tag', () => {
       store.addAISearchRow({
         id: 'r1',

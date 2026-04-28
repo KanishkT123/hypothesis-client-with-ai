@@ -115,14 +115,13 @@ function AISearchPanel({
 }: AISearchPanelProps) {
   const store = useSidebarStore();
   /** AI prompt text only; not the global sidebar filter query (see setFilterQuery). */
-  const [aiSearchFieldQuery, setAiSearchFieldQuery] = useState<string | null>(
-    null,
-  );
+  const aiSearchFieldQuery = store.aiSearchPanelQueryInput();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [runAISearchInFlight, setRunAISearchInFlight] = useState(false);
   // const [reductoAPIKey, setReductoAPIKey] = useState('');
   const [claudeAPIKey, setClaudeAPIKey] = useState('');
-  const [schemaTag, setSchemaTag] = useState('');
+  const schemaTag = store.aiSearchPanelSchemaTagInput();
+  const annotateManually = store.aiSearchPanelAnnotateManually();
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
   const [rerunningRowId, setRerunningRowId] = useState<string | null>(null);
   const [userDeniedSectionOpen, setUserDeniedSectionOpen] = useState(false);
@@ -149,6 +148,7 @@ function AISearchPanel({
     runAISearchInFlight ||
     rerunningRowId !== null ||
     deletingRowId !== null;
+  const canAnnotateManually = schemaTag.trim().length > 0;
 
   const displayRows = useMemo(
     () =>
@@ -542,7 +542,7 @@ function AISearchPanel({
       onActiveChanged={active => {
         if (!active) {
           store.setFilterQuery(null);
-          setAiSearchFieldQuery(null);
+          store.setAISearchPanelQueryInput(null);
         } else {
           frameSync.setTagHighlightPalette(
             mergeAISearchTagHighlightPalette(store.aiSearchSchemaTagColors()),
@@ -575,14 +575,42 @@ function AISearchPanel({
               placeholder="Tag"
               type="text"
               value={schemaTag}
-              onInput={(e: Event) =>
-                setSchemaTag((e.target as HTMLInputElement).value)
-              }
+              onInput={(e: Event) => {
+                store.setAISearchPanelSchemaTagInput(
+                  (e.target as HTMLInputElement).value,
+                );
+              }}
             />
             <SearchField
               inputRef={inputRef}
               classes="grow"
-              fullWidthSubmitLabel="Ask the AI"
+              fullWidthSubmitLabel="Ask AI for Annotations"
+              fullWidthSubmitLeading={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  data-pressed={annotateManually ? 'true' : 'false'}
+                  data-testid="ai-search-manual-annotate-toggle"
+                  disabled={!canAnnotateManually}
+                  title={
+                    canAnnotateManually
+                      ? annotateManually
+                        ? 'Disable manual annotation tagging'
+                        : 'Enable manual annotation tagging'
+                      : 'Set a schema tag to enable manual annotation tagging'
+                  }
+                  classes={classnames(
+                    'shrink-0',
+                    annotateManually && 'bg-grey-3 text-color-text',
+                  )}
+                  onClick={() => {
+                    store.setAISearchPanelAnnotateManually(!annotateManually);
+                  }}
+                >
+                  Annotate Manually
+                </Button>
+              }
               fullWidthSubmitTrailing={
                 <>
                   <span
@@ -617,6 +645,7 @@ function AISearchPanel({
               rows={4}
               disabled={globalRowLock}
               query={aiSearchFieldQuery}
+              onQueryChange={value => store.setAISearchPanelQueryInput(value)}
               onClearSearch={clearSearch}
               onSearch={onAISearch}
               onKeyDown={e => {

@@ -65,6 +65,13 @@ export function formatAnnot({
   };
 }
 
+function formattedAnnotationChanged(
+  previous: Annotation,
+  current: Annotation,
+): boolean {
+  return !shallowEqual(formatAnnot(previous), formatAnnot(current));
+}
+
 /**
  * Return the frame which best matches an annotation.
  */
@@ -245,6 +252,8 @@ export class FrameSyncService {
       let publicAnns = 0;
       const inSidebar = new Set<string>();
       const added = [] as Annotation[];
+      const changed = [] as Annotation[];
+      const previousByTag = new Map(prevAnnotations.map(ann => [ann.$tag, ann]));
 
       // Determine which annotations have been added or deleted in the sidebar.
       annotations.forEach(annot => {
@@ -260,6 +269,11 @@ export class FrameSyncService {
         inSidebar.add(annot.$tag);
         if (!this._inFrame.has(annot.$tag)) {
           added.push(annot);
+          return;
+        }
+        const previous = previousByTag.get(annot.$tag);
+        if (previous && formattedAnnotationChanged(previous, annot)) {
+          changed.push(annot);
         }
       });
       const deleted = prevAnnotations.filter(
@@ -308,6 +322,31 @@ export class FrameSyncService {
         added.forEach(annot => {
           this._inFrame.add(annot.$tag);
         });
+      }
+
+      if (changed.length > 0) {
+        const changedByFrame = new Map<string | null, Annotation[]>();
+        for (const annotation of changed) {
+          const frame = frameForAnnotation(frames, annotation);
+          if (!frame) {
+            continue;
+          }
+          if (
+            frame.segment &&
+            !annotationMatchesSegment(annotation, frame.segment)
+          ) {
+            continue;
+          }
+          const anns = changedByFrame.get(frame.id) ?? [];
+          anns.push(annotation);
+          changedByFrame.set(frame.id, anns);
+        }
+        for (const [frameId, anns] of changedByFrame) {
+          const rpc = this._guestRPC.get(frameId);
+          if (rpc) {
+            rpc.call('loadAnnotations', anns.map(formatAnnot));
+          }
+        }
       }
 
       // Remove deleted annotations from frames.
@@ -438,6 +477,36 @@ export class FrameSyncService {
       }
 
       this._inFrame.add(annot.$tag);
+
+      const shouldAutoTag =
+        this._store.aiSearchPanelAnnotateManually() &&
+        this._store.aiSearchPanelSchemaTagInput().trim().length > 0;
+      if (shouldAutoTag) {
+        const schemaTag = this._store.aiSearchPanelSchemaTagInput().trim();
+        const query = this._store.aiSearchPanelQueryInput() ?? '';
+        const tags = annot.tags ?? [];
+        if (!tags.includes(schemaTag)) {
+          annot.tags = [...tags, schemaTag];
+        }
+
+        const rowMatch = this._store.aiSearchRows().find(
+          row =>
+            row.schemaTag.trim() === schemaTag &&
+            row.query.trim() === query.trim(),
+        );
+        if (rowMatch) {
+          this._store.mergeAISearchRowsWithSameTagQuery(rowMatch.id);
+        } else {
+          const rowId = `manual-${annot.$tag}`;
+          this._store.addAISearchRow({
+            id: rowId,
+            schemaTag,
+            query,
+            annotationIds: [],
+          });
+          this._store.mergeAISearchRowsWithSameTagQuery(rowId);
+        }
+      }
 
       // Open the sidebar so that the user can immediately edit the draft
       // annotation.

@@ -195,7 +195,7 @@ const reducers = {
 
   ADD_AI_SEARCH_ROW(state: State, action: { row: AISearchRow }) {
     const { row } = action;
-    const rows = [...state.aiSearch.rows, row];
+    const rows = [row, ...state.aiSearch.rows];
     const tag = row.schemaTag.trim();
     let { schemaTagColors } = state.aiSearch;
     if (tag && schemaTagColors[tag] === undefined) {
