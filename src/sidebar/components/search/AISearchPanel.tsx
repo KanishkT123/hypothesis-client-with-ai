@@ -641,6 +641,7 @@ function AISearchPanel({
                 </>
               }
               multiline
+              allowSubmitWithJustTag={schemaTag.trim().length > 0}
               placeholder="ask AI to highlight…"
               rows={4}
               disabled={globalRowLock}

@@ -26,6 +26,14 @@ export type SearchFieldProps = {
   /** Callback for when the current filter query changes */
   onSearch: (value: string) => void | Promise<void>;
 
+  /**
+   * When true, allow submitting with just the schema tag context.
+   *
+   * By default, initial empty submits are ignored to avoid setting an empty
+   * filter query in regular search contexts.
+   */
+  allowSubmitWithJustTag?: boolean;
+
   /** Callback for input value changes before submit. */
   onQueryChange?: (value: string) => void;
 
@@ -70,6 +78,7 @@ export type SearchFieldProps = {
  * or searches annotations (in the stream/single annotation view).
  */
 export default function SearchField({
+  allowSubmitWithJustTag = false,
   classes,
   disabled = false,
   fullWidthSubmitLabel,
@@ -108,7 +117,7 @@ export default function SearchField({
   });
 
   const commitSearch = () => {
-    if (input.current?.value || prevQuery) {
+    if (allowSubmitWithJustTag || input.current?.value || prevQuery) {
       // Don't set an initial empty query, but allow a later empty query to
       // clear `prevQuery`
       onSearch(input.current?.value ?? '');
@@ -249,7 +258,7 @@ export default function SearchField({
             >
               {fullWidthSubmitLabel}
             </Button>
-            <div className="flex min-w-0 flex-[1] shrink-0 items-center justify-end gap-2">
+            <div className="flex min-w-0 items-center justify-end gap-2">
               {fullWidthSubmitTrailing ?? null}
             </div>
           </div>

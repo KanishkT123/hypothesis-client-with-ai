@@ -79,6 +79,19 @@ describe('SearchField', () => {
     assert.notCalled(onSearch);
   });
 
+  it('allows initial empty query submit when `allowSubmitWithJustTag` is true', () => {
+    const onSearch = sinon.stub();
+    const wrapper = createSearchField({
+      onSearch,
+      allowSubmitWithJustTag: true,
+    });
+
+    typeQuery(wrapper, '');
+    wrapper.find('form').simulate('submit');
+
+    assert.calledWith(onSearch, '');
+  });
+
   it('sets subsequent empty queries if entered', () => {
     // If there has already been at least one query set, subsequent
     // empty queries will be honored
