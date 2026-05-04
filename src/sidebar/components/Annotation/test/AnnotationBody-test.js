@@ -175,6 +175,17 @@ describe('AnnotationBody', () => {
       assert.isFalse(wrapper.find('TagList').exists());
     });
 
+  it('does not throw if annotation text or tags are undefined', () => {
+    const annotation = fixtures.defaultAnnotation();
+    annotation.text = undefined;
+    annotation.tags = undefined;
+
+    const wrapper = createBody({ annotation });
+
+    assert.isFalse(wrapper.find('MarkdownView').exists());
+    assert.isFalse(wrapper.find('TagList').exists());
+  });
+
     it('applies theme', () => {
       const textStyle = { fontFamily: 'serif' };
       fakeApplyTheme

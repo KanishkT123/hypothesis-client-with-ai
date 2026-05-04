@@ -531,21 +531,17 @@ export class FrameSyncService {
           ? this._store.allAnnotations().find(a => a.$tag === ann.$tag)
           : undefined);
 
-      const merged =
-        existing === undefined
-          ? ann
-          : (() => {
-              const draft = this._store.getDraft(existing);
-              return {
-                ...existing,
-                ...ann,
-                tags: draft ? draft.tags : (existing.tags ?? ann.tags),
-                text: draft ? draft.text : (existing.text ?? ann.text),
-                permissions: ann.permissions ?? existing.permissions,
-              };
-            })();
-
-      this._store.addAnnotations([merged as Annotation]);
+      if (existing !== undefined) {
+        const draft = this._store.getDraft(existing);
+        const merged = {
+          ...existing,
+          ...ann,
+          tags: draft ? draft.tags : (existing.tags ?? ann.tags),
+          text: draft ? draft.text : (existing.text ?? ann.text),
+          permissions: ann.permissions ?? existing.permissions,
+        };
+        this._store.addAnnotations([merged as Annotation]);
+      }
 
       if ($tag === this._pendingHoverTag) {
         this._pendingHoverTag = null;

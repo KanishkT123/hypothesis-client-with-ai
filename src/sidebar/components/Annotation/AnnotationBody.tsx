@@ -72,8 +72,8 @@ function AnnotationBody({ annotation, settings }: AnnotationBodyProps) {
   const mentionsEnabled = store.isFeatureEnabled('at_mentions');
 
   // If there is a draft use the tag and text from it.
-  const tags = draft?.tags ?? annotation.tags;
-  const text = draft?.text ?? annotation.text;
+  const tags = draft?.tags ?? annotation.tags ?? [];
+  const text = draft?.text ?? annotation.text ?? '';
   const showExcerpt = text.length > 0;
   const showTagList = tags.length > 0;
 
