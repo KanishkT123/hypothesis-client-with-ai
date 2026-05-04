@@ -344,12 +344,8 @@ export function savedAnnotationMatchesAISearchRow(
   }
   const annText = norm(ann.text ?? '');
   const queryTrim = norm(query);
-  if (annText !== queryTrim) {
-    // Manual highlights often have empty text. For these, only empty-query rows
-    // are considered a match; non-empty query rows should not match.
-    if (!(annText === '' && queryTrim === '')) {
-      return false;
-    }
+  if (queryTrim !== '' && annText !== queryTrim) {
+    return false;
   }
   if (!schemaTagMatchesSearchRow(norm(schemaTag), ann.tags ?? [])) {
     return false;

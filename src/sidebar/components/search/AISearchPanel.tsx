@@ -830,7 +830,13 @@ function AISearchPanel({
                             )}
                           </td>
                           <td className="py-1 pr-2 align-middle break-words text-xs leading-snug">
-                            {row.query}
+                            {row.query.trim() ? (
+                              row.query
+                            ) : (
+                              <span className="text-color-text-light">
+                                No query - matches this tag across the document
+                              </span>
+                            )}
                           </td>
                           <td className="w-min py-1 pr-2 text-right align-middle tabular-nums whitespace-nowrap">
                             <span
