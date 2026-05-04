@@ -15,7 +15,9 @@ const STYLE_ID = 'hypothesis-dynamic-tag-highlight-rules';
  * Uses CSS `color-mix()` (no JS color parsing). Requires modern browsers.
  */
 const FOCUS_COLOR_MIX_PERCENT = 78;
-const clusteredModeActive = false;
+// TODO: Restore clustered mode toggle once clustered highlight styling and
+// multi-tag PDF overlays are compatible.
+// const clusteredModeActive = false;
 
 /**
  * Replaces the injected stylesheet from this map only. Tags omitted from the map
@@ -49,13 +51,16 @@ export function applyTagHighlightPalette(
       `${legacySelector} { --highlight-color: ${base}; --highlight-color-focused: color-mix(in srgb, var(--highlight-color) ${FOCUS_COLOR_MIX_PERCENT}%, black); }`,
     );
 
-    if (!clusteredModeActive) {
-      // Clustered mode is intentionally excluded here. Its nesting and ordering
-      // assumptions are not yet adapted for multi-color per-annotation overlays.
-      lines.push(
-        `.hypothesis-highlights-always-on .hypothesis-svg-highlight-overlay.${cls} { --highlight-overlay-color: ${base}; fill: var(--highlight-overlay-color); }`,
-      );
-    }
+    // TODO: Restore clustered mode branch once clustered highlight styling and
+    // multi-tag PDF overlays are compatible.
+    // if (!clusteredModeActive) {
+    //   lines.push(
+    //     `.hypothesis-highlights-always-on .hypothesis-svg-highlight-overlay.${cls} { --highlight-overlay-color: ${base}; fill: var(--highlight-overlay-color); }`,
+    //   );
+    // }
+    lines.push(
+      `.hypothesis-highlights-always-on .hypothesis-svg-highlight-overlay.${cls} { --highlight-overlay-color: ${base}; fill: var(--highlight-overlay-color); }`,
+    );
   }
   style.textContent = lines.join('\n');
 }
