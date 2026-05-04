@@ -45,10 +45,9 @@ import { ThumbnailService } from './services/thumbnail';
 import { ToastMessengerService } from './services/toast-messenger';
 import { createSidebarStore } from './store';
 import type { SidebarStore } from './store';
-import { mergeAISearchTagHighlightPalette } from './helpers/ai-search-tag-palette';
+import { setupAISearchTagPaletteSync } from './services/ai-search-tag-palette-sync';
 import { disableOpenerForExternalLinks } from './util/disable-opener-for-external-links';
 import * as sentry from './util/sentry';
-import { watch } from './util/watch';
 
 // Read settings rendered into sidebar app HTML by service/extension.
 const configFromSidebar = parseJsonConfig(document) as ConfigFromSidebar;
@@ -126,22 +125,7 @@ function setupFrameSync(
   store: SidebarStore,
   toastMessenger: ToastMessengerService,
 ) {
-  const pushAiSearchTagPalette = () => {
-    const colors = store.getState().sidebarPanels.aiSearch.schemaTagColors;
-    frameSync.setTagHighlightPalette(
-      mergeAISearchTagHighlightPalette(colors),
-    );
-  };
-
-  watch(
-    store.subscribe,
-    () => store.getState().sidebarPanels.aiSearch.schemaTagColors,
-    () => {
-      pushAiSearchTagPalette();
-    },
-    (a, b) => JSON.stringify(a) === JSON.stringify(b),
-  );
-  pushAiSearchTagPalette();
+  setupAISearchTagPaletteSync(frameSync, store);
 
   if (store.route() === 'sidebar') {
     frameSync.connect().catch(() => {

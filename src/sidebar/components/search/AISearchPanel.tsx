@@ -35,7 +35,7 @@ import {
   tagsAfterRemovingAISearchRowSchemaTag,
 } from '../../helpers/claude-ai-search-user-message';
 import { quote as annotationQuote } from '../../helpers/annotation-metadata';
-import { mergeAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
+import { mergeVisibleAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
 import { formatSidebarTagFilter } from '../../helpers/filter-query-for-tag';
 import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
@@ -560,7 +560,10 @@ function AISearchPanel({
           store.setAISearchPanelQueryInput(null);
         } else {
           frameSync.setTagHighlightPalette(
-            mergeAISearchTagHighlightPalette(store.aiSearchSchemaTagColors()),
+            mergeVisibleAISearchTagHighlightPalette(
+              store.aiSearchRows(),
+              store.aiSearchSchemaTagColors(),
+            ),
           );
         }
       }}
