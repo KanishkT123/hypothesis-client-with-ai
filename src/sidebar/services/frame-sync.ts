@@ -136,6 +136,8 @@ export class FrameSyncService {
 
   /** Whether highlights are visible in guest frames. */
   private _highlightsVisible: boolean;
+  /** Latest tag highlight palette to replay to newly connected guests. */
+  private _tagHighlightPalette: Record<string, string>;
 
   /**
    * Channel for sidebar-host communication.
@@ -212,6 +214,7 @@ export class FrameSyncService {
     this._guestRPC = new Map();
     this._inFrame = new Set<string>();
     this._highlightsVisible = false;
+    this._tagHighlightPalette = {};
 
     this._pendingScrollToTag = null;
     this._pendingHoverTag = null;
@@ -612,6 +615,7 @@ export class FrameSyncService {
     guestRPC.call('setHighlightsVisible', this._highlightsVisible);
     guestRPC.call('featureFlagsUpdated', this._store.features());
     guestRPC.call('shortcutsUpdated', getAllShortcuts());
+    guestRPC.call('setTagHighlightPalette', this._tagHighlightPalette);
 
     // If we have content banner data, send it to the guest. If there are
     // multiple guests the banner is likely only appropriate for the main one.
@@ -739,8 +743,9 @@ export class FrameSyncService {
    * picker change). Pass the full map each time.
    */
   setTagHighlightPalette(palette: Record<string, string>): void {
+    this._tagHighlightPalette = { ...palette };
     this._guestRPC.forEach(rpc =>
-      rpc.call('setTagHighlightPalette', palette),
+      rpc.call('setTagHighlightPalette', this._tagHighlightPalette),
     );
   }
 

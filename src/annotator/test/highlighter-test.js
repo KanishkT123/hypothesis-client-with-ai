@@ -64,12 +64,17 @@ function PDFPage({ showPlaceholder = false }) {
  *   and SVG rect elements
  * @return {HighlightElement[]} - `<hypothesis-highlight>` element
  */
-function highlightPDFRange(highlighter, pageContainer, cssClass = '') {
+function highlightPDFRange(
+  highlighter,
+  pageContainer,
+  cssClass = '',
+  annotationTags = [],
+) {
   const textSpan = pageContainer.querySelector('.testText');
   const range = new Range();
   range.setStartBefore(textSpan.childNodes[0]);
   range.setEndAfter(textSpan.childNodes[0]);
-  return highlighter.highlightRange(range, cssClass);
+  return highlighter.highlightRange(range, cssClass, annotationTags);
 }
 
 describe('annotator/highlighter', () => {
@@ -82,14 +87,18 @@ describe('annotator/highlighter', () => {
    *   and SVG rect elements
    * @return {HTMLElement}
    */
-  function createPDFPageWithHighlight(highlighter, cssClass = '') {
+  function createPDFPageWithHighlight(
+    highlighter,
+    cssClass = '',
+    annotationTags = [],
+  ) {
     const container = document.createElement('div');
     containers.push(container);
     document.body.append(container);
 
     render(<PDFPage />, container);
 
-    highlightPDFRange(highlighter, container, cssClass);
+    highlightPDFRange(highlighter, container, cssClass, annotationTags);
 
     return container;
   }
@@ -356,6 +365,20 @@ describe('annotator/highlighter', () => {
         assert.closeTo(svgRectBox.top, highlightBox.top, 1);
         assert.closeTo(svgRectBox.width, highlightBox.width, 1);
         assert.closeTo(svgRectBox.height, highlightBox.height, 1);
+      });
+
+      it('creates SVG overlay layers for multi-tag highlights', () => {
+        const hl = new Highlighter();
+        const page = createPDFPageWithHighlight(hl, '', ['tag-a', 'tag-b']);
+        const baseRect = page.querySelector(
+          'rect.hypothesis-svg-highlight[data-has-tag-overlays]',
+        );
+        const overlays = page.querySelectorAll('rect.hypothesis-svg-highlight-overlay');
+
+        assert.ok(baseRect);
+        assert.equal(overlays.length, 2);
+        assert.isTrue(overlays[0].classList.contains('h-tag-tag-a'));
+        assert.isTrue(overlays[1].classList.contains('h-tag-tag-b'));
       });
 
       it('re-uses the existing SVG layer for the page if present', () => {
@@ -750,6 +773,30 @@ describe('annotator/highlighter', () => {
         svgLayer.lastChild.getAttribute('data-focused-id'),
         highlights[0].svgHighlight.getAttribute('data-focused-id'),
       );
+    });
+
+    it('adds tint overlay for focused multi-tag SVG highlights', () => {
+      const root = document.createElement('div');
+      const hl = new Highlighter(root);
+      render(<PDFPage />, root);
+      const [highlight] = highlightPDFRange(hl, root, '', ['tag-a', 'tag-b']);
+      const svgLayer = root.querySelector('svg');
+
+      assert.equal(svgLayer.querySelectorAll('rect').length, 3);
+
+      hl.setHighlightsFocused([highlight], true);
+
+      assert.equal(svgLayer.querySelectorAll('rect').length, 7);
+      assert.equal(
+        svgLayer.querySelectorAll(
+          'rect.hypothesis-svg-highlight-focus-tint[data-is-focused]',
+        ).length,
+        1,
+      );
+
+      hl.setHighlightsFocused([highlight], false);
+
+      assert.equal(svgLayer.querySelectorAll('rect').length, 3);
     });
 
     it('leaves SVG highlights focused if highlights are focused again', () => {

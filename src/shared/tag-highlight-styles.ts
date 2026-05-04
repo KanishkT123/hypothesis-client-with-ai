@@ -15,6 +15,7 @@ const STYLE_ID = 'hypothesis-dynamic-tag-highlight-rules';
  * Uses CSS `color-mix()` (no JS color parsing). Requires modern browsers.
  */
 const FOCUS_COLOR_MIX_PERCENT = 78;
+const clusteredModeActive = false;
 
 /**
  * Replaces the injected stylesheet from this map only. Tags omitted from the map
@@ -39,14 +40,22 @@ export function applyTagHighlightPalette(
       continue;
     }
     const cls = highlightTagClass(tag);
-    const selector = [
+    const legacySelector = [
       `.hypothesis-highlights-always-on .hypothesis-highlight.${cls}`,
       `.hypothesis-highlights-always-on .hypothesis-svg-highlight.${cls}`,
     ].join(', ');
     const base = rgba.trim();
     lines.push(
-      `${selector} { --highlight-color: ${base}; --highlight-color-focused: color-mix(in srgb, var(--highlight-color) ${FOCUS_COLOR_MIX_PERCENT}%, black); }`,
+      `${legacySelector} { --highlight-color: ${base}; --highlight-color-focused: color-mix(in srgb, var(--highlight-color) ${FOCUS_COLOR_MIX_PERCENT}%, black); }`,
     );
+
+    if (!clusteredModeActive) {
+      // Clustered mode is intentionally excluded here. Its nesting and ordering
+      // assumptions are not yet adapted for multi-color per-annotation overlays.
+      lines.push(
+        `.hypothesis-highlights-always-on .hypothesis-svg-highlight-overlay.${cls} { --highlight-overlay-color: ${base}; fill: var(--highlight-overlay-color); }`,
+      );
+    }
   }
   style.textContent = lines.join('\n');
 }

@@ -1403,6 +1403,43 @@ describe('FrameSyncService', () => {
     });
   });
 
+  describe('sending tag highlight palettes to guest frames', () => {
+    const palette = {
+      'ai-pending': 'rgba(64, 169, 255, 0.38)',
+      methods: 'rgba(1, 2, 3, 0.38)',
+    };
+
+    beforeEach(async () => {
+      await frameSync.connect();
+    });
+
+    it('replays the latest palette to guests when they connect', async () => {
+      frameSync.setTagHighlightPalette(palette);
+
+      await connectGuest();
+
+      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette);
+    });
+
+    it('sends updated palettes to connected guests immediately', async () => {
+      await connectGuest();
+      guestRPC().call.resetHistory();
+
+      frameSync.setTagHighlightPalette(palette);
+
+      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette);
+    });
+
+    it('replays cached palette to later guest connections', async () => {
+      await connectGuest();
+      frameSync.setTagHighlightPalette(palette);
+
+      await connectGuest('iframe');
+
+      assert.calledWith(guestRPC(1).call, 'setTagHighlightPalette', palette);
+    });
+  });
+
   context('when content info in store changes', () => {
     const contentInfo = { item: { title: 'Some article' } };
 
