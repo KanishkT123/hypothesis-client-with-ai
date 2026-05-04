@@ -548,6 +548,7 @@ export class FrameSyncService {
                 ...ann,
                 tags: draft ? draft.tags : (existing.tags ?? ann.tags),
                 text: draft ? draft.text : (existing.text ?? ann.text),
+                permissions: ann.permissions ?? existing.permissions,
               };
             })();
 

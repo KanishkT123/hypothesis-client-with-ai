@@ -478,28 +478,37 @@ function AISearchPanel({
       );
       const schemaTrim = row.schemaTag.trim();
       const touchedIds: string[] = [];
+      let skippedOrFailedCount = 0;
 
       for (const ann of matches) {
         if (!ann.id) {
           continue;
         }
         const action = deleteAllActionForAISearchRowMatch(ann, schemaTrim);
-        if (action === 'removeRowTag') {
-          const newTags = tagsAfterRemovingAISearchRowSchemaTag(
-            ann.tags,
-            schemaTrim,
-          );
-          let updated = await api.annotation.update({ id: ann.id }, { tags: newTags });
-          for (const [key, value] of Object.entries(ann)) {
-            if (key.startsWith('$')) {
-              updated = { ...updated, [key]: value };
+        try {
+          if (action === 'removeRowTag') {
+            const newTags = tagsAfterRemovingAISearchRowSchemaTag(
+              ann.tags,
+              schemaTrim,
+            );
+            let updated = await api.annotation.update(
+              { id: ann.id },
+              { tags: newTags },
+            );
+            for (const [key, value] of Object.entries(ann)) {
+              if (key.startsWith('$')) {
+                updated = { ...updated, [key]: value };
+              }
             }
+            store.addAnnotations([updated]);
+            touchedIds.push(ann.id);
+          } else {
+            await annotationsService.delete(ann as SavedAnnotation);
+            touchedIds.push(ann.id);
           }
-          store.addAnnotations([updated]);
-          touchedIds.push(ann.id);
-        } else {
-          await annotationsService.delete(ann as SavedAnnotation);
-          touchedIds.push(ann.id);
+        } catch (err) {
+          skippedOrFailedCount += 1;
+          console.error('Failed to apply delete-all action for annotation:', err);
         }
       }
 
@@ -515,7 +524,13 @@ function AISearchPanel({
         documentUri: documentURL,
       });
 
-      toastMessenger.success('AI search row removed.', { visuallyHidden: true });
+      if (skippedOrFailedCount > 0) {
+        toastMessenger.notice(
+          `Removed row. Skipped ${skippedOrFailedCount} matching annotation(s) that could not be modified.`,
+        );
+      } else {
+        toastMessenger.success('AI search row removed.');
+      }
     } catch (err) {
       console.error(err);
       toastMessenger.error('Failed to complete delete all.');

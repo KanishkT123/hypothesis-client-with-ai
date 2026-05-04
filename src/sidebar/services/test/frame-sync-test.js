@@ -888,6 +888,46 @@ describe('FrameSyncService', () => {
       );
     });
 
+    it('preserves sidebar permissions when guest payload omits permissions', () => {
+      fakeStore.findAnnotationByID = sinon
+        .stub()
+        .withArgs('id1')
+        .returns({
+          id: 'id1',
+          $tag: 't1',
+          tags: ['keep-me'],
+          text: '',
+          target: [],
+          permissions: { read: ['group:gid'], update: ['acct:u'], delete: ['acct:u'] },
+        });
+
+      const ann = {
+        $tag: 't1',
+        $orphan: false,
+        id: 'id1',
+        target: [
+          {
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      emitGuestEvent('syncAnchoringStatus', ann);
+
+      assert.calledWith(
+        fakeStore.addAnnotations,
+        sinon.match([
+          sinon.match({
+            id: 'id1',
+            permissions: {
+              read: ['group:gid'],
+              update: ['acct:u'],
+              delete: ['acct:u'],
+            },
+          }),
+        ]),
+      );
+    });
+
     it('coalesces multiple "syncAnchoringStatus" messages', () => {
       emitGuestEvent('syncAnchoringStatus', {
         $tag: 't1',
