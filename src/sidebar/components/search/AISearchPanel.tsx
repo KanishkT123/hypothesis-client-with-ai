@@ -317,7 +317,11 @@ function AISearchPanel({
         return;
       }
       console.error('Error creating annotations from AI results:', error);
-      toastMessenger.error('Failed to create annotations from AI results.');
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to create annotations from AI results.';
+      toastMessenger.error(message);
     } finally {
       setRunAISearchInFlight(false);
     }

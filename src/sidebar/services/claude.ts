@@ -16,6 +16,23 @@ const PassageSchema = z.object({
 
 const PassagesSchema = z.array(PassageSchema);
 
+function messageFromUnknownError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  return '';
+}
+
+function isNetworkTransportError(error: unknown): boolean {
+  const msg = messageFromUnknownError(error);
+  return /ERR_NETWORK_CHANGED|Connection error|Failed to fetch|NetworkError/i.test(
+    msg,
+  );
+}
+
 export type ClaudeSearchRequest = {
   candidateURIs: string[];
   query: string;
@@ -128,7 +145,16 @@ export class ClaudeService {
         elapsedMs: Date.now() - startedAt,
         error,
       });
-      throw new Error('Failed to extract quotes from document');
+      if (isNetworkTransportError(error)) {
+        throw new Error(
+          'Network connection changed while contacting Claude. Check your internet or VPN and try again.',
+        );
+      }
+      const details = messageFromUnknownError(error);
+      if (details) {
+        throw new Error(`Failed to extract quotes from document: ${details}`);
+      }
+      throw new Error('Failed to extract quotes from document.');
     }
   }
 }
