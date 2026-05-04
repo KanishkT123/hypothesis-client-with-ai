@@ -182,8 +182,11 @@ function AISearchPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- claudeTimerTick advances the clock display
   }, [claudeRunStartedAt, claudeTimerTick]);
 
-  const clearSearch = () => {
+  const closeAISearchPanel = () => {
     store.closeSidebarPanel('aiSearchAnnotations');
+  };
+  const clearQueryInput = () => {
+    store.setAISearchPanelQueryInput(null);
   };
 
   async function runAISearch(
@@ -669,11 +672,11 @@ function AISearchPanel({
               disabled={globalRowLock}
               query={aiSearchFieldQuery}
               onQueryChange={value => store.setAISearchPanelQueryInput(value)}
-              onClearSearch={clearSearch}
+              onClearSearch={clearQueryInput}
               onSearch={onAISearch}
               onKeyDown={e => {
                 if (e.key === 'Escape') {
-                  clearSearch();
+                  closeAISearchPanel();
                 }
               }}
             />
