@@ -161,10 +161,10 @@ function AISearchPanel({
   );
   const hiddenRowsToggleDisabled = !hasAnyHiddenRows;
   const hiddenRowsToggleTitle = hiddenRowsToggleDisabled
-    ? 'No hidden rows'
+    ? 'No un-rendered rows'
     : showHiddenRows
-      ? 'Hide rows marked hidden from this list'
-      : 'Show rows marked hidden in this list';
+      ? 'Hide un-rendered rows from this list'
+      : 'Show un-rendered rows in this list';
 
   useEffect(() => {
     if (claudeRunStartedAt === null) {
@@ -791,13 +791,13 @@ function AISearchPanel({
                                 )}
                                 title={
                                   row.hidden
-                                    ? 'Show this row in the list'
-                                    : 'Hide this row from the list'
+                                    ? 'Render this highlight in the PDF'
+                                    : 'Hide this highlight from the PDF'
                                 }
                                 aria-label={
                                   row.hidden
-                                    ? 'Show row in history'
-                                    : 'Hide row from history'
+                                    ? 'Render this highlight in the PDF'
+                                    : 'Hide this highlight from the PDF'
                                 }
                                 onClick={() =>
                                   store.setAISearchRowHidden(
@@ -963,8 +963,8 @@ function AISearchPanel({
                     }}
                   >
                     {showHiddenRows
-                      ? 'Hide hidden rows'
-                      : 'Show hidden rows'}
+                      ? 'Hide un-rendered rows'
+                      : 'Show un-rendered rows'}
                   </button>
                 </div>
               </div>
