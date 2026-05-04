@@ -1,11 +1,10 @@
 import { confirm } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
-import { useEffect, useMemo } from 'preact/hooks';
+import { useEffect, useMemo, useRef } from 'preact/hooks';
 
 import type { SidebarSettings } from '../../types/config';
 import { serviceConfig } from '../config/service-config';
 import { isThirdPartyService } from '../helpers/is-third-party-service';
-import { shouldAutoDisplayTutorial } from '../helpers/session';
 import { applyTheme } from '../helpers/theme';
 import { withServices } from '../service-context';
 import type { AuthService } from '../services/auth';
@@ -47,8 +46,8 @@ function HypothesisApp({
   toastMessenger,
 }: HypothesisAppProps) {
   const store = useSidebarStore();
-  const profile = store.profile();
   const route = store.route();
+  const searchUris = store.searchUris();
   const isModalRoute = route === 'notebook' || route === 'profile';
 
   const backgroundStyle = useMemo(
@@ -58,18 +57,27 @@ function HypothesisApp({
   const isThemeClean = settings.theme === 'clean';
 
   const isSidebar = route === 'sidebar';
-  // Keep import alive for test mocks while startup tutorial auto-open stays disabled.
-  void shouldAutoDisplayTutorial;
+  const currentPDFUri = useMemo(
+    () =>
+      searchUris.find(uri => /\.pdf($|[?#])/i.test(uri)) ?? searchUris[0] ?? null,
+    [searchUris],
+  );
+  const lastAutoOpenedPDFRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!isSidebar) {
+    if (!isSidebar || !currentPDFUri) {
+      return;
+    }
+
+    if (lastAutoOpenedPDFRef.current === currentPDFUri) {
       return;
     }
 
     // TODO: Re-enable tutorial/help auto-open once tutorial/help content is updated.
     // shouldAutoDisplayTutorial(isSidebar, profile, settings);
+    lastAutoOpenedPDFRef.current = currentPDFUri;
     store.openSidebarPanel('aiSearchAnnotations');
-  }, [isSidebar, profile, settings, store]);
+  }, [isSidebar, currentPDFUri, store]);
 
   const isThirdParty = isThirdPartyService(settings);
 
