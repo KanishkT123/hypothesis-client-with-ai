@@ -7,6 +7,7 @@ describe('AnnotationsService', () => {
   let fakeAnnotationActivity;
   let fakeApi;
   let fakeMetadata;
+  let fakeReconcileAISearchHistoryRowsFromAnnotations;
   let fakeSettings;
   let fakeStore;
 
@@ -62,6 +63,7 @@ describe('AnnotationsService', () => {
     };
 
     fakeIsPrivate = sinon.stub();
+    fakeReconcileAISearchHistoryRowsFromAnnotations = sinon.stub();
 
     fakeSettings = {};
 
@@ -107,6 +109,10 @@ describe('AnnotationsService', () => {
         privatePermissions: fakePrivatePermissions,
         sharedPermissions: fakeSharedPermissions,
         isPrivate: fakeIsPrivate,
+      },
+      './ai-search-history-reconcile': {
+        reconcileAISearchHistoryRowsFromAnnotations:
+          fakeReconcileAISearchHistoryRowsFromAnnotations,
       },
     });
 
@@ -651,7 +657,7 @@ describe('AnnotationsService', () => {
         });
       });
 
-      it('creates a manual-mode-style history row for newly added tags on save', async () => {
+      it('reconciles history rows after successful save', async () => {
         fakeMetadata.isSaved.returns(true);
         const annotation = fixtures.defaultAnnotation();
         annotation.tags = [];
@@ -668,47 +674,8 @@ describe('AnnotationsService', () => {
         await svc.save(annotation);
 
         assert.calledWith(
-          fakeStore.addAISearchRow,
-          sinon.match({
-            id: `manual-save-${savedAnnotation.id}-methods`,
-            schemaTag: 'methods',
-            query: '',
-            annotationIds: [],
-          }),
-        );
-        assert.calledWith(
-          fakeStore.mergeAISearchRowsWithSameTagQuery,
-          `manual-save-${savedAnnotation.id}-methods`,
-        );
-      });
-
-      it('reuses an existing empty-query row for newly added tags on save', async () => {
-        fakeMetadata.isSaved.returns(true);
-        const annotation = fixtures.defaultAnnotation();
-        annotation.tags = [];
-        fakeStore.aiSearchRows.returns([
-          {
-            id: 'existing-row',
-            schemaTag: 'methods',
-            query: '',
-            annotationIds: [],
-          },
-        ]);
-        fakeStore.getDraft.returns({
-          annotation,
-          tags: ['methods'],
-          text: annotation.text ?? '',
-          isPrivate: false,
-          description: annotation.target[0]?.description,
-        });
-        fakeApi.annotation.update.resolves({ ...annotation, tags: ['methods'] });
-
-        await svc.save(annotation);
-
-        assert.notCalled(fakeStore.addAISearchRow);
-        assert.calledWith(
-          fakeStore.mergeAISearchRowsWithSameTagQuery,
-          'existing-row',
+          fakeReconcileAISearchHistoryRowsFromAnnotations,
+          fakeStore,
         );
       });
     });
@@ -742,7 +709,7 @@ describe('AnnotationsService', () => {
         });
       });
 
-      it('does not create history rows when save fails', () => {
+      it('does not reconcile history rows when save fails', () => {
         fakeApi.annotation.update.rejects();
         fakeMetadata.isSaved.returns(true);
         const annotation = fixtures.defaultAnnotation();
@@ -755,8 +722,7 @@ describe('AnnotationsService', () => {
         });
 
         return svc.save(annotation).catch(() => {
-          assert.notCalled(fakeStore.addAISearchRow);
-          assert.notCalled(fakeStore.mergeAISearchRowsWithSameTagQuery);
+          assert.notCalled(fakeReconcileAISearchHistoryRowsFromAnnotations);
         });
       });
     });
@@ -788,6 +754,10 @@ describe('AnnotationsService', () => {
       const savedAnnotation =
         await fakeApi.annotation.moderate.lastCall.returnValue;
       assert.calledWith(fakeStore.addAnnotations, [savedAnnotation]);
+      assert.calledWith(
+        fakeReconcileAISearchHistoryRowsFromAnnotations,
+        fakeStore,
+      );
     });
 
     it('swaps ai-pending tags via update when approving', async () => {
@@ -817,6 +787,10 @@ describe('AnnotationsService', () => {
           }),
         ],
       );
+      assert.calledWith(
+        fakeReconcileAISearchHistoryRowsFromAnnotations,
+        fakeStore,
+      );
       assert.equal(result.moderation_status, 'APPROVED');
     });
 
@@ -837,6 +811,7 @@ describe('AnnotationsService', () => {
       assert.notCalled(fakeStore.addAISearchNegativeExample);
       assert.calledWith(fakeApi.annotation.delete, { id: annotation.id });
       assert.calledWith(fakeStore.removeAnnotations, [annotation]);
+      assert.notCalled(fakeReconcileAISearchHistoryRowsFromAnnotations);
       assert.equal(result, annotation);
     });
 
