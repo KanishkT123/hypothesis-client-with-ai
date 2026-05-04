@@ -3,6 +3,7 @@ import { LoadAnnotationsService, $imports } from '../load-annotations';
 
 let searchClients;
 let longRunningSearchClient = false;
+let fakeReconcileAISearchHistoryRowsFromAnnotations;
 class FakeSearchClient extends EventEmitter {
   constructor(
     searchFn,
@@ -66,11 +67,14 @@ describe('LoadAnnotationsService', () => {
     };
 
     fakeStore = {
+      addAISearchRow: sinon.stub(),
       addAnnotations: sinon.stub(),
       annotationFetchFinished: sinon.stub(),
       annotationFetchStarted: sinon.stub(),
+      aiSearchRows: sinon.stub().returns([]),
       clearAnnotations: sinon.stub(),
       frames: sinon.stub(),
+      mergeAISearchRowsWithSameTagQuery: sinon.stub(),
       removeAnnotations: sinon.stub(),
       savedAnnotations: sinon.stub(),
       setAnnotationResultCount: sinon.stub(),
@@ -93,7 +97,12 @@ describe('LoadAnnotationsService', () => {
     };
 
     fakeUris = ['http://example.com'];
+    fakeReconcileAISearchHistoryRowsFromAnnotations = sinon.stub();
     $imports.$mock({
+      './ai-search-history-reconcile': {
+        reconcileAISearchHistoryRowsFromAnnotations:
+          fakeReconcileAISearchHistoryRowsFromAnnotations,
+      },
       '../search-client': {
         SearchClient: FakeSearchClient,
       },
@@ -328,6 +337,23 @@ describe('LoadAnnotationsService', () => {
       svc.load({ groupId: fakeGroupId, uris: fakeUris });
 
       assert.calledOnce(fakeStore.annotationFetchFinished);
+    });
+
+    it('reconciles missing history rows after document loads', () => {
+      const svc = createService();
+
+      svc.load({ groupId: fakeGroupId, uris: fakeUris });
+
+      assert.calledOnce(fakeReconcileAISearchHistoryRowsFromAnnotations);
+      assert.calledWith(fakeReconcileAISearchHistoryRowsFromAnnotations, fakeStore);
+    });
+
+    it('does not reconcile history rows for group-wide loads without uris', () => {
+      const svc = createService();
+
+      svc.load({ groupId: fakeGroupId });
+
+      assert.notCalled(fakeReconcileAISearchHistoryRowsFromAnnotations);
     });
 
     it('logs an error by default to the console if the search client emits an error', () => {

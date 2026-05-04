@@ -4,6 +4,7 @@ import { SearchClient } from '../search-client';
 import type { SortBy, SortOrder } from '../search-client';
 import type { SidebarStore } from '../store';
 import type { APIService } from './api';
+import { reconcileAISearchHistoryRowsFromAnnotations } from './ai-search-history-reconcile';
 import type { StreamFilter } from './stream-filter';
 import type { StreamerService } from './streamer';
 
@@ -158,6 +159,10 @@ export class LoadAnnotationsService {
     this._searchClient.on('end', () => {
       // Remove client as it's no longer active.
       this._searchClient = null;
+
+      if (uris && uris.length > 0) {
+        reconcileAISearchHistoryRowsFromAnnotations(this._store);
+      }
 
       if (uris && uris.length > 0) {
         this._store.frames().forEach(frame => {
