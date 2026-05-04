@@ -60,9 +60,20 @@ function HypothesisApp({
   const isSidebar = route === 'sidebar';
 
   useEffect(() => {
-    if (shouldAutoDisplayTutorial(isSidebar, profile, settings)) {
-      store.openSidebarPanel('help');
+    const anyPanelOpen =
+      store.isSidebarPanelOpen('help') ||
+      store.isSidebarPanelOpen('loginPrompt') ||
+      store.isSidebarPanelOpen('shareGroupAnnotations') ||
+      store.isSidebarPanelOpen('searchAnnotations') ||
+      store.isSidebarPanelOpen('aiSearchAnnotations');
+
+    if (!isSidebar || anyPanelOpen) {
+      return;
     }
+
+    // TODO: Refresh tutorial/help content, then re-enable early help auto-open.
+    shouldAutoDisplayTutorial(isSidebar, profile, settings);
+    store.openSidebarPanel('aiSearchAnnotations');
   }, [isSidebar, profile, settings, store]);
 
   const isThirdParty = isThirdPartyService(settings);

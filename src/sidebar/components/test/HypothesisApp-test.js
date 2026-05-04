@@ -37,6 +37,7 @@ describe('HypothesisApp', () => {
     fakeStore = {
       clearGroups: sinon.stub(),
       closeSidebarPanel: sinon.stub(),
+      isSidebarPanelOpen: sinon.stub().returns(false),
       openSidebarPanel: sinon.stub(),
       // draft store
       countDrafts: sinon.stub().returns(0),
@@ -143,16 +144,45 @@ describe('HypothesisApp', () => {
     });
   });
 
-  describe('auto-opening tutorial', () => {
-    it('should open tutorial on profile load when criteria are met', () => {
-      fakeShouldAutoDisplayTutorial.returns(true);
+  describe('startup panel opening', () => {
+    it('opens AI search panel on startup in sidebar route', () => {
+      fakeShouldAutoDisplayTutorial.returns(false);
+
       createComponent();
-      assert.calledOnce(fakeStore.openSidebarPanel);
+
+      assert.calledOnceWithExactly(
+        fakeStore.openSidebarPanel,
+        'aiSearchAnnotations',
+      );
     });
 
-    it('should not open tutorial on profile load when criteria are not met', () => {
-      fakeShouldAutoDisplayTutorial.returns(false);
+    it('does not auto-open tutorial/help when tutorial criteria are met', () => {
+      fakeShouldAutoDisplayTutorial.returns(true);
+
       createComponent();
+
+      assert.isFalse(fakeStore.openSidebarPanel.calledWithExactly('help'));
+      assert.calledOnceWithExactly(
+        fakeStore.openSidebarPanel,
+        'aiSearchAnnotations',
+      );
+    });
+
+    it('does not open AI search panel on non-sidebar routes', () => {
+      fakeStore.route.returns('annotation');
+
+      createComponent();
+
+      assert.notCalled(fakeStore.openSidebarPanel);
+    });
+
+    it('does not force-open AI search panel if another panel is already open', () => {
+      fakeStore.isSidebarPanelOpen.callsFake(panelName =>
+        panelName === 'searchAnnotations' ? true : false,
+      );
+
+      createComponent();
+
       assert.notCalled(fakeStore.openSidebarPanel);
     });
   });
