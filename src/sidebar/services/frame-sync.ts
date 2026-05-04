@@ -28,6 +28,7 @@ import type {
   SidebarToGuestCalls,
   GuestToSidebarCalls,
 } from '../../types/port-rpc-calls';
+import { ensureAISearchHistoryRowForTagQuery } from '../helpers/ai-search-history-row';
 import { isReply } from '../helpers/annotation-metadata';
 import {
   annotationMatchesSegment,
@@ -492,23 +493,12 @@ export class FrameSyncService {
           annot.tags = [...tags, schemaTag];
         }
 
-        const rowMatch = this._store.aiSearchRows().find(
-          row =>
-            row.schemaTag.trim() === schemaTag &&
-            row.query.trim() === query.trim(),
-        );
-        if (rowMatch) {
-          this._store.mergeAISearchRowsWithSameTagQuery(rowMatch.id);
-        } else {
-          const rowId = `manual-${annot.$tag}`;
-          this._store.addAISearchRow({
-            id: rowId,
-            schemaTag,
-            query,
-            annotationIds: [],
-          });
-          this._store.mergeAISearchRowsWithSameTagQuery(rowId);
-        }
+        ensureAISearchHistoryRowForTagQuery(this._store, {
+          id: `manual-${annot.$tag}`,
+          schemaTag,
+          query,
+          annotationIds: [],
+        });
       }
 
       // Open the sidebar so that the user can immediately edit the draft

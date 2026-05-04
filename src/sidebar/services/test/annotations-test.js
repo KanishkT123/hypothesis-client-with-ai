@@ -81,6 +81,9 @@ describe('AnnotationsService', () => {
       removeAnnotations: sinon.stub(),
       removeAnnotationIdsFromAISearchRows: sinon.stub(),
       addAISearchNegativeExample: sinon.stub(),
+      addAISearchRow: sinon.stub(),
+      aiSearchRows: sinon.stub().returns([]),
+      mergeAISearchRowsWithSameTagQuery: sinon.stub(),
       removeDraft: sinon.stub(),
       selectTab: sinon.stub(),
       setExpanded: sinon.stub(),
@@ -647,6 +650,67 @@ describe('AnnotationsService', () => {
           assert.calledWith(fakeStore.addAnnotations, [annotation]);
         });
       });
+
+      it('creates a manual-mode-style history row for newly added tags on save', async () => {
+        fakeMetadata.isSaved.returns(true);
+        const annotation = fixtures.defaultAnnotation();
+        annotation.tags = [];
+        fakeStore.getDraft.returns({
+          annotation,
+          tags: ['methods'],
+          text: annotation.text ?? '',
+          isPrivate: false,
+          description: annotation.target[0]?.description,
+        });
+        const savedAnnotation = { ...annotation, tags: ['methods'] };
+        fakeApi.annotation.update.resolves(savedAnnotation);
+
+        await svc.save(annotation);
+
+        assert.calledWith(
+          fakeStore.addAISearchRow,
+          sinon.match({
+            id: `manual-save-${savedAnnotation.id}-methods`,
+            schemaTag: 'methods',
+            query: '',
+            annotationIds: [],
+          }),
+        );
+        assert.calledWith(
+          fakeStore.mergeAISearchRowsWithSameTagQuery,
+          `manual-save-${savedAnnotation.id}-methods`,
+        );
+      });
+
+      it('reuses an existing empty-query row for newly added tags on save', async () => {
+        fakeMetadata.isSaved.returns(true);
+        const annotation = fixtures.defaultAnnotation();
+        annotation.tags = [];
+        fakeStore.aiSearchRows.returns([
+          {
+            id: 'existing-row',
+            schemaTag: 'methods',
+            query: '',
+            annotationIds: [],
+          },
+        ]);
+        fakeStore.getDraft.returns({
+          annotation,
+          tags: ['methods'],
+          text: annotation.text ?? '',
+          isPrivate: false,
+          description: annotation.target[0]?.description,
+        });
+        fakeApi.annotation.update.resolves({ ...annotation, tags: ['methods'] });
+
+        await svc.save(annotation);
+
+        assert.notCalled(fakeStore.addAISearchRow);
+        assert.calledWith(
+          fakeStore.mergeAISearchRowsWithSameTagQuery,
+          'existing-row',
+        );
+      });
     });
 
     context('error on save', () => {
@@ -675,6 +739,24 @@ describe('AnnotationsService', () => {
 
         return svc.save(fixtures.defaultAnnotation()).catch(() => {
           assert.notCalled(fakeStore.addAnnotations);
+        });
+      });
+
+      it('does not create history rows when save fails', () => {
+        fakeApi.annotation.update.rejects();
+        fakeMetadata.isSaved.returns(true);
+        const annotation = fixtures.defaultAnnotation();
+        fakeStore.getDraft.returns({
+          annotation,
+          tags: ['methods'],
+          text: annotation.text ?? '',
+          isPrivate: false,
+          description: annotation.target[0]?.description,
+        });
+
+        return svc.save(annotation).catch(() => {
+          assert.notCalled(fakeStore.addAISearchRow);
+          assert.notCalled(fakeStore.mergeAISearchRowsWithSameTagQuery);
         });
       });
     });

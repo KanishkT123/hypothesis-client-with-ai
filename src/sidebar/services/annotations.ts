@@ -8,6 +8,7 @@ import type {
   SavedAnnotation,
 } from '../../types/api';
 import type { AnnotationEventType, SidebarSettings } from '../../types/config';
+import { ensureAISearchHistoryRowForTagQuery } from '../helpers/ai-search-history-row';
 import { parseAccountID } from '../helpers/account-id';
 import * as metadata from '../helpers/annotation-metadata';
 import type { UserItem } from '../helpers/mention-suggestions';
@@ -60,6 +61,41 @@ export class AnnotationsService {
     this._experimentLog = experimentLog;
     this._settings = settings;
     this._store = store;
+  }
+
+  private _addedTags(before: string[], after: string[]): string[] {
+    const beforeSet = new Set(before.map(tag => tag.trim()).filter(Boolean));
+    const added = new Set<string>();
+
+    for (const tag of after) {
+      const trimmed = tag.trim();
+      if (!trimmed || beforeSet.has(trimmed)) {
+        continue;
+      }
+      added.add(trimmed);
+    }
+
+    return [...added];
+  }
+
+  private _ensureManualTagHistoryRows(
+    previousTags: string[],
+    savedAnnotation: Annotation,
+  ) {
+    const addedTags = this._addedTags(previousTags, savedAnnotation.tags ?? []);
+    if (addedTags.length === 0) {
+      return;
+    }
+
+    const annotationKey = savedAnnotation.id ?? savedAnnotation.$tag;
+    for (const schemaTag of addedTags) {
+      ensureAISearchHistoryRowForTagQuery(this._store, {
+        id: `manual-save-${annotationKey}-${schemaTag}`,
+        schemaTag,
+        query: '',
+        annotationIds: [],
+      });
+    }
   }
 
   /**
@@ -308,6 +344,7 @@ export class AnnotationsService {
       annotation,
       mentionsOptions,
     );
+    const previousTags = annotation.tags ?? [];
 
     if (!metadata.isSaved(annotation)) {
       saved = this._api.annotation.create({}, annotationWithChanges);
@@ -343,6 +380,7 @@ export class AnnotationsService {
 
     // Add (or, in effect, update) the annotation to the store's collection
     this._store.addAnnotations([savedAnnotation]);
+    this._ensureManualTagHistoryRows(previousTags, savedAnnotation);
     return savedAnnotation;
   }
 
@@ -400,7 +438,7 @@ export class AnnotationsService {
       if (id) {
         this._store.removeAnnotationIdsFromAISearchRows([id]);
         const quoteText = metadata.quote(annotation);
-        if (quoteText != null && quoteText.trim()) {
+        if (quoteText !== null && quoteText !== undefined && quoteText.trim()) {
           const schemaTag = tags.filter(t => t !== 'ai-pending').join(', ');
           this._store.addAISearchNegativeExample({
             id: crypto.randomUUID(),

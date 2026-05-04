@@ -67,4 +67,22 @@ describe('AISearchPanel', () => {
 
     assert.calledWith(fakeStore.closeSidebarPanel, 'aiSearchAnnotations');
   });
+
+  it('shows empty-query explanation for manual-mode-style rows', () => {
+    fakeStore.aiSearchRows.returns([
+      {
+        id: 'manual-save-a1-methods',
+        schemaTag: 'methods',
+        query: '',
+        annotationIds: [],
+      },
+    ]);
+
+    const wrapper = createAISearchPanel();
+
+    assert.include(
+      wrapper.text(),
+      'No query - matches this tag across the document',
+    );
+  });
 });
