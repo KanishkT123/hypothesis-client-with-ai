@@ -37,7 +37,6 @@ describe('HypothesisApp', () => {
     fakeStore = {
       clearGroups: sinon.stub(),
       closeSidebarPanel: sinon.stub(),
-      isSidebarPanelOpen: sinon.stub().returns(false),
       openSidebarPanel: sinon.stub(),
       // draft store
       countDrafts: sinon.stub().returns(0),
@@ -176,15 +175,6 @@ describe('HypothesisApp', () => {
       assert.notCalled(fakeStore.openSidebarPanel);
     });
 
-    it('does not force-open AI search panel if another panel is already open', () => {
-      fakeStore.isSidebarPanelOpen.callsFake(panelName =>
-        panelName === 'searchAnnotations' ? true : false,
-      );
-
-      createComponent();
-
-      assert.notCalled(fakeStore.openSidebarPanel);
-    });
   });
 
   // Add tests for common behaviors shared between "Log in" and "Sign up" actions.

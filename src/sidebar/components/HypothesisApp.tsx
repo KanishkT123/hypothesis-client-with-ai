@@ -58,21 +58,16 @@ function HypothesisApp({
   const isThemeClean = settings.theme === 'clean';
 
   const isSidebar = route === 'sidebar';
+  // Keep import alive for test mocks while startup tutorial auto-open stays disabled.
+  void shouldAutoDisplayTutorial;
 
   useEffect(() => {
-    const anyPanelOpen =
-      store.isSidebarPanelOpen('help') ||
-      store.isSidebarPanelOpen('loginPrompt') ||
-      store.isSidebarPanelOpen('shareGroupAnnotations') ||
-      store.isSidebarPanelOpen('searchAnnotations') ||
-      store.isSidebarPanelOpen('aiSearchAnnotations');
-
-    if (!isSidebar || anyPanelOpen) {
+    if (!isSidebar) {
       return;
     }
 
-    // TODO: Refresh tutorial/help content, then re-enable early help auto-open.
-    shouldAutoDisplayTutorial(isSidebar, profile, settings);
+    // TODO: Re-enable tutorial/help auto-open once tutorial/help content is updated.
+    // shouldAutoDisplayTutorial(isSidebar, profile, settings);
     store.openSidebarPanel('aiSearchAnnotations');
   }, [isSidebar, profile, settings, store]);
 
