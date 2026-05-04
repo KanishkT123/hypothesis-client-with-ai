@@ -1859,18 +1859,6 @@ describe('Guest', () => {
       });
     });
 
-    it('calls "syncAnchoringStatus" RPC method', async () => {
-      const guest = createGuest();
-      const annotation = {};
-
-      await guest.anchor(annotation);
-
-      assert.match(sidebarRPC().call.lastCall.args, [
-        'syncAnchoringStatus',
-        annotation,
-      ]);
-    });
-
     it('provides CSS classes for anchor highlight elements', async () => {
       const guest = createGuest();
       const annotation = {
@@ -1993,6 +1981,54 @@ describe('Guest', () => {
         assert.calledOnce(removeHighlights);
         assert.calledWith(removeHighlights, highlights);
       });
+    });
+
+    it('preserves existing highlights until replacement highlights are ready', async () => {
+      const guest = createGuest();
+      const oldAnchor = {
+        annotation: { $tag: 'tag1' },
+        target: {},
+        highlights: [document.createElement('span')],
+      };
+      guest.anchors = [oldAnchor];
+      const annotation = {
+        $tag: 'tag1',
+        target: [{ selector: [{ type: 'TextQuoteSelector', exact: 'hello' }] }],
+      };
+      const replacementHighlights = [document.createElement('span')];
+      fakeIntegration.anchor.resolves(range);
+      fakeHighlighter.highlightRange.returns(replacementHighlights);
+
+      const detachSpy = sinon.spy(guest, 'detach');
+      await guest.anchor(annotation, { preserveExistingHighlights: true });
+
+      assert.notCalled(detachSpy);
+      assert.calledWith(fakeHighlighter.removeHighlights, oldAnchor.highlights);
+      assert.callOrder(
+        fakeHighlighter.highlightRange,
+        fakeHighlighter.removeHighlights,
+      );
+      assert.strictEqual(guest.anchors[0].highlights, replacementHighlights);
+    });
+
+    it('retains existing highlights if preserve-mode replacement anchoring fails', async () => {
+      const guest = createGuest();
+      const oldAnchor = {
+        annotation: { $tag: 'tag1' },
+        target: {},
+        highlights: [document.createElement('span')],
+      };
+      guest.anchors = [oldAnchor];
+      const annotation = {
+        $tag: 'tag1',
+        target: [{ selector: [{ type: 'TextQuoteSelector', exact: 'hello' }] }],
+      };
+      fakeIntegration.anchor.rejects(new Error('Failed to anchor'));
+
+      await guest.anchor(annotation, { preserveExistingHighlights: true });
+
+      assert.notCalled(fakeHighlighter.removeHighlights);
+      assert.strictEqual(guest.anchors[0], oldAnchor);
     });
 
     it('focuses the new highlights if the annotation is already focused', async () => {

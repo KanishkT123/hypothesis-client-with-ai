@@ -443,7 +443,9 @@ export class PDFIntegration
       }
     }
 
-    refreshAnnotations.map(annotation => this._annotator.anchor(annotation));
+    refreshAnnotations.map(annotation =>
+      this._annotator.anchor(annotation, { preserveExistingHighlights: true }),
+    );
   }
 
   /**

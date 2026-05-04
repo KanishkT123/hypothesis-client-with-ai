@@ -9,6 +9,7 @@ import { getAllShortcuts, setAllShortcuts } from '../shared/shortcut-config';
 import type {
   AbstractRange,
   AnnotationData,
+  AnchorOptions,
   AnnotationTool,
   Annotator,
   Anchor,
@@ -953,9 +954,17 @@ export class Guest
    * which is then highlighted.
    *
    * Any existing anchors associated with `annotation` will be removed before
-   * re-anchoring the annotation.
+   * re-anchoring by default. When `options.preserveExistingHighlights` is true,
+   * old highlights are kept until replacement highlights are ready and then
+   * swapped in a single update.
    */
-  async anchor(annotation: AnnotationData): Promise<Anchor[]> {
+  async anchor(
+    annotation: AnnotationData,
+    options: AnchorOptions = {},
+  ): Promise<Anchor[]> {
+    const preserveExistingHighlights =
+      options.preserveExistingHighlights ?? false;
+
     if (this._contentReady) {
       await this._contentReady;
       this._contentReady = undefined;
@@ -1031,8 +1040,15 @@ export class Guest
       }
     };
 
-    // Remove existing anchors for this annotation.
-    this.detach(annotation.$tag, false /* notify */);
+    const existingAnchors = this.anchors.filter(
+      anchor => anchor.annotation.$tag === annotation.$tag,
+    );
+
+    // Remove existing anchors for this annotation unless we are preserving the
+    // old highlights until replacement highlights are ready.
+    if (!preserveExistingHighlights) {
+      this.detach(annotation.$tag, false /* notify */);
+    }
 
     this._annotations.add(annotation.$tag);
 
@@ -1061,11 +1077,32 @@ export class Guest
     // the highlight loop (and so sort updates before the PDF repaints).
     this._sidebarRPC.call('syncAnchoringStatus', annotation);
 
+    const hasResolvedReplacement = anchors.some(anchor =>
+      Boolean(resolveAnchor(anchor)),
+    );
+
+    if (preserveExistingHighlights && !hasResolvedReplacement) {
+      // Keep existing highlights if replacement anchoring failed.
+      return existingAnchors;
+    }
+
     for (const anchor of anchors) {
       highlight(anchor);
     }
 
-    this._updateAnchors(this.anchors.concat(anchors), true /* notify */);
+    if (preserveExistingHighlights) {
+      for (const anchor of existingAnchors) {
+        if (anchor.highlights) {
+          this._highlighter.removeHighlights(anchor.highlights);
+        }
+      }
+      const remainingAnchors = this.anchors.filter(
+        anchor => anchor.annotation.$tag !== annotation.$tag,
+      );
+      this._updateAnchors(remainingAnchors.concat(anchors), true /* notify */);
+    } else {
+      this._updateAnchors(this.anchors.concat(anchors), true /* notify */);
+    }
 
     return anchors;
   }

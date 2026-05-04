@@ -125,9 +125,17 @@ export type FeatureFlags = EventEmitter<FeatureFlagsEvents> & {
  */
 export type Annotator = {
   anchors: Anchor[];
-  anchor(ann: AnnotationData): Promise<Anchor[]>;
+  anchor(ann: AnnotationData, options?: AnchorOptions): Promise<Anchor[]>;
   features: FeatureFlags;
   sideBySide?: SideBySideOptions;
+};
+
+export type AnchorOptions = {
+  /**
+   * Preserve existing highlights for an annotation until replacement anchors are
+   * resolved and highlighted.
+   */
+  preserveExistingHighlights?: boolean;
 };
 
 /**
