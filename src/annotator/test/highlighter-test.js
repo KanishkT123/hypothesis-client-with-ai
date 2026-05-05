@@ -948,6 +948,55 @@ describe('annotator/highlighter', () => {
         container.remove();
       }
     });
+
+    it('returns an associated highlight once when SVG base and overlay are hit', () => {
+      const container = document.createElement('div');
+      const hl = new Highlighter(container);
+      document.body.append(container);
+
+      const textHighlight = document.createElement('hypothesis-highlight');
+      const svgLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svgLayer.setAttribute('class', 'hypothesis-highlight-layer');
+
+      const baseRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      baseRect.setAttribute('class', 'hypothesis-svg-highlight');
+      baseRect.setAttribute('data-highlight-id', 'h1');
+      baseRect.getBoundingClientRect = () => ({
+        left: 100,
+        top: 200,
+        right: 110,
+        bottom: 210,
+      });
+
+      const overlayRect = baseRect.cloneNode();
+      overlayRect.setAttribute('class', 'hypothesis-svg-highlight-overlay');
+      overlayRect.getBoundingClientRect = () => ({
+        left: 100,
+        top: 200,
+        right: 110,
+        bottom: 210,
+      });
+
+      textHighlight.svgHighlight = baseRect;
+
+      container.append(textHighlight);
+      container.append(svgLayer);
+      svgLayer.append(baseRect, overlayRect);
+
+      try {
+        hl.setHighlightsVisible(true);
+
+        const hits = hl.getHighlightsFromPoint(105, 205);
+        assert.include(hits, textHighlight);
+        assert.equal(
+          hits.filter(hit => hit === textHighlight).length,
+          1,
+          'expected one hit for a single annotation highlight',
+        );
+      } finally {
+        container.remove();
+      }
+    });
   });
 
   describe('getBoundingClientRect', () => {

@@ -74,10 +74,11 @@ function annotationsAtPoint(
   x: number,
   y: number,
 ): string[] {
-  return highlighter
+  const tags = highlighter
     .getHighlightsFromPoint(x, y)
     .map(h => (h as AnnotationHighlight)._annotation?.$tag)
     .filter(tag => tag !== undefined) as string[];
+  return Array.from(new Set(tags));
 }
 
 function isRange(r: AbstractRange | ShapeAnchor): r is AbstractRange {

@@ -1325,6 +1325,26 @@ describe('Guest', () => {
       assert.calledWith(sidebarRPC().call, 'hoverAnnotations', []);
     });
 
+    it('deduplicates tags when multiple hit highlights map to the same annotation', () => {
+      fakeHighlighter.getHighlightsFromPoint.returns([
+        { _annotation: { $tag: 'highlight-ann-tag' } },
+        { _annotation: { $tag: 'highlight-ann-tag' } },
+      ]);
+      createGuest();
+
+      fakeHighlight.dispatchEvent(
+        new MouseEvent('mouseover', {
+          bubbles: true,
+          clientX: 50,
+          clientY: 60,
+        }),
+      );
+
+      assert.calledWith(sidebarRPC().call, 'hoverAnnotations', [
+        'highlight-ann-tag',
+      ]);
+    });
+
     it('does not focus annotations in the sidebar when a non-highlight element is hovered', () => {
       fakeHighlighter.getHighlightsFromPoint.returns([]);
       createGuest();

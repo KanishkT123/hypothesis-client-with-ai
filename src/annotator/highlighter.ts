@@ -575,7 +575,29 @@ export function getHighlightsFromPoint(
     }
   }
 
-  return [...textHighlights, ...shapeHighlights];
+  // In PDFs, visible highlight color may be rendered by SVG <rect> overlays.
+  // Those can be missed by `elementsFromPoint`, so include highlights whose
+  // associated SVG rect(s) contain the point.
+  const svgHighlights = Array.from(
+    document.querySelectorAll('hypothesis-highlight'),
+  )
+    .filter(
+      highlight =>
+        highlight.closest(showHighlightsSelector) &&
+        (highlight as HighlightElement).svgHighlight,
+    )
+    .filter(highlight => {
+      const svgHighlight = (highlight as HighlightElement).svgHighlight;
+      return (
+        svgHighlight &&
+        associatedSVGHighlights(svgHighlight).some(svgRect => {
+          const rect = svgRect.getBoundingClientRect();
+          return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+        })
+      );
+    }) as HighlightElement[];
+
+  return Array.from(new Set([...textHighlights, ...shapeHighlights, ...svgHighlights]));
 }
 
 // Subset of `DOMRect` interface
