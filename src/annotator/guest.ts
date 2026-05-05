@@ -484,6 +484,9 @@ export class Guest
     this._listeners.add(this.element, 'mouseover', ({ clientX, clientY }) => {
       const tags = annotationsAtPoint(this._highlighter, clientX, clientY);
       if (tags.length) {
+        // TODO: Add local-hover emphasis (eg. temporary darken/outline) for the
+        // currently hovered highlight in the document so adjacent same-color
+        // highlights are easier to distinguish.
         this._sidebarRPC.call('hoverAnnotations', tags);
       }
     });
