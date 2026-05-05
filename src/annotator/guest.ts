@@ -56,6 +56,12 @@ import { normalizeURI } from './util/url';
 /** HTML element created by the highlighter with an associated annotation. */
 type AnnotationHighlight = HTMLElement & { _annotation?: AnnotationData };
 
+const NON_COLOR_TAGS = new Set(['ai-pending', 'ai-user-approved']);
+
+function tagsForHighlightColors(tags: string[] = []): string[] {
+  return tags.filter(tag => !NON_COLOR_TAGS.has(tag));
+}
+
 /** Return all the annotations tags associated with the selected text. */
 function annotationsForSelection(): string[] {
   const tags = itemsForRange(
@@ -1027,7 +1033,7 @@ export class Guest
         highlights = this._highlighter.highlightRange(
           region,
           anchor.annotation?.$cluster /* cssClass */,
-          anchor.annotation?.tags ?? [],
+          tagsForHighlightColors(anchor.annotation?.tags),
         ) as AnnotationHighlight[];
       } else {
         highlights = this._highlighter.highlightShape(

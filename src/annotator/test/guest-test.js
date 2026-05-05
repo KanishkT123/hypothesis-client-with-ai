@@ -1895,6 +1895,22 @@ describe('Guest', () => {
       );
     });
 
+    it('excludes moderation status tags from highlight color tags', async () => {
+      const guest = createGuest();
+      const annotation = {
+        $cluster: 'user-annotations',
+        tags: ['policy-tag', 'ai-pending', 'ai-user-approved'],
+        target: [{ selector: [{ type: 'TextQuoteSelector', exact: 'hello' }] }],
+      };
+      fakeIntegration.anchor.resolves(range);
+
+      await guest.anchor(annotation);
+
+      assert.deepEqual(fakeHighlighter.highlightRange.lastCall.args[2], [
+        'policy-tag',
+      ]);
+    });
+
     it('returns anchors for an annotation with a quote selector', async () => {
       const guest = createGuest();
       const highlights = [document.createElement('span')];
