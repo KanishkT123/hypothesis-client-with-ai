@@ -123,6 +123,69 @@ describe('ThreadList', () => {
     );
   });
 
+  it('uses list-relative scroll metrics when content above list changes height', () => {
+    const wrapper = createComponent();
+    const listRoot = wrapper.find('[role="list"]').getDOMNode();
+    let offsetAboveList = 180;
+
+    sinon.stub(fakeScrollContainer, 'getBoundingClientRect').callsFake(() => ({
+      x: 0,
+      y: 100,
+      width: 320,
+      height: 400,
+      top: 100,
+      right: 320,
+      bottom: 500,
+      left: 0,
+      toJSON() {},
+    }));
+    sinon.stub(listRoot, 'getBoundingClientRect').callsFake(() => ({
+      x: 0,
+      y: 100 + offsetAboveList - fakeScrollContainer.scrollTop,
+      width: 320,
+      height: 200,
+      top: 100 + offsetAboveList - fakeScrollContainer.scrollTop,
+      right: 320,
+      bottom: 300 + offsetAboveList - fakeScrollContainer.scrollTop,
+      left: 0,
+      toJSON() {},
+    }));
+    Object.defineProperty(fakeScrollContainer, 'clientHeight', {
+      configurable: true,
+      value: 400,
+    });
+
+    act(() => {
+      fakeScrollContainer.scrollTop = 250;
+      fakeScrollContainer.dispatchEvent(new Event('scroll'));
+    });
+    wrapper.update();
+
+    assert.calledWith(
+      fakeVisibleThreadsUtil.calculateVisibleThreads,
+      fakeTopThread.children,
+      sinon.match({}),
+      50, // effective list-relative scroll after subtracting top offset
+      400,
+    );
+
+    // Simulate history widget above list growing taller.
+    offsetAboveList = 260;
+    act(() => {
+      fakeScrollContainer.scrollTop = 330;
+      fakeScrollContainer.dispatchEvent(new Event('scroll'));
+    });
+    wrapper.update();
+
+    assert.calledWith(
+      fakeVisibleThreadsUtil.calculateVisibleThreads,
+      fakeTopThread.children,
+      sinon.match({}),
+      50, // list-relative position remains stable despite top-widget growth
+      400,
+    );
+  });
+
   /**
    * Simulate what happens when a new draft annotation is created in the
    * application.
@@ -192,6 +255,42 @@ describe('ThreadList', () => {
       // should be at 600px. This setting of `scrollTop` is the only
       // externally-observable thing that happens here...
       assert.calledWith(fakeScrollTop, 600);
+    });
+
+    it('includes list top offset when scrolling to a thread', () => {
+      const wrapper = createComponent();
+      const listRoot = wrapper.find('[role="list"]').getDOMNode();
+
+      sinon.stub(fakeScrollContainer, 'getBoundingClientRect').callsFake(() => ({
+        x: 0,
+        y: 100,
+        width: 320,
+        height: 400,
+        top: 100,
+        right: 320,
+        bottom: 500,
+        left: 0,
+        toJSON() {},
+      }));
+      sinon.stub(listRoot, 'getBoundingClientRect').callsFake(() => ({
+        x: 0,
+        y: 280,
+        width: 320,
+        height: 200,
+        top: 280,
+        right: 320,
+        bottom: 480,
+        left: 0,
+        toJSON() {},
+      }));
+
+      act(() => {
+        fakeScrollContainer.dispatchEvent(new Event('scroll'));
+      });
+      wrapper.update();
+
+      addNewAnnotation(wrapper, fakeTopThread.children[3].annotation);
+      assert.calledWith(fakeScrollTop, 780);
     });
 
     it('should do nothing for highlighted annotations while creating/editing', () => {

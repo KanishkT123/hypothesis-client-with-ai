@@ -1,7 +1,7 @@
 import { ListenerCollection } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
 import debounce from 'lodash.debounce';
-import { useEffect, useLayoutEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Annotation, EPUBContentSelector } from '../../types/api';
 import type { Thread } from '../helpers/build-thread';
@@ -28,6 +28,40 @@ function getScrollContainer() {
 
 function roundScrollPosition(pos: number) {
   return Math.max(pos - (pos % SCROLL_PRECISION), 0);
+}
+
+type ScrollMetrics = {
+  scrollPosition: number;
+  viewportHeight: number;
+  listTopOffset: number;
+};
+
+function measureScrollMetrics(
+  scrollContainer: Element,
+  listRoot: Element | null,
+): ScrollMetrics {
+  const container = scrollContainer as HTMLElement;
+  const rootScrollTop = container.scrollTop;
+  const containerRect = container.getBoundingClientRect();
+  const listTopWithinContainer =
+    listRoot === null
+      ? 0
+      : listRoot.getBoundingClientRect().top - containerRect.top;
+  const listTopOffset = Math.max(0, listTopWithinContainer + rootScrollTop);
+
+  // For virtualization math, use list-relative scroll offsets. This keeps
+  // visibility calculations stable when widgets above the list grow/shrink.
+  const effectiveScrollPosition = Math.max(0, rootScrollTop - listTopOffset);
+  const visibleHeight = Math.max(
+    0,
+    container.clientHeight - Math.max(0, listTopWithinContainer),
+  );
+
+  return {
+    scrollPosition: roundScrollPosition(effectiveScrollPosition),
+    viewportHeight: visibleHeight,
+    listTopOffset,
+  };
 }
 
 export type ThreadListProps = {
@@ -91,12 +125,15 @@ function headingMap(threads: Thread[]): Map<string, string> {
  * embedded YouTube videos, rendered math and more.
  */
 export default function ThreadList({ threads }: ThreadListProps) {
-  // Client height of the scroll container.
+  const listRootRef = useRef<HTMLDivElement | null>(null);
+
+  // Height (in pixels) of the visible region available to the list.
   const [scrollContainerHeight, setScrollContainerHeight] = useState(0);
 
-  // Scroll offset of scroll container, rounded to a multiple of `SCROLL_PRECISION`
-  // to avoid excessive re-renderings.
+  // Scroll offset relative to the top of the thread list, rounded to a multiple
+  // of `SCROLL_PRECISION` to avoid excessive re-renderings.
   const [scrollPosition, setScrollPosition] = useState(0);
+  const [listTopOffset, setListTopOffset] = useState(0);
 
   // Measure the initial size and offset of the scroll container once rendering
   // is complete and attach listeners to observe future size or scroll offset changes.
@@ -104,13 +141,23 @@ export default function ThreadList({ threads }: ThreadListProps) {
     const listeners = new ListenerCollection();
     const scrollContainer = getScrollContainer();
 
-    setScrollContainerHeight(scrollContainer.clientHeight);
-    setScrollPosition(roundScrollPosition(scrollContainer.scrollTop));
+    const updateMetrics = () => {
+      const metrics = measureScrollMetrics(scrollContainer, listRootRef.current);
+      setScrollContainerHeight(prev =>
+        prev === metrics.viewportHeight ? prev : metrics.viewportHeight,
+      );
+      setScrollPosition(prev =>
+        prev === metrics.scrollPosition ? prev : metrics.scrollPosition,
+      );
+      setListTopOffset(prev =>
+        prev === metrics.listTopOffset ? prev : metrics.listTopOffset,
+      );
+    };
+    updateMetrics();
 
     const updateScrollPosition = debounce(
       () => {
-        setScrollContainerHeight(scrollContainer.clientHeight);
-        setScrollPosition(roundScrollPosition(scrollContainer.scrollTop));
+        updateMetrics();
       },
       10,
       { maxWait: 100 },
@@ -128,6 +175,22 @@ export default function ThreadList({ threads }: ThreadListProps) {
       updateScrollPosition.cancel();
     };
   }, []);
+
+  // Re-measure list offset/viewport after render in case content above this list
+  // changed height without a window resize or container scroll.
+  useLayoutEffect(() => {
+    const scrollContainer = getScrollContainer();
+    const metrics = measureScrollMetrics(scrollContainer, listRootRef.current);
+    setScrollContainerHeight(prev =>
+      prev === metrics.viewportHeight ? prev : metrics.viewportHeight,
+    );
+    setScrollPosition(prev =>
+      prev === metrics.scrollPosition ? prev : metrics.scrollPosition,
+    );
+    setListTopOffset(prev =>
+      prev === metrics.listTopOffset ? prev : metrics.listTopOffset,
+    );
+  });
 
   // Map of thread ID to measured height of thread. The height of each thread
   // includes any headings displayed immediately above it.
@@ -260,8 +323,8 @@ export default function ThreadList({ threads }: ThreadListProps) {
       .reduce((total, thread) => total + getThreadHeight(thread), 0);
 
     const scrollContainer = getScrollContainer();
-    scrollContainer.scrollTop = yOffset;
-  }, [scrollToId, topLevelThreads, threadHeights]);
+    scrollContainer.scrollTop = yOffset + listTopOffset;
+  }, [scrollToId, topLevelThreads, threadHeights, listTopOffset]);
 
   // When the set of visible threads changes, recalculate the real rendered
   // heights of thread cards and update `threadHeights` state if there are changes.
@@ -304,7 +367,7 @@ export default function ThreadList({ threads }: ThreadListProps) {
     // We use role="list"/role="listitem" rather than unstyled ul/li because
     // some screen readers do not treat them as lists if they don't explicitly
     // have bullets
-    <div role="list">
+    <div role="list" ref={listRootRef}>
       <div style={{ height: offscreenUpperHeight }} />
       {visibleThreads.map((child, index) => (
         <div
