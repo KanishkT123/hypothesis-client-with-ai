@@ -1,53 +1,99 @@
 import type { SavedAnnotation } from '../../types/api';
+import {
+  deriveAISearchHistoryRowDescriptors,
+  rowDescriptorKey,
+} from '../helpers/ai-search-group-history';
+import { PUBLIC_GROUP_ID } from '../helpers/groups';
 import { ensureAISearchHistoryRowForTagQuery } from '../helpers/ai-search-history-row';
-import { aiSearchContentTags } from '../helpers/claude-ai-search-user-message';
 import type { SidebarStore } from '../store';
 
 const LOAD_SYNC_ROW_PREFIX = 'load-sync';
 
-function normalizedSchemaTagsFromAnnotations(
-  annotations: SavedAnnotation[],
-): string[] {
-  const uniqueTags = new Set<string>();
-
-  for (const annotation of annotations) {
-    const tags = aiSearchContentTags(annotation.tags ?? []);
-    for (const tag of tags) {
-      const trimmed = tag.trim();
-      if (trimmed) {
-        uniqueTags.add(trimmed);
-      }
-    }
-  }
-
-  return [...uniqueTags];
+export function loadSyncRowID(schemaTag: string, query: string): string {
+  return `${LOAD_SYNC_ROW_PREFIX}-${encodeURIComponent(
+    rowDescriptorKey(schemaTag, query),
+  )}`;
 }
 
-function loadSyncRowID(schemaTag: string): string {
-  return `${LOAD_SYNC_ROW_PREFIX}-${encodeURIComponent(schemaTag)}`;
+export type ApplyDerivedAISearchHistoryRowsOptions = {
+  groupId: string;
+  annotations: SavedAnnotation[];
+  /** When true, update Public document visibility keys from derived descriptors. */
+  updatePublicScope?: boolean;
+  documentUri?: string;
+};
+
+/**
+ * Upsert history rows from derived descriptors and optionally refresh Public
+ * document scope keys.
+ */
+export function applyDerivedAISearchHistoryRows(
+  store: Pick<
+    SidebarStore,
+    | 'addAISearchRow'
+    | 'aiSearchRows'
+    | 'mergeAISearchRowsWithSameTagQuery'
+    | 'setAISearchPublicDocumentScope'
+  >,
+  { groupId, annotations, updatePublicScope, documentUri }: ApplyDerivedAISearchHistoryRowsOptions,
+) {
+  const descriptors = deriveAISearchHistoryRowDescriptors(annotations);
+
+  for (const { schemaTag, query } of descriptors) {
+    ensureAISearchHistoryRowForTagQuery(store, {
+      id: loadSyncRowID(schemaTag, query),
+      groupId,
+      schemaTag,
+      query,
+      annotationIds: [],
+    });
+  }
+
+  if (
+    updatePublicScope &&
+    groupId === PUBLIC_GROUP_ID &&
+    documentUri !== undefined
+  ) {
+    store.setAISearchPublicDocumentScope({
+      documentUri,
+      visibleDescriptorKeys: descriptors.map(d =>
+        rowDescriptorKey(d.schemaTag, d.query),
+      ),
+    });
+  }
 }
 
 /**
- * Ensure the history list has one empty-query row for each discovered tag.
- * Calls are idempotent because row matching/deduplication is centralized in
- * `ensureAISearchHistoryRowForTagQuery`.
+ * Ensure the history list reflects schema tags and queries on the current
+ * document for the focused group. Idempotent via `ensureAISearchHistoryRowForTagQuery`.
  */
 export function reconcileAISearchHistoryRowsFromAnnotations(
   store: Pick<
     SidebarStore,
     | 'addAISearchRow'
     | 'aiSearchRows'
+    | 'focusedGroupId'
+    | 'mainFrame'
     | 'mergeAISearchRowsWithSameTagQuery'
     | 'savedAnnotations'
+    | 'searchUris'
+    | 'setAISearchPublicDocumentScope'
   >,
 ) {
-  const schemaTags = normalizedSchemaTagsFromAnnotations(store.savedAnnotations());
-  for (const schemaTag of schemaTags) {
-    ensureAISearchHistoryRowForTagQuery(store, {
-      id: loadSyncRowID(schemaTag),
-      schemaTag,
-      query: '',
-      annotationIds: [],
-    });
+  const groupId = store.focusedGroupId();
+  if (!groupId) {
+    return;
   }
+
+  const uriSet = new Set(store.searchUris());
+  const annotations = store.savedAnnotations().filter(
+    ann => ann.group === groupId && uriSet.has(ann.uri),
+  );
+
+  applyDerivedAISearchHistoryRows(store, {
+    groupId,
+    annotations,
+    updatePublicScope: groupId === PUBLIC_GROUP_ID,
+    documentUri: store.mainFrame()?.uri ?? '',
+  });
 }

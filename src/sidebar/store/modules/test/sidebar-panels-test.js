@@ -1,4 +1,7 @@
 import { createStore } from '../../create-store';
+import { rowDescriptorKey } from '../../../helpers/ai-search-group-history';
+import { isAISearchRowVisibleInScope } from '../../../helpers/ai-search-group-history';
+import { PUBLIC_GROUP_ID } from '../../../helpers/groups';
 import { sidebarPanelsModule } from '../sidebar-panels';
 
 describe('sidebar/store/modules/sidebar-panels', () => {
@@ -36,6 +39,9 @@ describe('sidebar/store/modules/sidebar-panels', () => {
         version: 1,
         events: [],
       });
+    });
+    it('sets initial `aiSearchPublicDocumentScope` to null', () => {
+      assert.isNull(getSidebarPanelsState().aiSearchPublicDocumentScope);
     });
   });
 
@@ -145,16 +151,20 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       );
     });
 
-    it('removes a row and prunes color when no rows use that tag', () => {
+    it('removes a row but keeps the tag color sticky', () => {
       store.addAISearchRow({
         id: 'r1',
         schemaTag: 'x',
         query: 'q',
         annotationIds: [],
       });
-      assert.property(getSidebarPanelsState().aiSearch.schemaTagColors, 'x');
+      store.setAISearchSchemaTagColor('x', 'rgba(9, 9, 9, 0.38)');
       store.removeAISearchRow('r1');
-      assert.notProperty(getSidebarPanelsState().aiSearch.schemaTagColors, 'x');
+      // Color is retained so a re-added 'x' row reuses the same (overridden) color.
+      assert.equal(
+        getSidebarPanelsState().aiSearch.schemaTagColors.x,
+        'rgba(9, 9, 9, 0.38)',
+      );
     });
 
     it('updates schema tag color', () => {
@@ -340,6 +350,116 @@ describe('sidebar/store/modules/sidebar-panels', () => {
         assert.equal(
           getSidebarPanelsState().activePanelName,
           'aiSearchAnnotations',
+        );
+      });
+    });
+
+    describe('#PRUNE_AI_SEARCH_ROWS_FOR_GROUP', () => {
+      it('removes in-group rows missing from descriptors but keeps other groups', () => {
+        store.addAISearchRow({
+          id: 'keep',
+          groupId: 'group-a',
+          schemaTag: 'methods',
+          query: '',
+          annotationIds: [],
+        });
+        store.addAISearchRow({
+          id: 'drop',
+          groupId: 'group-a',
+          schemaTag: 'old',
+          query: '',
+          annotationIds: [],
+        });
+        store.addAISearchRow({
+          id: 'other-group',
+          groupId: 'group-b',
+          schemaTag: 'old',
+          query: '',
+          annotationIds: [],
+        });
+
+        store.pruneAISearchRowsForGroup('group-a', [
+          { schemaTag: 'methods', query: '' },
+        ]);
+
+        const ids = store.aiSearchRows().map(r => r.id);
+        assert.sameMembers(ids, ['keep', 'other-group']);
+      });
+
+      it('keeps tag colors sticky after pruning', () => {
+        store.addAISearchRow({
+          id: 'drop',
+          groupId: 'group-a',
+          schemaTag: 'old',
+          query: '',
+          annotationIds: [],
+        });
+        store.setAISearchSchemaTagColor('old', 'rgba(7, 7, 7, 0.38)');
+
+        store.pruneAISearchRowsForGroup('group-a', [
+          { schemaTag: 'methods', query: '' },
+        ]);
+
+        assert.equal(
+          getSidebarPanelsState().aiSearch.schemaTagColors.old,
+          'rgba(7, 7, 7, 0.38)',
+        );
+      });
+    });
+
+    describe('#SET_AI_SEARCH_PUBLIC_DOCUMENT_SCOPE', () => {
+      it('stores Public document visibility keys', () => {
+        store.setAISearchPublicDocumentScope({
+          documentUri: 'http://example.com',
+          visibleDescriptorKeys: [rowDescriptorKey('methods', '')],
+        });
+
+        assert.deepEqual(store.aiSearchPublicDocumentScope(), {
+          documentUri: 'http://example.com',
+          visibleDescriptorKeys: [rowDescriptorKey('methods', '')],
+        });
+      });
+    });
+
+    describe('group-scoped row visibility', () => {
+      it('shows private rows only for matching focused group', () => {
+        const row = {
+          id: 'r1',
+          groupId: 'group-a',
+          schemaTag: 'methods',
+          query: '',
+          annotationIds: [],
+        };
+
+        assert.isTrue(
+          isAISearchRowVisibleInScope(row, { focusedGroupId: 'group-a' }),
+        );
+        assert.isFalse(
+          isAISearchRowVisibleInScope(row, { focusedGroupId: 'group-b' }),
+        );
+      });
+
+      it('shows Public rows only when descriptor key is in document scope', () => {
+        const row = {
+          id: 'r1',
+          groupId: PUBLIC_GROUP_ID,
+          schemaTag: 'methods',
+          query: '',
+          annotationIds: [],
+        };
+        const key = rowDescriptorKey('methods', '');
+
+        assert.isTrue(
+          isAISearchRowVisibleInScope(row, {
+            focusedGroupId: PUBLIC_GROUP_ID,
+            publicDocumentDescriptorKeys: new Set([key]),
+          }),
+        );
+        assert.isFalse(
+          isAISearchRowVisibleInScope(row, {
+            focusedGroupId: PUBLIC_GROUP_ID,
+            publicDocumentDescriptorKeys: new Set(),
+          }),
         );
       });
     });

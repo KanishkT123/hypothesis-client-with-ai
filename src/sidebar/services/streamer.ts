@@ -6,6 +6,7 @@ import { watch } from '../util/watch';
 import { Socket } from '../websocket';
 import type { APIRoutesService } from './api-routes';
 import type { AuthService } from './auth';
+import type { AISearchGroupHistorySyncService } from './ai-search-group-history-sync';
 import type { GroupsService } from './groups';
 import type { SessionService } from './session';
 
@@ -28,6 +29,7 @@ import type { SessionService } from './session';
  */
 export class StreamerService {
   private _auth: AuthService;
+  private _aiSearchGroupHistorySync: AISearchGroupHistorySyncService;
   private _groups: GroupsService;
   private _session: SessionService;
   private _store: SidebarStore;
@@ -63,11 +65,13 @@ export class StreamerService {
     store: SidebarStore,
     apiRoutes: APIRoutesService,
     auth: AuthService,
+    aiSearchGroupHistorySync: AISearchGroupHistorySyncService,
     groups: GroupsService,
     session: SessionService,
     $window: Window,
   ) {
     this._auth = auth;
+    this._aiSearchGroupHistorySync = aiSearchGroupHistorySync;
     this._groups = groups;
     this._session = session;
     this._store = store;
@@ -118,6 +122,11 @@ export class StreamerService {
     }
 
     this._store.clearPendingUpdates();
+
+    const hadChanges = updates.length > 0 || deletions.length > 0;
+    if (hadChanges) {
+      void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
+    }
   }
 
   private _handleSocketError(websocketURL: string, event: ErrorEvent) {

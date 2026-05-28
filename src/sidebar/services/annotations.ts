@@ -20,7 +20,7 @@ import {
 } from '../helpers/permissions';
 import type { SidebarStore } from '../store';
 import type { AnnotationActivityService } from './annotation-activity';
-import { reconcileAISearchHistoryRowsFromAnnotations } from './ai-search-history-reconcile';
+import type { AISearchGroupHistorySyncService } from './ai-search-group-history-sync';
 import type { APIService } from './api';
 import type { ExperimentLogService } from './experiment-log';
 
@@ -44,6 +44,7 @@ export type MentionsOptions =
 // @inject
 export class AnnotationsService {
   private _activity: AnnotationActivityService;
+  private _aiSearchGroupHistorySync: AISearchGroupHistorySyncService;
   private _api: APIService;
   private _experimentLog: ExperimentLogService;
   private _settings: SidebarSettings;
@@ -51,12 +52,14 @@ export class AnnotationsService {
 
   constructor(
     annotationActivity: AnnotationActivityService,
+    aiSearchGroupHistorySync: AISearchGroupHistorySyncService,
     api: APIService,
     experimentLog: ExperimentLogService,
     settings: SidebarSettings,
     store: SidebarStore,
   ) {
     this._activity = annotationActivity;
+    this._aiSearchGroupHistorySync = aiSearchGroupHistorySync;
     this._api = api;
     this._experimentLog = experimentLog;
     this._settings = settings;
@@ -249,6 +252,7 @@ export class AnnotationsService {
     await this._api.annotation.delete({ id: annotation.id });
     this._activity.reportActivity('delete', annotation);
     this._store.removeAnnotations([annotation]);
+    void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
 
     if (!opts?.skipExperimentLog) {
       const tags = annotation.tags ?? [];
@@ -344,7 +348,7 @@ export class AnnotationsService {
 
     // Add (or, in effect, update) the annotation to the store's collection
     this._store.addAnnotations([savedAnnotation]);
-    reconcileAISearchHistoryRowsFromAnnotations(this._store);
+    void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
     return savedAnnotation;
   }
 
@@ -385,7 +389,7 @@ export class AnnotationsService {
       }
 
       this._store.addAnnotations([savedAnnotation]);
-      reconcileAISearchHistoryRowsFromAnnotations(this._store);
+      void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
 
       this._experimentLog.logAccept({
         annotationId: savedAnnotation.id!,
@@ -438,7 +442,7 @@ export class AnnotationsService {
 
     // Add (or, in effect, update) the annotation to the store's collection
     this._store.addAnnotations([savedAnnotation]);
-    reconcileAISearchHistoryRowsFromAnnotations(this._store);
+    void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
 
     return savedAnnotation;
   }

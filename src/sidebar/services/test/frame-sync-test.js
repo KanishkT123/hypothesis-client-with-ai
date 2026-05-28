@@ -177,6 +177,7 @@ describe('FrameSyncService', () => {
         getDraft: sinon.stub().returns(null),
         findIDsForTags: sinon.stub().returns([]),
         focusedGroup: sinon.stub().returns({ id: 'foobar' }),
+        focusedGroupId: sinon.stub().returns('foobar'),
         getFocusFilters: sinon.stub().returns({}),
         hoverAnnotations: sinon.stub(),
         isLoggedIn: sinon.stub().returns(false),
@@ -711,6 +712,7 @@ describe('FrameSyncService', () => {
         assert.deepEqual(ann.tags, ['methods']);
         assert.calledWith(fakeStore.addAISearchRow, {
           id: 'manual-t1',
+          groupId: 'foobar',
           schemaTag: 'methods',
           query: 'query',
           annotationIds: [],
@@ -726,6 +728,7 @@ describe('FrameSyncService', () => {
         fakeStore.aiSearchRows.returns([
           {
             id: 'existing',
+            groupId: 'foobar',
             schemaTag: 'methods',
             query: 'query',
             annotationIds: [],

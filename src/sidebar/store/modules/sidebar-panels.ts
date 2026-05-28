@@ -13,6 +13,10 @@
  */
 import type { PanelName } from '../../../types/sidebar';
 import { highlightRgbaFromString } from '../../../shared/tag-color-from-string';
+import {
+  pruneAISearchRowsToDescriptors,
+  type AISearchHistoryRowDescriptor,
+} from '../../helpers/ai-search-group-history';
 import { createStoreModule, makeAction } from '../create-store';
 
 export type AISearchRow = {
@@ -20,8 +24,16 @@ export type AISearchRow = {
   schemaTag: string;
   query: string;
   annotationIds: string[];
+  /** Focused group when the row was created or synced. */
+  groupId?: string;
   /** When true, row can be filtered out of the history table (see AISearchPanel). */
   hidden?: boolean;
+};
+
+/** Which Public-document history rows are visible for the current PDF. */
+export type AISearchPublicDocumentScope = {
+  documentUri: string;
+  visibleDescriptorKeys: string[];
 };
 
 /** Local snapshot from a user-denied ai-pending annotation (not persisted on server). */
@@ -128,6 +140,12 @@ export type State = {
 
   /** AI search experiment log; persisted under `hypothesis.aiSearch.experimentLog`. */
   experimentLog: ExperimentLogState;
+
+  /**
+   * Public group only: descriptor keys for rows derived on the current document.
+   * Other Public rows stay stored but are hidden until that document is opened again.
+   */
+  aiSearchPublicDocumentScope: AISearchPublicDocumentScope | null;
 };
 
 const initialAiSearch: AISearchState = {
@@ -145,6 +163,7 @@ const initialState: State = {
   aiSearch: initialAiSearch, //TODO: Rename
   aiSearchNegativeExamples: [],
   experimentLog: emptyExperimentLog(),
+  aiSearchPublicDocumentScope: null,
 };
 
 const reducers = {
@@ -235,19 +254,12 @@ const reducers = {
   },
 
   REMOVE_AI_SEARCH_ROW(state: State, action: { rowId: string }) {
-    const removed = state.aiSearch.rows.find(r => r.id === action.rowId);
     const rows = state.aiSearch.rows.filter(r => r.id !== action.rowId);
-    let { schemaTagColors } = state.aiSearch;
-    if (removed) {
-      const tag = removed.schemaTag.trim();
-      if (tag && !rows.some(r => r.schemaTag.trim() === tag)) {
-        const next = { ...schemaTagColors };
-        delete next[tag];
-        schemaTagColors = next;
-      }
-    }
+    // Keep `schemaTagColors` untouched: a tag's color (including any user
+    // override via SET_AI_SEARCH_SCHEMA_TAG_COLOR) is sticky, so if the tag
+    // reappears later it reuses the same color instead of resetting.
     return {
-      aiSearch: { rows, schemaTagColors },
+      aiSearch: { ...state.aiSearch, rows },
     };
   },
 
@@ -291,8 +303,11 @@ const reducers = {
     }
     const tagKey = keep.schemaTag.trim();
     const queryKey = keep.query.trim();
+    const groupKey = keep.groupId ?? '';
     const sameKey = (r: AISearchRow) =>
-      r.schemaTag.trim() === tagKey && r.query.trim() === queryKey;
+      (r.groupId ?? '') === groupKey &&
+      r.schemaTag.trim() === tagKey &&
+      r.query.trim() === queryKey;
 
     const duplicates = rows.filter(sameKey);
     const unionIds = [
@@ -407,6 +422,31 @@ const reducers = {
       experimentLog: action.experimentLog,
     };
   },
+
+  SET_AI_SEARCH_PUBLIC_DOCUMENT_SCOPE(
+    state: State,
+    action: { scope: AISearchPublicDocumentScope },
+  ) {
+    return {
+      aiSearchPublicDocumentScope: action.scope,
+    };
+  },
+
+  PRUNE_AI_SEARCH_ROWS_FOR_GROUP(
+    state: State,
+    action: { groupId: string; descriptors: AISearchHistoryRowDescriptor[] },
+  ) {
+    const rows = pruneAISearchRowsToDescriptors(
+      state.aiSearch.rows,
+      action.descriptors,
+      action.groupId,
+    );
+    // Keep `schemaTagColors` untouched so colors stay stable when a tag is
+    // pruned and later reappears (and so user overrides survive a re-sync).
+    return {
+      aiSearch: { ...state.aiSearch, rows },
+    };
+  },
 };
 
 /**
@@ -503,6 +543,20 @@ function hydrateExperimentLog(experimentLog: ExperimentLogState) {
   return makeAction(reducers, 'HYDRATE_EXPERIMENT_LOG', { experimentLog });
 }
 
+function setAISearchPublicDocumentScope(scope: AISearchPublicDocumentScope) {
+  return makeAction(reducers, 'SET_AI_SEARCH_PUBLIC_DOCUMENT_SCOPE', { scope });
+}
+
+function pruneAISearchRowsForGroup(
+  groupId: string,
+  descriptors: AISearchHistoryRowDescriptor[],
+) {
+  return makeAction(reducers, 'PRUNE_AI_SEARCH_ROWS_FOR_GROUP', {
+    groupId,
+    descriptors,
+  });
+}
+
 /**
  * Is the panel indicated by `panelName` currently active (open)?
  */
@@ -526,6 +580,10 @@ function experimentLog(state: State) {
   return state.experimentLog;
 }
 
+function aiSearchPublicDocumentScope(state: State) {
+  return state.aiSearchPublicDocumentScope;
+}
+
 export const sidebarPanelsModule = createStoreModule(initialState, {
   namespace: 'sidebarPanels',
   reducers,
@@ -547,6 +605,8 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     hydrateAISearchNegativeExamples,
     setExperimentLog,
     hydrateExperimentLog,
+    setAISearchPublicDocumentScope,
+    pruneAISearchRowsForGroup,
   },
 
   selectors: {
@@ -555,5 +615,6 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     aiSearchSchemaTagColors,
     aiSearchNegativeExamples,
     experimentLog,
+    aiSearchPublicDocumentScope,
   },
 });

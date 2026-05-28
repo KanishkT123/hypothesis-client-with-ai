@@ -9,16 +9,23 @@ export function findAISearchRowByTagQuery(
   rows: AISearchRow[],
   schemaTag: string,
   query: string,
+  groupId?: string,
 ): AISearchRow | undefined {
   const tagKey = norm(schemaTag);
   const queryKey = norm(query);
-  return rows.find(
-    row => norm(row.schemaTag) === tagKey && norm(row.query) === queryKey,
-  );
+  return rows.find(row => {
+    if (norm(row.schemaTag) !== tagKey || norm(row.query) !== queryKey) {
+      return false;
+    }
+    if (groupId !== undefined && row.groupId !== groupId) {
+      return false;
+    }
+    return true;
+  });
 }
 
 /**
- * Keep a single AI search row for a tag/query pair.
+ * Keep a single AI search row for a group/tag/query triple.
  * If an equivalent row already exists, merge duplicates into it.
  * Otherwise create one and immediately merge duplicates.
  */
@@ -33,6 +40,7 @@ export function ensureAISearchHistoryRowForTagQuery(
     store.aiSearchRows(),
     row.schemaTag,
     row.query,
+    row.groupId,
   );
 
   if (match) {

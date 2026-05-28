@@ -495,6 +495,7 @@ export class FrameSyncService {
 
         ensureAISearchHistoryRowForTagQuery(this._store, {
           id: `manual-${annot.$tag}`,
+          groupId: this._store.focusedGroupId() ?? undefined,
           schemaTag,
           query,
           annotationIds: [],

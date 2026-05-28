@@ -7,7 +7,7 @@ describe('AnnotationsService', () => {
   let fakeAnnotationActivity;
   let fakeApi;
   let fakeMetadata;
-  let fakeReconcileAISearchHistoryRowsFromAnnotations;
+  let fakeAiSearchGroupHistorySync;
   let fakeSettings;
   let fakeStore;
 
@@ -63,7 +63,9 @@ describe('AnnotationsService', () => {
     };
 
     fakeIsPrivate = sinon.stub();
-    fakeReconcileAISearchHistoryRowsFromAnnotations = sinon.stub();
+    fakeAiSearchGroupHistorySync = {
+      syncGroupHistory: sinon.stub().returns(Promise.resolve()),
+    };
 
     fakeSettings = {};
 
@@ -110,14 +112,11 @@ describe('AnnotationsService', () => {
         sharedPermissions: fakeSharedPermissions,
         isPrivate: fakeIsPrivate,
       },
-      './ai-search-history-reconcile': {
-        reconcileAISearchHistoryRowsFromAnnotations:
-          fakeReconcileAISearchHistoryRowsFromAnnotations,
-      },
     });
 
     svc = new AnnotationsService(
       fakeAnnotationActivity,
+      fakeAiSearchGroupHistorySync,
       fakeApi,
       fakeExperimentLog,
       fakeSettings,
@@ -657,7 +656,7 @@ describe('AnnotationsService', () => {
         });
       });
 
-      it('reconciles history rows after successful save', async () => {
+      it('syncs group history after successful save', async () => {
         fakeMetadata.isSaved.returns(true);
         const annotation = fixtures.defaultAnnotation();
         annotation.tags = [];
@@ -673,10 +672,9 @@ describe('AnnotationsService', () => {
 
         await svc.save(annotation);
 
-        assert.calledWith(
-          fakeReconcileAISearchHistoryRowsFromAnnotations,
-          fakeStore,
-        );
+        assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+          mode: 'document',
+        });
       });
     });
 
@@ -709,7 +707,7 @@ describe('AnnotationsService', () => {
         });
       });
 
-      it('does not reconcile history rows when save fails', () => {
+      it('does not sync group history when save fails', () => {
         fakeApi.annotation.update.rejects();
         fakeMetadata.isSaved.returns(true);
         const annotation = fixtures.defaultAnnotation();
@@ -722,7 +720,7 @@ describe('AnnotationsService', () => {
         });
 
         return svc.save(annotation).catch(() => {
-          assert.notCalled(fakeReconcileAISearchHistoryRowsFromAnnotations);
+          assert.notCalled(fakeAiSearchGroupHistorySync.syncGroupHistory);
         });
       });
     });
@@ -754,10 +752,9 @@ describe('AnnotationsService', () => {
       const savedAnnotation =
         await fakeApi.annotation.moderate.lastCall.returnValue;
       assert.calledWith(fakeStore.addAnnotations, [savedAnnotation]);
-      assert.calledWith(
-        fakeReconcileAISearchHistoryRowsFromAnnotations,
-        fakeStore,
-      );
+      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+        mode: 'document',
+      });
     });
 
     it('swaps ai-pending tags via update when approving', async () => {
@@ -787,10 +784,9 @@ describe('AnnotationsService', () => {
           }),
         ],
       );
-      assert.calledWith(
-        fakeReconcileAISearchHistoryRowsFromAnnotations,
-        fakeStore,
-      );
+      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+        mode: 'document',
+      });
       assert.equal(result.moderation_status, 'APPROVED');
     });
 
@@ -811,7 +807,9 @@ describe('AnnotationsService', () => {
       assert.notCalled(fakeStore.addAISearchNegativeExample);
       assert.calledWith(fakeApi.annotation.delete, { id: annotation.id });
       assert.calledWith(fakeStore.removeAnnotations, [annotation]);
-      assert.notCalled(fakeReconcileAISearchHistoryRowsFromAnnotations);
+      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+        mode: 'document',
+      });
       assert.equal(result, annotation);
     });
 

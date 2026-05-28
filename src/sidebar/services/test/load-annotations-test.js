@@ -3,7 +3,7 @@ import { LoadAnnotationsService, $imports } from '../load-annotations';
 
 let searchClients;
 let longRunningSearchClient = false;
-let fakeReconcileAISearchHistoryRowsFromAnnotations;
+let fakeAiSearchGroupHistorySync;
 class FakeSearchClient extends EventEmitter {
   constructor(
     searchFn,
@@ -97,12 +97,10 @@ describe('LoadAnnotationsService', () => {
     };
 
     fakeUris = ['http://example.com'];
-    fakeReconcileAISearchHistoryRowsFromAnnotations = sinon.stub();
+    fakeAiSearchGroupHistorySync = {
+      syncGroupHistory: sinon.stub().returns(Promise.resolve()),
+    };
     $imports.$mock({
-      './ai-search-history-reconcile': {
-        reconcileAISearchHistoryRowsFromAnnotations:
-          fakeReconcileAISearchHistoryRowsFromAnnotations,
-      },
       '../search-client': {
         SearchClient: FakeSearchClient,
       },
@@ -122,6 +120,7 @@ describe('LoadAnnotationsService', () => {
     );
     return new LoadAnnotationsService(
       fakeApi,
+      fakeAiSearchGroupHistorySync,
       fakeStore,
       fakeStreamer,
       fakeStreamFilter,
@@ -339,21 +338,24 @@ describe('LoadAnnotationsService', () => {
       assert.calledOnce(fakeStore.annotationFetchFinished);
     });
 
-    it('reconciles missing history rows after document loads', () => {
+    it('syncs group history after document loads', async () => {
       const svc = createService();
 
       svc.load({ groupId: fakeGroupId, uris: fakeUris });
 
-      assert.calledOnce(fakeReconcileAISearchHistoryRowsFromAnnotations);
-      assert.calledWith(fakeReconcileAISearchHistoryRowsFromAnnotations, fakeStore);
+      assert.calledOnce(fakeAiSearchGroupHistorySync.syncGroupHistory);
+      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+        mode: 'auto',
+        documentUris: fakeUris,
+      });
     });
 
-    it('does not reconcile history rows for group-wide loads without uris', () => {
+    it('does not sync group history for group-wide loads without uris', () => {
       const svc = createService();
 
       svc.load({ groupId: fakeGroupId });
 
-      assert.notCalled(fakeReconcileAISearchHistoryRowsFromAnnotations);
+      assert.notCalled(fakeAiSearchGroupHistorySync.syncGroupHistory);
     });
 
     it('logs an error by default to the console if the search client emits an error', () => {

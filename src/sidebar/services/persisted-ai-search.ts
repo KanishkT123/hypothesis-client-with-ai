@@ -65,12 +65,18 @@ function parseAISearchStatePayload(v: Record<string, unknown>): AISearchState | 
     if ('hidden' in r && typeof r.hidden !== 'boolean') {
       return null;
     }
+    if ('groupId' in r && typeof r.groupId !== 'string') {
+      return null;
+    }
     const parsed: AISearchRow = {
       id: r.id,
       schemaTag: r.schemaTag,
       query: r.query,
       annotationIds: r.annotationIds as string[],
     };
+    if (typeof r.groupId === 'string') {
+      parsed.groupId = r.groupId;
+    }
     if (r.hidden === true) {
       parsed.hidden = true;
     }

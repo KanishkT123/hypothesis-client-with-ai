@@ -299,6 +299,7 @@ function AISearchPanel({
       } else {
         const row: AISearchRow = {
           id: rowId,
+          groupId,
           schemaTag: schemaTagForRow,
           query,
           annotationIds: newIds,

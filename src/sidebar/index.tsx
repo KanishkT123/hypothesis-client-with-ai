@@ -46,6 +46,7 @@ import { ToastMessengerService } from './services/toast-messenger';
 import { createSidebarStore } from './store';
 import type { SidebarStore } from './store';
 import { setupAISearchTagPaletteSync } from './services/ai-search-tag-palette-sync';
+import { AISearchGroupHistorySyncService } from './services/ai-search-group-history-sync';
 import { disableOpenerForExternalLinks } from './util/disable-opener-for-external-links';
 import * as sentry from './util/sentry';
 
@@ -107,11 +108,13 @@ function initServices(
   autosaveService: AutosaveService,
   persistedDefaults: PersistedDefaultsService,
   persistedAISearch: PersistedAISearchService,
+  aiSearchGroupHistorySync: AISearchGroupHistorySyncService,
   serviceURL: ServiceURLService,
 ) {
   autosaveService.init();
   persistedDefaults.init();
   persistedAISearch.init();
+  aiSearchGroupHistorySync.init();
   serviceURL.init();
 }
 
@@ -165,6 +168,7 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('localStorage', LocalStorageService)
     .register('persistedDefaults', PersistedDefaultsService)
     .register('persistedAISearch', PersistedAISearchService)
+    .register('aiSearchGroupHistorySync', AISearchGroupHistorySyncService)
 //    .register('reducto', ReductoService)
     .register('claude', ClaudeService)
     .register('router', RouterService)

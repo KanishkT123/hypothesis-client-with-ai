@@ -80,6 +80,7 @@ describe('StreamerService', () => {
   let fakeAuth;
   let fakeGroups;
   let fakeSession;
+  let fakeAiSearchGroupHistorySync;
   let fakeWarnOnce;
   let activeStreamer;
   let fakeSetTimeout;
@@ -89,6 +90,7 @@ describe('StreamerService', () => {
       fakeStore,
       fakeAPIRoutes,
       fakeAuth,
+      fakeAiSearchGroupHistorySync,
       fakeGroups,
       fakeSession,
       { setTimeout: fakeSetTimeout },
@@ -142,6 +144,10 @@ describe('StreamerService', () => {
 
     fakeSession = {
       update: sinon.stub(),
+    };
+
+    fakeAiSearchGroupHistorySync = {
+      syncGroupHistory: sinon.stub().returns(Promise.resolve()),
     };
 
     fakeWarnOnce = sinon.stub();
