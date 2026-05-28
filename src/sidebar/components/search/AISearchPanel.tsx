@@ -23,7 +23,7 @@ import {
 } from '../../../shared/tag-color-from-string';
 import {
   buildClaudeAISearchUserMessage,
-  collectTagQueryQuoteRows,
+  collectPositiveExamplesFromAnnotations,
   countAiSearchQuotesSkippedAsDuplicates,
   countAISearchRowPendingAnnotations,
   countAISearchRowTotalAnnotations,
@@ -204,17 +204,22 @@ function AISearchPanel({
         return;
       }
 
-      const tripleRows = await collectTagQueryQuoteRows(
+      const positiveExamples = await collectPositiveExamplesFromAnnotations(
         store.savedAnnotations(),
         documentURL,
         annotationsService,
       );
+      const negativeExamples = negativeExamplesForDoc.map(ex => ({
+        tag: ex.schemaTag.trim(),
+        query: ex.query.trim(),
+        quote: ex.quote.trim(),
+      }));
       const tagTrim = schemaTagForRow.trim();
       const fullUserMessage = buildClaudeAISearchUserMessage({
-        rows: tripleRows,
+        positiveExamples,
         schemaTag: tagTrim,
         searchQuery: query,
-        negativeExamples: negativeExamplesForDoc,
+        negativeExamples,
       });
 
       const { signal, finish } = registerClaudeRun();

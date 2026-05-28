@@ -3,13 +3,15 @@ import * as fixtures from '../../test/annotation-fixtures';
 import {
   buildCandidateRows,
   buildClaudeAISearchUserMessage,
-  collectTagQueryQuoteRows,
+  collectNegativeExamplesFromAnnotations,
+  collectPositiveExamplesFromAnnotations,
   countAiSearchQuotesSkippedAsDuplicates,
   countAISearchRowPendingAnnotations,
   countAISearchRowTotalAnnotations,
   dedupeTagQueryRows,
   deleteAllActionForAISearchRowMatch,
   filterAiSearchQuotesAgainstExisting,
+  formatFewShotExampleLine,
   listSavedAnnotationsMatchingAISearchRow,
   tagsAfterRemovingAISearchRowSchemaTag,
 } from '../claude-ai-search-user-message';
@@ -42,10 +44,29 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
     };
   }
 
+  describe('formatFewShotExampleLine', () => {
+    it('positive kind omits should not return', () => {
+      const line = formatFewShotExampleLine(
+        { tag: 't', query: 'q', quote: 'v' },
+        { kind: 'positive' },
+      );
+      assert.equal(line, '- tag: t\n  query: q\n  quote: v\n');
+      assert.notInclude(line, 'should not return');
+    });
+
+    it('negative kind includes should not return', () => {
+      const line = formatFewShotExampleLine(
+        { tag: 't', query: 'q', quote: 'v' },
+        { kind: 'negative' },
+      );
+      assert.include(line, 'should not return');
+    });
+  });
+
   describe('buildClaudeAISearchUserMessage', () => {
     it('uses tag+query template when schemaTag is non-empty', () => {
       const out = buildClaudeAISearchUserMessage({
-        rows: [{ tag: 't', query: 'q1', quote: 'v' }],
+        positiveExamples: [{ tag: 't', query: 'q1', quote: 'v' }],
         schemaTag: 'schema',
         searchQuery: 'find this',
       });
@@ -57,7 +78,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
 
     it('uses New query template when schemaTag is empty', () => {
       const out = buildClaudeAISearchUserMessage({
-        rows: [],
+        positiveExamples: [],
         schemaTag: '',
         searchQuery: 'only the search',
       });
@@ -67,7 +88,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
 
     it('renders empty tag and query as blank fields', () => {
       const out = buildClaudeAISearchUserMessage({
-        rows: [{ tag: '', query: '', quote: 'x' }],
+        positiveExamples: [{ tag: '', query: '', quote: 'x' }],
         schemaTag: 's',
         searchQuery: 'q',
       });
@@ -79,7 +100,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
 
     it('omits positive block when rows empty', () => {
       const out = buildClaudeAISearchUserMessage({
-        rows: [],
+        positiveExamples: [],
         schemaTag: 's',
         searchQuery: 'q',
       });
@@ -92,16 +113,14 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
 
     it('appends negative examples after positives when both present', () => {
       const out = buildClaudeAISearchUserMessage({
-        rows: [{ tag: 't', query: 'q1', quote: 'v' }],
+        positiveExamples: [{ tag: 't', query: 'q1', quote: 'v' }],
         schemaTag: 's',
         searchQuery: 'find',
         negativeExamples: [
           {
-            id: 'n1',
-            schemaTag: 'nt',
+            tag: 'nt',
             query: 'nq',
             quote: 'bad',
-            documentUri: 'http://x',
           },
         ],
       });
@@ -118,16 +137,14 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
 
     it('includes only negative block and question when no positives', () => {
       const out = buildClaudeAISearchUserMessage({
-        rows: [],
+        positiveExamples: [],
         schemaTag: '',
         searchQuery: 'solo',
         negativeExamples: [
           {
-            id: 'n1',
-            schemaTag: 'a',
+            tag: 'a',
             query: 'b',
             quote: 'c',
-            documentUri: 'http://x',
           },
         ],
       });
@@ -142,16 +159,14 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
 
     it('formats negative example with empty tag like positive triple lines', () => {
       const out = buildClaudeAISearchUserMessage({
-        rows: [],
+        positiveExamples: [],
         schemaTag: 's',
         searchQuery: 'q',
         negativeExamples: [
           {
-            id: 'n1',
-            schemaTag: '',
+            tag: '',
             query: 'onlyq',
             quote: 'qt',
-            documentUri: 'http://x',
           },
         ],
       });
@@ -356,6 +371,20 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       assert.lengthOf(rows, 0);
     });
 
+    it('excludes neg-example-only annotations from Set B', () => {
+      const rows = buildCandidateRows(
+        [
+          textQuoteAnn({
+            id: 'n1',
+            tags: ['methods-neg-example'],
+            text: 'declined',
+          }),
+        ],
+        pdf,
+      );
+      assert.lengthOf(rows, 0);
+    });
+
     it('includes tagged highlight with no body text', () => {
       const rows = buildCandidateRows(
         [
@@ -464,7 +493,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
     });
   });
 
-  describe('collectTagQueryQuoteRows', () => {
+  describe('collectPositiveExamplesFromAnnotations', () => {
     it('returns rows and logs timing', async () => {
       sinon.stub(console, 'log');
       const del = sinon.stub().resolves();
@@ -473,15 +502,39 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['z', 'ai-user-approved'],
         text: 'qq',
       });
-      const rows = await collectTagQueryQuoteRows([ann], pdf, {
+      const rows = await collectPositiveExamplesFromAnnotations([ann], pdf, {
         delete: del,
       });
       assert.lengthOf(rows, 1);
       assert.equal(rows[0].tag, 'z');
       const logCall = console.log.getCall(console.log.callCount - 1);
-      assert.equal(logCall.args[0], '[AISearch] example triples construction');
+      assert.equal(logCall.args[0], '[AISearch] positive examples construction');
       assert.property(logCall.args[1], 'elapsedMs');
       assert.isNumber(logCall.args[1].elapsedMs);
+    });
+  });
+
+  describe('collectNegativeExamplesFromAnnotations', () => {
+    it('maps neg-example tags on matching document', () => {
+      const ann = textQuoteAnn({
+        id: 'n1',
+        tags: ['methods-neg-example'],
+        text: 'bad q',
+      });
+      const rows = collectNegativeExamplesFromAnnotations([ann], pdf);
+      assert.deepEqual(rows, [
+        { tag: 'methods-neg-example', query: 'bad q', quote: 'verbatim quote' },
+      ]);
+    });
+
+    it('excludes wrong URI', () => {
+      const ann = textQuoteAnn({
+        id: 'n1',
+        uri: 'http://other.com/x.pdf',
+        tags: ['methods-neg-example'],
+        text: 'q',
+      });
+      assert.lengthOf(collectNegativeExamplesFromAnnotations([ann], pdf), 0);
     });
   });
 

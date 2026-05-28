@@ -1,6 +1,6 @@
 import type { SavedAnnotation } from '../../types/api';
 import type { AnnotationsService } from '../services/annotations';
-import type { AISearchNegativeExample } from '../store/modules/sidebar-panels';
+import { negativeSchemaTags, positiveSchemaTags } from './ai-search-group-history';
 import { isReply, isSaved, quote } from './annotation-metadata';
 
 export type AiSearchQuoteItem = { text?: string };
@@ -8,7 +8,7 @@ export type AiSearchQuoteItem = { text?: string };
 const AI_USER_APPROVED = 'ai-user-approved';
 const AI_PENDING = 'ai-pending';
 
-export type TagQueryQuoteRow = {
+export type FewShotExampleRow = {
   tag: string;
   query: string;
   quote: string;
@@ -30,13 +30,11 @@ function norm(s: string): string {
 }
 
 function formatTagColumnForSetA(tags: string[]): string {
-  return tags
-    .filter(t => t !== AI_USER_APPROVED && t !== AI_PENDING)
-    .join(', ');
+  return positiveSchemaTags(tags).join(', ');
 }
 
 function formatTagColumnForSetB(tags: string[]): string {
-  return tags.join(', ');
+  return positiveSchemaTags(tags).join(', ');
 }
 
 function includeUserAuthoredRow(annotation: SavedAnnotation): boolean {
@@ -71,10 +69,14 @@ export function buildCandidateRows(
     const tags = ann.tags ?? [];
 
     if (tags.includes(AI_USER_APPROVED)) {
+      const tagColumn = formatTagColumnForSetA(tags);
+      if (!tagColumn) {
+        continue;
+      }
       candidates.push({
         annotation: ann,
         set: 'A',
-        tag: formatTagColumnForSetA(tags),
+        tag: tagColumn,
         query: ann.text ?? '',
         quote: q,
         index: index++,
@@ -94,10 +96,15 @@ export function buildCandidateRows(
       continue;
     }
 
+    const tagColumn = formatTagColumnForSetB(tags);
+    if (!tagColumn) {
+      continue;
+    }
+
     candidates.push({
       annotation: ann,
       set: 'B',
-      tag: formatTagColumnForSetB(tags),
+      tag: tagColumn,
       query: ann.text ?? '',
       quote: q,
       index: index++,
@@ -209,13 +216,13 @@ export async function dedupeTagQueryRows(
 }
 
 /**
- * Collect, dedupe, and delete duplicate annotations per plan. Times and logs construction.
+ * Collect, dedupe, and delete duplicate positive annotations. Times and logs construction.
  */
-export async function collectTagQueryQuoteRows(
+export async function collectPositiveExamplesFromAnnotations(
   annotations: SavedAnnotation[],
   documentUri: string,
   annotationsService: AnnotationsService,
-): Promise<TagQueryQuoteRow[]> {
+): Promise<FewShotExampleRow[]> {
   const t0 = performance.now();
   try {
     const candidates = buildCandidateRows(annotations, documentUri);
@@ -227,8 +234,37 @@ export async function collectTagQueryQuoteRows(
     }));
   } finally {
     const elapsedMs = Math.round(performance.now() - t0);
-    console.log('[AISearch] example triples construction', { elapsedMs });
+    console.log('[AISearch] positive examples construction', { elapsedMs });
   }
+}
+
+/**
+ * Map annotations with `-neg-example` tags to few-shot negative rows.
+ */
+export function collectNegativeExamplesFromAnnotations(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+): FewShotExampleRow[] {
+  const rows: FewShotExampleRow[] = [];
+
+  for (const ann of annotations) {
+    if (!isSaved(ann) || ann.uri !== documentUri || isReply(ann)) {
+      continue;
+    }
+    const q = quote(ann);
+    if (q == null || !norm(q)) {
+      continue;
+    }
+    for (const tag of negativeSchemaTags(ann.tags ?? [])) {
+      rows.push({
+        tag,
+        query: ann.text ?? '',
+        quote: q,
+      });
+    }
+  }
+
+  return rows;
 }
 
 /**
@@ -502,36 +538,40 @@ const EXAMPLES_HEADER =
 const NEGATIVE_EXAMPLES_HEADER =
   'Negative examples of tag-query-quote triples:\n\n';
 
-function formatRowLine(row: TagQueryQuoteRow): string {
-  return `- tag: ${row.tag}\n  query: ${row.query}\n  quote: ${row.quote}\n`;
-}
+export type FewShotExampleKind = 'positive' | 'negative';
 
-function formatNegativeExampleLine(ex: AISearchNegativeExample): string {
-  const tag = ex.schemaTag.trim();
-  const query = ex.query.trim();
-  const quoteText = ex.quote.trim();
-  return `- tag: ${tag}\n  query: ${query}\n  should not return\n  quote: ${quoteText}\n`;
+export function formatFewShotExampleLine(
+  row: FewShotExampleRow,
+  { kind }: { kind: FewShotExampleKind },
+): string {
+  const tag = row.tag.trim();
+  const query = row.query.trim();
+  const quoteText = row.quote.trim();
+  if (kind === 'negative') {
+    return `- tag: ${tag}\n  query: ${query}\n  should not return\n  quote: ${quoteText}\n`;
+  }
+  return `- tag: ${tag}\n  query: ${query}\n  quote: ${quoteText}\n`;
 }
 
 export function buildClaudeAISearchUserMessage(params: {
-  rows: TagQueryQuoteRow[];
+  positiveExamples: FewShotExampleRow[];
   schemaTag: string;
   searchQuery: string;
-  negativeExamples?: AISearchNegativeExample[];
+  negativeExamples?: FewShotExampleRow[];
 }): string {
-  const { rows, schemaTag, searchQuery, negativeExamples } = params;
+  const { positiveExamples, schemaTag, searchQuery, negativeExamples } = params;
   let body = '';
-  if (rows.length > 0) {
+  if (positiveExamples.length > 0) {
     body += EXAMPLES_HEADER;
-    for (const row of rows) {
-      body += formatRowLine(row);
+    for (const row of positiveExamples) {
+      body += formatFewShotExampleLine(row, { kind: 'positive' });
     }
     body += '\n';
   }
   if (negativeExamples?.length) {
     body += NEGATIVE_EXAMPLES_HEADER;
     for (const ex of negativeExamples) {
-      body += `${formatNegativeExampleLine(ex)}\n`;
+      body += `${formatFewShotExampleLine(ex, { kind: 'negative' })}\n`;
     }
     body += '\n';
   }
