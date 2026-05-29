@@ -40,6 +40,19 @@ function filterAnnotationsForDocumentScope(
   );
 }
 
+/** Saved annotations on the current document for Public-group few-shot examples. */
+export function savedAnnotationsForCurrentDocument(
+  savedAnnotations: SavedAnnotation[],
+  groupId: string,
+  documentUris: string[],
+): SavedAnnotation[] {
+  return filterAnnotationsForDocumentScope(
+    savedAnnotations,
+    groupId,
+    documentUris,
+  );
+}
+
 function resolveEffectiveMode(
   groupId: string,
   mode: SyncGroupHistoryMode,
@@ -115,6 +128,10 @@ export class AISearchGroupHistorySyncService {
   private _syncController: AbortController | null = null;
   private _syncing = false;
   private _initDone = false;
+  /** Full group fetch results keyed by `groupId`; `undefined` = not loaded yet. */
+  private _groupAnnotationCache = new Map<string, SavedAnnotation[]>();
+  private _groupAnnotationCacheLoaded = new Set<string>();
+  private _activeSync: Promise<void> | null = null;
 
   constructor(api: APIService, store: SidebarStore) {
     this._api = api;
@@ -140,6 +157,7 @@ export class AISearchGroupHistorySyncService {
         }
         if (prevGroupId && prevGroupId !== groupId) {
           this._abortSync();
+          this._clearGroupAnnotationCache();
         }
         void this.syncGroupHistory({ mode: 'auto' });
       },
@@ -148,6 +166,37 @@ export class AISearchGroupHistorySyncService {
 
   isSyncingGroupHistory(): boolean {
     return this._syncing;
+  }
+
+  /**
+   * Annotations from the last successful full-group fetch for `groupId`.
+   * Returns `null` if that group has not been fetched yet (distinct from `[]`).
+   */
+  cachedGroupAnnotations(groupId: string): SavedAnnotation[] | null {
+    if (!this._groupAnnotationCacheLoaded.has(groupId)) {
+      return null;
+    }
+    return this._groupAnnotationCache.get(groupId) ?? [];
+  }
+
+  /** Await the in-flight sync, if any (used before private-group AI search). */
+  async waitForSyncIfInFlight(): Promise<void> {
+    if (this._activeSync) {
+      await this._activeSync;
+    }
+  }
+
+  private _clearGroupAnnotationCache() {
+    this._groupAnnotationCache.clear();
+    this._groupAnnotationCacheLoaded.clear();
+  }
+
+  private _setGroupAnnotationCache(
+    groupId: string,
+    annotations: SavedAnnotation[],
+  ) {
+    this._groupAnnotationCache.set(groupId, annotations);
+    this._groupAnnotationCacheLoaded.add(groupId);
   }
 
   private _abortSync() {
@@ -171,45 +220,61 @@ export class AISearchGroupHistorySyncService {
     const { signal } = this._syncController;
     this._syncing = true;
 
-    try {
-      let annotations: SavedAnnotation[];
+    const syncWork = (async () => {
+      try {
+        let annotations: SavedAnnotation[];
 
-      if (effectiveMode === 'document') {
-        annotations = filterAnnotationsForDocumentScope(
-          this._store.savedAnnotations(),
+        if (effectiveMode === 'document') {
+          annotations = filterAnnotationsForDocumentScope(
+            this._store.savedAnnotations(),
+            groupId,
+            documentUris,
+          );
+        } else {
+          annotations = await fetchAllGroupAnnotations(
+            this._api,
+            groupId,
+            signal,
+          );
+          if (signal.aborted) {
+            return;
+          }
+          this._setGroupAnnotationCache(groupId, annotations);
+        }
+
+        applyDerivedAISearchHistoryRows(this._store, {
           groupId,
-          documentUris,
-        );
-      } else {
-        annotations = await fetchAllGroupAnnotations(this._api, groupId, signal);
-        if (signal.aborted) {
-          return;
+          annotations,
+          updatePublicScope: groupId === PUBLIC_GROUP_ID,
+          documentUri: documentUris[0] ?? this._store.mainFrame()?.uri ?? '',
+        });
+
+        if (
+          effectiveMode === 'fullGroup' &&
+          groupId !== PUBLIC_GROUP_ID &&
+          !signal.aborted
+        ) {
+          const descriptors = deriveAISearchHistoryRowDescriptors(annotations);
+          this._store.pruneAISearchRowsForGroup(groupId, descriptors);
+        }
+      } catch (err) {
+        if (!signal.aborted) {
+          console.warn('[AISearchGroupHistorySync] sync failed', err);
+        }
+      } finally {
+        if (!signal.aborted) {
+          this._syncing = false;
+          this._syncController = null;
         }
       }
+    })();
 
-      applyDerivedAISearchHistoryRows(this._store, {
-        groupId,
-        annotations,
-        updatePublicScope: groupId === PUBLIC_GROUP_ID,
-        documentUri: documentUris[0] ?? this._store.mainFrame()?.uri ?? '',
-      });
-
-      if (
-        effectiveMode === 'fullGroup' &&
-        groupId !== PUBLIC_GROUP_ID &&
-        !signal.aborted
-      ) {
-        const descriptors = deriveAISearchHistoryRowDescriptors(annotations);
-        this._store.pruneAISearchRowsForGroup(groupId, descriptors);
-      }
-    } catch (err) {
-      if (!signal.aborted) {
-        console.warn('[AISearchGroupHistorySync] sync failed', err);
-      }
+    this._activeSync = syncWork;
+    try {
+      await syncWork;
     } finally {
-      if (!signal.aborted) {
-        this._syncing = false;
-        this._syncController = null;
+      if (this._activeSync === syncWork) {
+        this._activeSync = null;
       }
     }
   }

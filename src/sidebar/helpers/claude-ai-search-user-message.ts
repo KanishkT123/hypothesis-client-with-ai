@@ -48,16 +48,16 @@ function includeUserAuthoredRow(annotation: SavedAnnotation): boolean {
 
 /**
  * Build candidate rows from Sets A and B (no dedupe).
+ * Caller passes an already-scoped annotation list (document or group).
  */
 export function buildCandidateRows(
   annotations: SavedAnnotation[],
-  documentUri: string,
 ): CandidateRow[] {
   const candidates: CandidateRow[] = [];
   let index = 0;
 
   for (const ann of annotations) {
-    if (!isSaved(ann) || ann.uri !== documentUri) {
+    if (!isSaved(ann)) {
       continue;
     }
 
@@ -220,12 +220,11 @@ export async function dedupeTagQueryRows(
  */
 export async function collectPositiveExamplesFromAnnotations(
   annotations: SavedAnnotation[],
-  documentUri: string,
   annotationsService: AnnotationsService,
 ): Promise<FewShotExampleRow[]> {
   const t0 = performance.now();
   try {
-    const candidates = buildCandidateRows(annotations, documentUri);
+    const candidates = buildCandidateRows(annotations);
     const deduped = await dedupeTagQueryRows(candidates, annotationsService);
     return deduped.map(r => ({
       tag: r.tag,
@@ -243,12 +242,11 @@ export async function collectPositiveExamplesFromAnnotations(
  */
 export function collectNegativeExamplesFromAnnotations(
   annotations: SavedAnnotation[],
-  documentUri: string,
 ): FewShotExampleRow[] {
   const rows: FewShotExampleRow[] = [];
 
   for (const ann of annotations) {
-    if (!isSaved(ann) || ann.uri !== documentUri || isReply(ann)) {
+    if (!isSaved(ann) || isReply(ann)) {
       continue;
     }
     const q = quote(ann);

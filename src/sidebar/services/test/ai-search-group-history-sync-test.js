@@ -2,7 +2,10 @@ import sinon from 'sinon';
 
 import { PUBLIC_GROUP_ID } from '../../helpers/groups';
 import { rowDescriptorKey } from '../../helpers/ai-search-group-history';
-import { AISearchGroupHistorySyncService } from '../ai-search-group-history-sync';
+import {
+  AISearchGroupHistorySyncService,
+  savedAnnotationsForCurrentDocument,
+} from '../ai-search-group-history-sync';
 import { loadSyncRowID } from '../ai-search-history-reconcile';
 
 describe('AISearchGroupHistorySyncService', () => {
@@ -101,6 +104,47 @@ describe('AISearchGroupHistorySyncService', () => {
       annotationIds: [],
     });
     assert.calledOnce(fakeStore.pruneAISearchRowsForGroup);
+  });
+
+  it('returns null from cachedGroupAnnotations before a full fetch', () => {
+    assert.isNull(svc.cachedGroupAnnotations('private-group'));
+  });
+
+  it('caches annotations after a private full-group sync', async () => {
+    await svc.syncGroupHistory({ mode: 'auto' });
+
+    const cached = svc.cachedGroupAnnotations('private-group');
+    assert.lengthOf(cached, 1);
+    assert.equal(cached[0].id, 'a1');
+  });
+
+  it('does not populate cache for document-scoped private sync', async () => {
+    fakeStore.savedAnnotations.returns([
+      {
+        id: 'doc-a1',
+        group: 'private-group',
+        uri: 'http://example.com',
+        tags: ['methods'],
+      },
+    ]);
+
+    await svc.syncGroupHistory({ mode: 'document' });
+
+    assert.isNull(svc.cachedGroupAnnotations('private-group'));
+  });
+
+  it('savedAnnotationsForCurrentDocument filters by group and URIs', () => {
+    const result = savedAnnotationsForCurrentDocument(
+      [
+        { id: '1', group: PUBLIC_GROUP_ID, uri: 'http://a.com', tags: [] },
+        { id: '2', group: PUBLIC_GROUP_ID, uri: 'http://b.com', tags: [] },
+        { id: '3', group: 'other', uri: 'http://a.com', tags: [] },
+      ],
+      PUBLIC_GROUP_ID,
+      ['http://a.com'],
+    );
+    assert.lengthOf(result, 1);
+    assert.equal(result[0].id, '1');
   });
 
   it('paginates with page[after] until a short page is returned', async () => {

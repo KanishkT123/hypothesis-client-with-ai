@@ -43,7 +43,10 @@ import { PUBLIC_GROUP_ID } from '../../helpers/groups';
 import { formatSidebarTagFilter } from '../../helpers/filter-query-for-tag';
 import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
-import type { AISearchGroupHistorySyncService } from '../../services/ai-search-group-history-sync';
+import {
+  savedAnnotationsForCurrentDocument,
+  type AISearchGroupHistorySyncService,
+} from '../../services/ai-search-group-history-sync';
 import type { ExperimentLogService } from '../../services/experiment-log';
 import type { SavedAnnotation } from '../../../types/api';
 import type { AnnotationsService } from '../../services/annotations';
@@ -256,17 +259,38 @@ function AISearchPanel({
         return;
       }
 
+      let fewShotAnnotations: SavedAnnotation[];
+      if (groupId === PUBLIC_GROUP_ID) {
+        fewShotAnnotations = savedAnnotationsForCurrentDocument(
+          store.savedAnnotations(),
+          groupId,
+          store.searchUris(),
+        );
+      } else {
+        let cached = aiSearchGroupHistorySync.cachedGroupAnnotations(groupId);
+        if (cached === null && aiSearchGroupHistorySync.isSyncingGroupHistory()) {
+          await aiSearchGroupHistorySync.waitForSyncIfInFlight();
+          cached = aiSearchGroupHistorySync.cachedGroupAnnotations(groupId);
+        }
+        if (cached === null) {
+          await aiSearchGroupHistorySync.syncGroupHistory({ mode: 'auto' });
+          cached = aiSearchGroupHistorySync.cachedGroupAnnotations(groupId);
+        }
+        if (cached === null) {
+          toastMessenger.error(
+            'Could not load group annotations for AI search. Try Refresh group tags.',
+          );
+          return;
+        }
+        fewShotAnnotations = cached;
+      }
+
       const positiveExamples = await collectPositiveExamplesFromAnnotations(
-        store.savedAnnotations(),
-        documentURL,
+        fewShotAnnotations,
         annotationsService,
       );
-      // Negatives come from `{schemaTag}-neg-example` annotations on the
-      // current document (document-scoped until commit 5 widens to the group).
-      const negativeExamples = collectNegativeExamplesFromAnnotations(
-        store.savedAnnotations(),
-        documentURL,
-      );
+      const negativeExamples =
+        collectNegativeExamplesFromAnnotations(fewShotAnnotations);
       const tagTrim = schemaTagForRow.trim();
       const fullUserMessage = buildClaudeAISearchUserMessage({
         positiveExamples,

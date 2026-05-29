@@ -317,7 +317,6 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
             text: 'ai query',
           }),
         ],
-        pdf,
       );
       assert.lengthOf(rows, 1);
       assert.equal(rows[0].set, 'A');
@@ -328,18 +327,20 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
     it('includes Set B when not ai-tagged', () => {
       const rows = buildCandidateRows(
         [textQuoteAnn({ id: 'b1', tags: ['foo'], text: 'note' })],
-        pdf,
       );
       assert.lengthOf(rows, 1);
       assert.equal(rows[0].set, 'B');
     });
 
-    it('excludes wrong URI', () => {
-      const rows = buildCandidateRows(
-        [textQuoteAnn({ id: 'x', uri: 'http://other.com/x.pdf' })],
-        pdf,
-      );
-      assert.lengthOf(rows, 0);
+    it('includes cross-URI annotations when caller passes them', () => {
+      const rows = buildCandidateRows([
+        textQuoteAnn({
+          id: 'x',
+          uri: 'http://other.com/x.pdf',
+          tags: ['methods'],
+        }),
+      ]);
+      assert.lengthOf(rows, 1);
     });
 
     it('excludes replies', () => {
@@ -352,7 +353,6 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
             references: ['parent'],
           }),
         ],
-        pdf,
       );
       assert.lengthOf(rows, 0);
     });
@@ -366,7 +366,6 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
             text: 'x',
           }),
         ],
-        pdf,
       );
       assert.lengthOf(rows, 0);
     });
@@ -380,7 +379,6 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
             text: 'declined',
           }),
         ],
-        pdf,
       );
       assert.lengthOf(rows, 0);
     });
@@ -394,7 +392,6 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
             text: '',
           }),
         ],
-        pdf,
       );
       assert.lengthOf(rows, 1);
       assert.equal(rows[0].query, '');
@@ -417,7 +414,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'q2',
         exact: 'same',
       });
-      const candidates = buildCandidateRows([a, b], pdf);
+      const candidates = buildCandidateRows([a, b]);
       const out = await dedupeTagQueryRows(candidates, svc);
       assert.lengthOf(out, 1);
       assert.equal(out[0].annotation.id, 'id-b');
@@ -440,7 +437,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'q2',
         exact: 'e',
       });
-      const candidates = buildCandidateRows([a1, a2], pdf);
+      const candidates = buildCandidateRows([a1, a2]);
       const out = await dedupeTagQueryRows(candidates, svc);
       assert.lengthOf(out, 1);
       assert.equal(out[0].annotation.id, 'a1');
@@ -463,7 +460,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'q2',
         exact: 'e',
       });
-      const candidates = buildCandidateRows([b1, b2], pdf);
+      const candidates = buildCandidateRows([b1, b2]);
       const out = await dedupeTagQueryRows(candidates, svc);
       assert.lengthOf(out, 2);
       assert.notCalled(del);
@@ -484,7 +481,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'sameq',
         exact: 'e',
       });
-      const candidates = buildCandidateRows([b1, b2], pdf);
+      const candidates = buildCandidateRows([b1, b2]);
       const out = await dedupeTagQueryRows(candidates, svc);
       assert.lengthOf(out, 1);
       assert.equal(out[0].annotation.id, 'b1');
@@ -502,7 +499,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['z', 'ai-user-approved'],
         text: 'qq',
       });
-      const rows = await collectPositiveExamplesFromAnnotations([ann], pdf, {
+      const rows = await collectPositiveExamplesFromAnnotations([ann], {
         delete: del,
       });
       assert.lengthOf(rows, 1);
@@ -515,26 +512,26 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
   });
 
   describe('collectNegativeExamplesFromAnnotations', () => {
-    it('maps neg-example tags on matching document', () => {
+    it('maps neg-example tags', () => {
       const ann = textQuoteAnn({
         id: 'n1',
         tags: ['methods-neg-example'],
         text: 'bad q',
       });
-      const rows = collectNegativeExamplesFromAnnotations([ann], pdf);
+      const rows = collectNegativeExamplesFromAnnotations([ann]);
       assert.deepEqual(rows, [
         { tag: 'methods-neg-example', query: 'bad q', quote: 'verbatim quote' },
       ]);
     });
 
-    it('excludes wrong URI', () => {
+    it('includes cross-URI negatives when caller passes them', () => {
       const ann = textQuoteAnn({
         id: 'n1',
         uri: 'http://other.com/x.pdf',
         tags: ['methods-neg-example'],
         text: 'q',
       });
-      assert.lengthOf(collectNegativeExamplesFromAnnotations([ann], pdf), 0);
+      assert.lengthOf(collectNegativeExamplesFromAnnotations([ann]), 1);
     });
   });
 
