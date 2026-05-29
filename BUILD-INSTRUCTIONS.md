@@ -45,7 +45,7 @@ yarn install
 
    ```bash
    cd ../hypothesis-browser-extension-with-AI
-   make build SETTINGS_FILE=settings/chrome-dev-remote.json
+   make build SETTINGS_FILE=settings/chrome-prod.json
    ```
 
    If you omit `SETTINGS_FILE`, it defaults to `chrome-dev.json` which points to `localhost` and will show a "localhost denied" error.
