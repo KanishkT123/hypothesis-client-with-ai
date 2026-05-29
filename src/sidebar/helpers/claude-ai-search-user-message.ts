@@ -387,6 +387,31 @@ export function savedAnnotationMatchesAISearchRow(
   return true;
 }
 
+/** Pick for a hidden AI search history row passed into thread-list filtering. */
+export type HiddenAISearchRowMatch = {
+  schemaTag: string;
+  query: string;
+};
+
+/**
+ * True when `ann` on `documentUri` matches any hidden history row (same tag+query
+ * semantics as {@link savedAnnotationMatchesAISearchRow}).
+ */
+export function annotationMatchesHiddenAISearchRow(
+  ann: SavedAnnotation,
+  documentUri: string,
+  hiddenRows: HiddenAISearchRowMatch[],
+): boolean {
+  return hiddenRows.some(row =>
+    savedAnnotationMatchesAISearchRow(
+      ann,
+      documentUri,
+      row.schemaTag,
+      row.query,
+    ),
+  );
+}
+
 /**
  * Expected tag list for AI-created pending annotations (strict match for rerun / delete pending).
  */

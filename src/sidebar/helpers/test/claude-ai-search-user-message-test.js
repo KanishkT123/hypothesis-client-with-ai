@@ -1,6 +1,7 @@
 import * as fixtures from '../../test/annotation-fixtures';
 
 import {
+  annotationMatchesHiddenAISearchRow,
   buildCandidateRows,
   buildClaudeAISearchUserMessage,
   collectNegativeExamplesFromAnnotations,
@@ -675,6 +676,34 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       assert.deepEqual(
         tagsAfterRemovingAISearchRowSchemaTag(['ai-pending', 'a', 'b'], 'a'),
         ['ai-pending', 'b'],
+      );
+    });
+  });
+
+  describe('annotationMatchesHiddenAISearchRow', () => {
+    it('returns true when annotation matches a hidden row', () => {
+      const ann = textQuoteAnn({
+        id: 'h1',
+        tags: ['methods', 'ai-user-approved'],
+        text: 'find it',
+      });
+      assert.isTrue(
+        annotationMatchesHiddenAISearchRow(ann, pdf, [
+          { schemaTag: 'methods', query: 'find it' },
+        ]),
+      );
+    });
+
+    it('returns false when annotation matches a different tag', () => {
+      const ann = textQuoteAnn({
+        id: 'h1',
+        tags: ['results', 'ai-user-approved'],
+        text: 'find it',
+      });
+      assert.isFalse(
+        annotationMatchesHiddenAISearchRow(ann, pdf, [
+          { schemaTag: 'methods', query: 'find it' },
+        ]),
       );
     });
   });

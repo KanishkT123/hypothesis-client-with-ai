@@ -337,6 +337,53 @@ describe('sidebar/helpers/thread-annotations', () => {
           sinon.match({ user: 'somebody' }),
         );
       });
+
+      it('hides annotations matching hidden AI search rows', () => {
+        const hiddenAnn = annotationFixtures.defaultAnnotation();
+        hiddenAnn.uri = 'http://example.com/doc.pdf';
+        hiddenAnn.tags = ['methods', 'ai-user-approved'];
+        hiddenAnn.text = 'find it';
+        hiddenAnn.target = [
+          {
+            source: hiddenAnn.uri,
+            selector: [{ type: 'TextQuoteSelector', exact: 'quote text' }],
+          },
+        ];
+
+        fakeThreadState.hiddenAISearchRows = [
+          { schemaTag: 'methods', query: 'find it' },
+        ];
+        fakeThreadState.documentUri = 'http://example.com/doc.pdf';
+
+        threadAnnotations(fakeThreadState);
+
+        const filterFn = fakeBuildThread.args[0][1].filterFn;
+        assert.isFunction(filterFn);
+        assert.isFalse(filterFn(hiddenAnn));
+      });
+
+      it('does not hide annotations when hidden row tag differs', () => {
+        const ann = annotationFixtures.defaultAnnotation();
+        ann.uri = 'http://example.com/doc.pdf';
+        ann.tags = ['results', 'ai-user-approved'];
+        ann.text = 'find it';
+        ann.target = [
+          {
+            source: ann.uri,
+            selector: [{ type: 'TextQuoteSelector', exact: 'quote text' }],
+          },
+        ];
+
+        fakeThreadState.hiddenAISearchRows = [
+          { schemaTag: 'methods', query: 'find it' },
+        ];
+        fakeThreadState.documentUri = 'http://example.com/doc.pdf';
+
+        threadAnnotations(fakeThreadState);
+
+        const filterFn = fakeBuildThread.args[0][1].filterFn;
+        assert.isTrue(filterFn(ann));
+      });
     });
   });
 });

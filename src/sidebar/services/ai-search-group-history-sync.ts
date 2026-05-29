@@ -1,4 +1,4 @@
-import type { SavedAnnotation } from '../../types/api';
+import type { Annotation, SavedAnnotation } from '../../types/api';
 import { isSaved } from '../helpers/annotation-metadata';
 import {
   deriveAISearchHistoryRowDescriptors,
@@ -184,6 +184,42 @@ export class AISearchGroupHistorySyncService {
     if (this._activeSync) {
       await this._activeSync;
     }
+  }
+
+  /**
+   * Upsert realtime updates into the private-group cache and drop deletions.
+   * No-op when the cache has not been populated yet (Public groups included).
+   */
+  mergePendingUpdatesIntoCache(
+    updates: Annotation[],
+    deletedIds: string[],
+  ) {
+    const groupId = this._store.focusedGroupId();
+    if (!groupId || groupId === PUBLIC_GROUP_ID) {
+      return;
+    }
+    if (!this._groupAnnotationCacheLoaded.has(groupId)) {
+      return;
+    }
+
+    const deletionSet = new Set(deletedIds);
+    const cached = (this._groupAnnotationCache.get(groupId) ?? []).filter(
+      ann => !ann.id || !deletionSet.has(ann.id),
+    );
+
+    for (const ann of updates) {
+      if (!isSaved(ann) || ann.group !== groupId) {
+        continue;
+      }
+      const idx = cached.findIndex(a => a.id === ann.id);
+      if (idx >= 0) {
+        cached[idx] = ann;
+      } else {
+        cached.push(ann);
+      }
+    }
+
+    this._setGroupAnnotationCache(groupId, cached);
   }
 
   private _clearGroupAnnotationCache() {

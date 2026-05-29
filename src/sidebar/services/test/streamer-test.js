@@ -148,6 +148,7 @@ describe('StreamerService', () => {
 
     fakeAiSearchGroupHistorySync = {
       syncGroupHistory: sinon.stub().returns(Promise.resolve()),
+      mergePendingUpdatesIntoCache: sinon.stub(),
     };
 
     fakeWarnOnce = sinon.stub();
@@ -558,6 +559,25 @@ describe('StreamerService', () => {
       assert.notCalled(fakeStore.addAnnotations);
       assert.notCalled(fakeStore.removeAnnotations);
       assert.called(fakeStore.clearPendingUpdates);
+      assert.notCalled(fakeAiSearchGroupHistorySync.mergePendingUpdatesIntoCache);
+      assert.notCalled(fakeAiSearchGroupHistorySync.syncGroupHistory);
+    });
+
+    it('merges pending updates into the group cache and syncs AI search history', () => {
+      const update = { id: 'an-id', group: 'private-group' };
+      fakeStore.pendingUpdates.returns({ 'an-id': update });
+      fakeStore.pendingDeletions.returns({ 'gone-id': true });
+
+      activeStreamer.applyPendingUpdates();
+
+      assert.calledWith(
+        fakeAiSearchGroupHistorySync.mergePendingUpdatesIntoCache,
+        [update],
+        ['gone-id'],
+      );
+      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+        mode: 'document',
+      });
     });
   });
 

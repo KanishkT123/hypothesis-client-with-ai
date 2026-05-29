@@ -147,6 +147,35 @@ describe('AISearchGroupHistorySyncService', () => {
     assert.equal(result[0].id, '1');
   });
 
+  it('mergePendingUpdatesIntoCache upserts updates and removes deletions', async () => {
+    await svc.syncGroupHistory({ mode: 'auto' });
+
+    svc.mergePendingUpdatesIntoCache(
+      [
+        {
+          id: 'a2',
+          group: 'private-group',
+          uri: 'http://new.com',
+          tags: ['results'],
+          created: '2024-02-01T00:00:00Z',
+        },
+      ],
+      ['a1'],
+    );
+
+    const cached = svc.cachedGroupAnnotations('private-group');
+    assert.lengthOf(cached, 1);
+    assert.equal(cached[0].id, 'a2');
+  });
+
+  it('mergePendingUpdatesIntoCache is a no-op before cache is loaded', () => {
+    svc.mergePendingUpdatesIntoCache(
+      [{ id: 'x', group: 'private-group', uri: 'http://x.com', tags: [] }],
+      [],
+    );
+    assert.isNull(svc.cachedGroupAnnotations('private-group'));
+  });
+
   it('paginates with page[after] until a short page is returned', async () => {
     const fullPage = Array.from({ length: 100 }, (_, i) => ({
       id: `a${i}`,

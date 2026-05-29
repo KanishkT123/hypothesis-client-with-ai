@@ -125,6 +125,10 @@ export class StreamerService {
 
     const hadChanges = updates.length > 0 || deletions.length > 0;
     if (hadChanges) {
+      this._aiSearchGroupHistorySync.mergePendingUpdatesIntoCache(
+        updates,
+        deletions.map(d => d.id),
+      );
       void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
     }
   }
