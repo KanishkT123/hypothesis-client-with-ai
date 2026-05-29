@@ -310,8 +310,14 @@ const reducers = {
       r.query.trim() === queryKey;
 
     const duplicates = rows.filter(sameKey);
+    // Keep the kept row's ids first, then append ids merged in from the other
+    // duplicates, so the merged order is stable regardless of row insertion order.
+    const others = duplicates.filter(r => r.id !== action.keepRowId);
     const unionIds = [
-      ...new Set(duplicates.flatMap(r => r.annotationIds)),
+      ...new Set([
+        ...keep.annotationIds,
+        ...others.flatMap(r => r.annotationIds),
+      ]),
     ];
     const allHidden = duplicates.every(r => r.hidden === true);
 
