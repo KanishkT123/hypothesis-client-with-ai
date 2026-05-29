@@ -3,20 +3,20 @@ import * as fixtures from '../../test/annotation-fixtures';
 import {
   canMarkTagAsNegativeExample,
   canRevertNegativeExampleTag,
-  deriveAISearchHistoryRowDescriptors,
-  isAISearchRowVisibleInScope,
+  deriveTagInventoryRowDescriptors,
+  isTagInventoryRowVisibleInScope,
   isConvertiblePositiveContentTag,
   isNegativeSchemaTag,
   negativeSchemaTagForPositiveTag,
   negativeSchemaTags,
   positiveSchemaTagForNegativeTag,
   positiveSchemaTags,
-  pruneAISearchRowsToDescriptors,
+  pruneTagInventoryRowsToDescriptors,
   retagOneNegativeSchemaTagAsPositive,
   retagOnePositiveSchemaTagAsNegative,
   rowDescriptorKey,
-  sortAISearchRows,
-} from '../ai-search-group-history';
+  sortTagInventoryRows,
+} from '../tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../groups';
 
 function publicScope(documentUri, keys) {
@@ -30,7 +30,7 @@ function privateScope(groupId) {
   return { focusedGroupId: groupId };
 }
 
-describe('sidebar/helpers/ai-search-group-history', () => {
+describe('sidebar/helpers/tag-inventory-group', () => {
   const pdf = 'http://example.com/paper.pdf';
   const pdfB = 'http://example.com/other.pdf';
   const groupA = 'group-a-id';
@@ -166,9 +166,9 @@ describe('sidebar/helpers/ai-search-group-history', () => {
     });
   });
 
-  describe('deriveAISearchHistoryRowDescriptors', () => {
+  describe('deriveTagInventoryRowDescriptors', () => {
     it('ai-user-approved on methods yields row with query from text', () => {
-      const descriptors = deriveAISearchHistoryRowDescriptors([
+      const descriptors = deriveTagInventoryRowDescriptors([
         savedAnn({
           id: 'a1',
           tags: ['methods', 'ai-user-approved'],
@@ -181,7 +181,7 @@ describe('sidebar/helpers/ai-search-group-history', () => {
     });
 
     it('neg-example tag yields neg row, not positive methods', () => {
-      const descriptors = deriveAISearchHistoryRowDescriptors([
+      const descriptors = deriveTagInventoryRowDescriptors([
         savedAnn({
           id: 'n1',
           tags: ['methods-neg-example'],
@@ -194,7 +194,7 @@ describe('sidebar/helpers/ai-search-group-history', () => {
     });
 
     it('manual tag only yields empty query row', () => {
-      const descriptors = deriveAISearchHistoryRowDescriptors([
+      const descriptors = deriveTagInventoryRowDescriptors([
         savedAnn({
           id: 'm1',
           tags: ['methods'],
@@ -205,7 +205,7 @@ describe('sidebar/helpers/ai-search-group-history', () => {
     });
 
     it('ignores replies and system-tag-only annotations', () => {
-      const descriptors = deriveAISearchHistoryRowDescriptors([
+      const descriptors = deriveTagInventoryRowDescriptors([
         savedAnn({
           id: 'r1',
           tags: ['methods'],
@@ -221,7 +221,7 @@ describe('sidebar/helpers/ai-search-group-history', () => {
     });
 
     it('dedupes same tag+query across different document URIs', () => {
-      const descriptors = deriveAISearchHistoryRowDescriptors([
+      const descriptors = deriveTagInventoryRowDescriptors([
         savedAnn({
           id: 'a1',
           uri: pdf,
@@ -253,7 +253,7 @@ describe('sidebar/helpers/ai-search-group-history', () => {
       );
     });
 
-    it('pruneAISearchRowsToDescriptors keeps other groups and drops stale rows', () => {
+    it('pruneTagInventoryRowsToDescriptors keeps other groups and drops stale rows', () => {
       const rows = [
         {
           id: '1',
@@ -277,7 +277,7 @@ describe('sidebar/helpers/ai-search-group-history', () => {
           groupId: 'other-group',
         },
       ];
-      const pruned = pruneAISearchRowsToDescriptors(
+      const pruned = pruneTagInventoryRowsToDescriptors(
         rows,
         [{ schemaTag: 'methods', query: 'q' }],
         groupA,
@@ -288,8 +288,8 @@ describe('sidebar/helpers/ai-search-group-history', () => {
       );
     });
 
-    it('sortAISearchRows orders by schemaTag then query', () => {
-      const sorted = sortAISearchRows([
+    it('sortTagInventoryRows orders by schemaTag then query', () => {
+      const sorted = sortTagInventoryRows([
         { id: 'b', schemaTag: 'zebra', query: 'a', annotationIds: [] },
         { id: 'a', schemaTag: 'methods', query: 'z', annotationIds: [] },
         { id: 'c', schemaTag: 'methods', query: 'a', annotationIds: [] },
@@ -301,7 +301,7 @@ describe('sidebar/helpers/ai-search-group-history', () => {
     });
   });
 
-  describe('isAISearchRowVisibleInScope', () => {
+  describe('isTagInventoryRowVisibleInScope', () => {
     const baseRow = {
       id: 'r1',
       schemaTag: 'methods',
@@ -311,24 +311,24 @@ describe('sidebar/helpers/ai-search-group-history', () => {
     };
 
     it('private group: visible when groupId matches', () => {
-      assert.isTrue(isAISearchRowVisibleInScope(baseRow, privateScope(groupA)));
-      assert.isFalse(isAISearchRowVisibleInScope(baseRow, privateScope('other')));
+      assert.isTrue(isTagInventoryRowVisibleInScope(baseRow, privateScope(groupA)));
+      assert.isFalse(isTagInventoryRowVisibleInScope(baseRow, privateScope('other')));
     });
 
     it('public group: visible only when descriptor key is in current-doc set', () => {
       const publicRow = { ...baseRow, groupId: PUBLIC_GROUP_ID };
       const key = rowDescriptorKey('methods', 'q');
       assert.isTrue(
-        isAISearchRowVisibleInScope(publicRow, publicScope(pdf, [key])),
+        isTagInventoryRowVisibleInScope(publicRow, publicScope(pdf, [key])),
       );
       assert.isFalse(
-        isAISearchRowVisibleInScope(
+        isTagInventoryRowVisibleInScope(
           publicRow,
           publicScope(pdf, [rowDescriptorKey('other', '')]),
         ),
       );
       assert.isFalse(
-        isAISearchRowVisibleInScope(publicRow, {
+        isTagInventoryRowVisibleInScope(publicRow, {
           focusedGroupId: PUBLIC_GROUP_ID,
           publicDocumentDescriptorKeys: null,
         }),
@@ -337,7 +337,7 @@ describe('sidebar/helpers/ai-search-group-history', () => {
 
     it('hides rows missing groupId', () => {
       assert.isFalse(
-        isAISearchRowVisibleInScope(
+        isTagInventoryRowVisibleInScope(
           { ...baseRow, groupId: undefined },
           privateScope(groupA),
         ),

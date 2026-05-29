@@ -19,7 +19,7 @@ import {
 import {
   retagOneNegativeSchemaTagAsPositive,
   retagOnePositiveSchemaTagAsNegative,
-} from '../../helpers/ai-search-group-history';
+} from '../../helpers/tag-inventory-group';
 import type { UserItem } from '../../helpers/mention-suggestions';
 import { combineUsersForMentions } from '../../helpers/mention-suggestions';
 import type { MentionMode } from '../../helpers/mentions';

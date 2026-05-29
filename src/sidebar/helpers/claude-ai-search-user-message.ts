@@ -1,6 +1,6 @@
 import type { SavedAnnotation } from '../../types/api';
 import type { AnnotationsService } from '../services/annotations';
-import { negativeSchemaTags, positiveSchemaTags } from './ai-search-group-history';
+import { negativeSchemaTags, positiveSchemaTags } from './tag-inventory-group';
 import { isReply, isSaved, quote } from './annotation-metadata';
 
 export type AiSearchQuoteItem = { text?: string };
@@ -364,7 +364,7 @@ export function countAiSearchQuotesSkippedAsDuplicates(
  * body text equals the row query (trimmed), schema tag matches, not a reply.
  * Includes ai-pending, ai-user-approved, and manually authored rows with that tag+query.
  */
-export function savedAnnotationMatchesAISearchRow(
+export function savedAnnotationMatchesTagInventoryRow(
   ann: SavedAnnotation,
   documentUri: string,
   schemaTag: string,
@@ -388,22 +388,22 @@ export function savedAnnotationMatchesAISearchRow(
 }
 
 /** Pick for a hidden AI search history row passed into thread-list filtering. */
-export type HiddenAISearchRowMatch = {
+export type HiddenTagInventoryRowMatch = {
   schemaTag: string;
   query: string;
 };
 
 /**
  * True when `ann` on `documentUri` matches any hidden history row (same tag+query
- * semantics as {@link savedAnnotationMatchesAISearchRow}).
+ * semantics as {@link savedAnnotationMatchesTagInventoryRow}).
  */
-export function annotationMatchesHiddenAISearchRow(
+export function annotationMatchesHiddenTagInventoryRow(
   ann: SavedAnnotation,
   documentUri: string,
-  hiddenRows: HiddenAISearchRowMatch[],
+  hiddenRows: HiddenTagInventoryRowMatch[],
 ): boolean {
   return hiddenRows.some(row =>
-    savedAnnotationMatchesAISearchRow(
+    savedAnnotationMatchesTagInventoryRow(
       ann,
       documentUri,
       row.schemaTag,
@@ -458,7 +458,7 @@ export function savedAnnotationIsStrictAISearchPending(
 /**
  * Count of strict pending annotations for this row (matches delete pending / rerun).
  */
-export function countAISearchRowPendingAnnotations(
+export function countTagInventoryRowPendingAnnotations(
   annotations: SavedAnnotation[],
   documentUri: string,
   schemaTag: string,
@@ -472,21 +472,21 @@ export function countAISearchRowPendingAnnotations(
 /**
  * All saved annotations matching this row's Total (tag + query + document).
  */
-export function listSavedAnnotationsMatchingAISearchRow(
+export function listSavedAnnotationsMatchingTagInventoryRow(
   annotations: SavedAnnotation[],
   documentUri: string,
   schemaTag: string,
   query: string,
 ): SavedAnnotation[] {
   return annotations.filter(ann =>
-    savedAnnotationMatchesAISearchRow(ann, documentUri, schemaTag, query),
+    savedAnnotationMatchesTagInventoryRow(ann, documentUri, schemaTag, query),
   );
 }
 
 /**
  * Strict pending list for delete pending / rerun.
  */
-export function listStrictAISearchRowPendingAnnotations(
+export function listStrictTagInventoryRowPendingAnnotations(
   annotations: SavedAnnotation[],
   documentUri: string,
   schemaTag: string,
@@ -503,7 +503,7 @@ export type AISearchDeleteAllAction = 'removeRowTag' | 'deleteAnnotation';
  * For an annotation that matches this row's Total, choose PATCH (remove schema tag) vs full delete.
  * Empty-schema rows always delete (no tag to strip).
  */
-export function deleteAllActionForAISearchRowMatch(
+export function deleteAllActionForTagInventoryRowMatch(
   ann: SavedAnnotation,
   rowSchemaTagTrimmed: string,
 ): AISearchDeleteAllAction {
@@ -520,7 +520,7 @@ export function deleteAllActionForAISearchRowMatch(
 /**
  * Tags after removing this row's schema tag (for PATCH). Removes all occurrences of `tagToRemove`.
  */
-export function tagsAfterRemovingAISearchRowSchemaTag(
+export function tagsAfterRemovingTagInventoryRowSchemaTag(
   tags: string[] | undefined,
   schemaTagTrimmed: string,
 ): string[] {
@@ -534,14 +534,14 @@ export function tagsAfterRemovingAISearchRowSchemaTag(
 /**
  * Total annotations for this row: pending, user-approved, or manual, matching tag+query.
  */
-export function countAISearchRowTotalAnnotations(
+export function countTagInventoryRowTotalAnnotations(
   annotations: SavedAnnotation[],
   documentUri: string,
   schemaTag: string,
   query: string,
 ): number {
   return countIf(annotations, ann =>
-    savedAnnotationMatchesAISearchRow(ann, documentUri, schemaTag, query),
+    savedAnnotationMatchesTagInventoryRow(ann, documentUri, schemaTag, query),
   );
 }
 

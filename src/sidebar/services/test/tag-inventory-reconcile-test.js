@@ -1,25 +1,25 @@
 import sinon from 'sinon';
 
-import { rowDescriptorKey } from '../../helpers/ai-search-group-history';
+import { rowDescriptorKey } from '../../helpers/tag-inventory-group';
 import {
-  applyDerivedAISearchHistoryRows,
+  applyDerivedTagInventoryRows,
   loadSyncRowID,
-  reconcileAISearchHistoryRowsFromAnnotations,
-} from '../ai-search-history-reconcile';
+  reconcileTagInventoryRowsFromAnnotations,
+} from '../tag-inventory-reconcile';
 
-describe('reconcileAISearchHistoryRowsFromAnnotations', () => {
+describe('reconcileTagInventoryRowsFromAnnotations', () => {
   let fakeStore;
 
   beforeEach(() => {
     fakeStore = {
-      addAISearchRow: sinon.stub(),
-      aiSearchRows: sinon.stub().returns([]),
-      mergeAISearchRowsWithSameTagQuery: sinon.stub(),
+      addTagInventoryRow: sinon.stub(),
+      tagInventoryRows: sinon.stub().returns([]),
+      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
       savedAnnotations: sinon.stub(),
       focusedGroupId: sinon.stub().returns('group-a'),
       searchUris: sinon.stub().returns(['http://example.com']),
       mainFrame: sinon.stub().returns({ uri: 'http://example.com' }),
-      setAISearchPublicDocumentScope: sinon.stub(),
+      setTagInventoryPublicDocumentScope: sinon.stub(),
     };
   });
 
@@ -34,16 +34,16 @@ describe('reconcileAISearchHistoryRowsFromAnnotations', () => {
       },
     ]);
 
-    reconcileAISearchHistoryRowsFromAnnotations(fakeStore);
+    reconcileTagInventoryRowsFromAnnotations(fakeStore);
 
-    assert.calledWith(fakeStore.addAISearchRow, {
+    assert.calledWith(fakeStore.addTagInventoryRow, {
       id: loadSyncRowID('methods', ''),
       groupId: 'group-a',
       schemaTag: 'methods',
       query: '',
       annotationIds: [],
     });
-    assert.calledWith(fakeStore.addAISearchRow, {
+    assert.calledWith(fakeStore.addTagInventoryRow, {
       id: loadSyncRowID('results', ''),
       groupId: 'group-a',
       schemaTag: 'results',
@@ -63,9 +63,9 @@ describe('reconcileAISearchHistoryRowsFromAnnotations', () => {
       },
     ]);
 
-    reconcileAISearchHistoryRowsFromAnnotations(fakeStore);
+    reconcileTagInventoryRowsFromAnnotations(fakeStore);
 
-    assert.calledWith(fakeStore.addAISearchRow, {
+    assert.calledWith(fakeStore.addTagInventoryRow, {
       id: loadSyncRowID('methods', 'find methods'),
       groupId: 'group-a',
       schemaTag: 'methods',
@@ -83,7 +83,7 @@ describe('reconcileAISearchHistoryRowsFromAnnotations', () => {
         tags: ['methods'],
       },
     ]);
-    fakeStore.aiSearchRows.returns([
+    fakeStore.tagInventoryRows.returns([
       {
         id: 'existing-row',
         groupId: 'group-a',
@@ -93,11 +93,11 @@ describe('reconcileAISearchHistoryRowsFromAnnotations', () => {
       },
     ]);
 
-    reconcileAISearchHistoryRowsFromAnnotations(fakeStore);
+    reconcileTagInventoryRowsFromAnnotations(fakeStore);
 
-    assert.notCalled(fakeStore.addAISearchRow);
+    assert.notCalled(fakeStore.addTagInventoryRow);
     assert.calledWith(
-      fakeStore.mergeAISearchRowsWithSameTagQuery,
+      fakeStore.mergeTagInventoryRowsWithSameTagQuery,
       'existing-row',
     );
   });
@@ -118,9 +118,9 @@ describe('reconcileAISearchHistoryRowsFromAnnotations', () => {
       },
     ]);
 
-    reconcileAISearchHistoryRowsFromAnnotations(fakeStore);
+    reconcileTagInventoryRowsFromAnnotations(fakeStore);
 
-    assert.notCalled(fakeStore.addAISearchRow);
+    assert.notCalled(fakeStore.addTagInventoryRow);
   });
 
   it('ignores system tags and pending annotations but keeps manual tags', () => {
@@ -151,10 +151,10 @@ describe('reconcileAISearchHistoryRowsFromAnnotations', () => {
       },
     ]);
 
-    reconcileAISearchHistoryRowsFromAnnotations(fakeStore);
+    reconcileTagInventoryRowsFromAnnotations(fakeStore);
 
-    assert.calledOnce(fakeStore.addAISearchRow);
-    assert.calledWith(fakeStore.addAISearchRow, {
+    assert.calledOnce(fakeStore.addTagInventoryRow);
+    assert.calledWith(fakeStore.addTagInventoryRow, {
       id: loadSyncRowID('results', ''),
       groupId: 'group-a',
       schemaTag: 'results',
@@ -164,16 +164,16 @@ describe('reconcileAISearchHistoryRowsFromAnnotations', () => {
   });
 });
 
-describe('applyDerivedAISearchHistoryRows', () => {
+describe('applyDerivedTagInventoryRows', () => {
   it('updates Public document scope keys', () => {
     const fakeStore = {
-      addAISearchRow: sinon.stub(),
-      aiSearchRows: sinon.stub().returns([]),
-      mergeAISearchRowsWithSameTagQuery: sinon.stub(),
-      setAISearchPublicDocumentScope: sinon.stub(),
+      addTagInventoryRow: sinon.stub(),
+      tagInventoryRows: sinon.stub().returns([]),
+      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
+      setTagInventoryPublicDocumentScope: sinon.stub(),
     };
 
-    applyDerivedAISearchHistoryRows(fakeStore, {
+    applyDerivedTagInventoryRows(fakeStore, {
       groupId: '__world__',
       documentUri: 'http://example.com',
       updatePublicScope: true,
@@ -188,7 +188,7 @@ describe('applyDerivedAISearchHistoryRows', () => {
       ],
     });
 
-    assert.calledWith(fakeStore.setAISearchPublicDocumentScope, {
+    assert.calledWith(fakeStore.setTagInventoryPublicDocumentScope, {
       documentUri: 'http://example.com',
       visibleDescriptorKeys: [rowDescriptorKey('methods', 'q1')],
     });

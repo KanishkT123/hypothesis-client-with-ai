@@ -1,35 +1,35 @@
 import { mockImportedComponents } from '@hypothesis/frontend-testing';
 import { mount } from '@hypothesis/frontend-testing';
 
-import { rowDescriptorKey } from '../../../helpers/ai-search-group-history';
+import { rowDescriptorKey } from '../../../helpers/tag-inventory-group';
 import AISearchPanel, { $imports } from '../AISearchPanel';
 
 describe('AISearchPanel', () => {
   let fakeStore;
-  let fakeAiSearchGroupHistorySync;
+  let fakeTagInventoryGroupSync;
 
   beforeEach(() => {
     fakeStore = {
       aiSearchPanelQueryInput: sinon.stub().returns('query text'),
       aiSearchPanelSchemaTagInput: sinon.stub().returns(''),
       aiSearchPanelAnnotateManually: sinon.stub().returns(false),
-      aiSearchRows: sinon.stub().returns([]),
+      tagInventoryRows: sinon.stub().returns([]),
       savedAnnotations: sinon.stub().returns([]),
-      aiSearchSchemaTagColors: sinon.stub().returns({}),
+      tagInventorySchemaTagColors: sinon.stub().returns({}),
       searchUris: sinon.stub().returns([]),
       focusedGroupId: sinon.stub().returns('group-1'),
-      aiSearchPublicDocumentScope: sinon.stub().returns(null),
+      tagInventoryPublicDocumentScope: sinon.stub().returns(null),
       closeSidebarPanel: sinon.stub(),
       setAISearchPanelQueryInput: sinon.stub(),
       setFilterQuery: sinon.stub(),
       setAISearchPanelSchemaTagInput: sinon.stub(),
       setAISearchPanelAnnotateManually: sinon.stub(),
-      setAISearchSchemaTagColor: sinon.stub(),
-      setAISearchRowHidden: sinon.stub(),
+      setTagInventorySchemaTagColor: sinon.stub(),
+      setTagInventoryRowHidden: sinon.stub(),
     };
 
-    fakeAiSearchGroupHistorySync = {
-      syncGroupHistory: sinon.stub().resolves(),
+    fakeTagInventoryGroupSync = {
+      syncGroupInventory: sinon.stub().resolves(),
     };
 
     $imports.$mock(mockImportedComponents());
@@ -53,7 +53,7 @@ describe('AISearchPanel', () => {
         claude={{ firstPDFURI: sinon.stub().returns(null) }}
         api={{}}
         toastMessenger={{}}
-        aiSearchGroupHistorySync={fakeAiSearchGroupHistorySync}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
       />,
     );
   }
@@ -97,7 +97,7 @@ describe('AISearchPanel', () => {
   });
 
   it('shows empty-query explanation for manual-mode-style rows', () => {
-    fakeStore.aiSearchRows.returns([
+    fakeStore.tagInventoryRows.returns([
       {
         id: 'manual-save-a1-methods',
         groupId: 'group-1',
@@ -116,7 +116,7 @@ describe('AISearchPanel', () => {
   });
 
   it('sorts visible history rows alphabetically by tag', () => {
-    fakeStore.aiSearchRows.returns([
+    fakeStore.tagInventoryRows.returns([
       { id: 'z', groupId: 'group-1', schemaTag: 'zeta', query: '', annotationIds: [] },
       { id: 'a', groupId: 'group-1', schemaTag: 'alpha', query: '', annotationIds: [] },
       { id: 'm', groupId: 'group-1', schemaTag: 'mu', query: '', annotationIds: [] },
@@ -128,7 +128,7 @@ describe('AISearchPanel', () => {
   });
 
   it('hides rows that belong to other groups', () => {
-    fakeStore.aiSearchRows.returns([
+    fakeStore.tagInventoryRows.returns([
       { id: 'in', groupId: 'group-1', schemaTag: 'methods', query: '', annotationIds: [] },
       { id: 'out', groupId: 'group-2', schemaTag: 'results', query: '', annotationIds: [] },
     ]);
@@ -139,7 +139,7 @@ describe('AISearchPanel', () => {
   });
 
   it('refreshes group tags when the refresh button is clicked', () => {
-    fakeStore.aiSearchRows.returns([
+    fakeStore.tagInventoryRows.returns([
       { id: 'r', groupId: 'group-1', schemaTag: 'methods', query: '', annotationIds: [] },
     ]);
 
@@ -149,13 +149,13 @@ describe('AISearchPanel', () => {
     assert.isNotTrue(button.prop('disabled'));
     button.simulate('click');
 
-    assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+    assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
       mode: 'auto',
     });
   });
 
   it('shows the refresh control even when a private group has no rows', () => {
-    fakeStore.aiSearchRows.returns([]);
+    fakeStore.tagInventoryRows.returns([]);
 
     const wrapper = createAISearchPanel();
     const button = refreshButton(wrapper);
@@ -167,8 +167,8 @@ describe('AISearchPanel', () => {
 
   it('hides the history section for an empty public group', () => {
     fakeStore.focusedGroupId.returns('__world__');
-    fakeStore.aiSearchPublicDocumentScope.returns(null);
-    fakeStore.aiSearchRows.returns([]);
+    fakeStore.tagInventoryPublicDocumentScope.returns(null);
+    fakeStore.tagInventoryRows.returns([]);
 
     const wrapper = createAISearchPanel();
 
@@ -177,11 +177,11 @@ describe('AISearchPanel', () => {
 
   it('disables the refresh button and skips sync for the public group', () => {
     fakeStore.focusedGroupId.returns('__world__');
-    fakeStore.aiSearchPublicDocumentScope.returns({
+    fakeStore.tagInventoryPublicDocumentScope.returns({
       documentUri: 'http://example.com',
       visibleDescriptorKeys: [rowDescriptorKey('methods', '')],
     });
-    fakeStore.aiSearchRows.returns([
+    fakeStore.tagInventoryRows.returns([
       { id: 'r', groupId: '__world__', schemaTag: 'methods', query: '', annotationIds: [] },
     ]);
 
@@ -190,6 +190,6 @@ describe('AISearchPanel', () => {
 
     assert.isTrue(button.prop('disabled'));
     button.simulate('click');
-    assert.notCalled(fakeAiSearchGroupHistorySync.syncGroupHistory);
+    assert.notCalled(fakeTagInventoryGroupSync.syncGroupInventory);
   });
 });

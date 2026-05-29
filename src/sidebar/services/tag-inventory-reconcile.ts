@@ -1,10 +1,10 @@
 import type { SavedAnnotation } from '../../types/api';
 import {
-  deriveAISearchHistoryRowDescriptors,
+  deriveTagInventoryRowDescriptors,
   rowDescriptorKey,
-} from '../helpers/ai-search-group-history';
+} from '../helpers/tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
-import { ensureAISearchHistoryRowForTagQuery } from '../helpers/ai-search-history-row';
+import { ensureTagInventoryRowForTagQuery } from '../helpers/tag-inventory-row';
 import type { SidebarStore } from '../store';
 
 const LOAD_SYNC_ROW_PREFIX = 'load-sync';
@@ -15,7 +15,7 @@ export function loadSyncRowID(schemaTag: string, query: string): string {
   )}`;
 }
 
-export type ApplyDerivedAISearchHistoryRowsOptions = {
+export type ApplyDerivedTagInventoryRowsOptions = {
   groupId: string;
   annotations: SavedAnnotation[];
   /** When true, update Public document visibility keys from derived descriptors. */
@@ -24,23 +24,23 @@ export type ApplyDerivedAISearchHistoryRowsOptions = {
 };
 
 /**
- * Upsert history rows from derived descriptors and optionally refresh Public
+ * Upsert inventory rows from derived descriptors and optionally refresh Public
  * document scope keys.
  */
-export function applyDerivedAISearchHistoryRows(
+export function applyDerivedTagInventoryRows(
   store: Pick<
     SidebarStore,
-    | 'addAISearchRow'
-    | 'aiSearchRows'
-    | 'mergeAISearchRowsWithSameTagQuery'
-    | 'setAISearchPublicDocumentScope'
+    | 'addTagInventoryRow'
+    | 'tagInventoryRows'
+    | 'mergeTagInventoryRowsWithSameTagQuery'
+    | 'setTagInventoryPublicDocumentScope'
   >,
-  { groupId, annotations, updatePublicScope, documentUri }: ApplyDerivedAISearchHistoryRowsOptions,
+  { groupId, annotations, updatePublicScope, documentUri }: ApplyDerivedTagInventoryRowsOptions,
 ) {
-  const descriptors = deriveAISearchHistoryRowDescriptors(annotations);
+  const descriptors = deriveTagInventoryRowDescriptors(annotations);
 
   for (const { schemaTag, query } of descriptors) {
-    ensureAISearchHistoryRowForTagQuery(store, {
+    ensureTagInventoryRowForTagQuery(store, {
       id: loadSyncRowID(schemaTag, query),
       groupId,
       schemaTag,
@@ -54,7 +54,7 @@ export function applyDerivedAISearchHistoryRows(
     groupId === PUBLIC_GROUP_ID &&
     documentUri !== undefined
   ) {
-    store.setAISearchPublicDocumentScope({
+    store.setTagInventoryPublicDocumentScope({
       documentUri,
       visibleDescriptorKeys: descriptors.map(d =>
         rowDescriptorKey(d.schemaTag, d.query),
@@ -64,20 +64,20 @@ export function applyDerivedAISearchHistoryRows(
 }
 
 /**
- * Ensure the history list reflects schema tags and queries on the current
- * document for the focused group. Idempotent via `ensureAISearchHistoryRowForTagQuery`.
+ * Ensure the inventory list reflects schema tags and queries on the current
+ * document for the focused group. Idempotent via `ensureTagInventoryRowForTagQuery`.
  */
-export function reconcileAISearchHistoryRowsFromAnnotations(
+export function reconcileTagInventoryRowsFromAnnotations(
   store: Pick<
     SidebarStore,
-    | 'addAISearchRow'
-    | 'aiSearchRows'
+    | 'addTagInventoryRow'
+    | 'tagInventoryRows'
     | 'focusedGroupId'
     | 'mainFrame'
-    | 'mergeAISearchRowsWithSameTagQuery'
+    | 'mergeTagInventoryRowsWithSameTagQuery'
     | 'savedAnnotations'
     | 'searchUris'
-    | 'setAISearchPublicDocumentScope'
+    | 'setTagInventoryPublicDocumentScope'
   >,
 ) {
   const groupId = store.focusedGroupId();
@@ -90,7 +90,7 @@ export function reconcileAISearchHistoryRowsFromAnnotations(
     ann => ann.group === groupId && uriSet.has(ann.uri),
   );
 
-  applyDerivedAISearchHistoryRows(store, {
+  applyDerivedTagInventoryRows(store, {
     groupId,
     annotations,
     updatePublicScope: groupId === PUBLIC_GROUP_ID,

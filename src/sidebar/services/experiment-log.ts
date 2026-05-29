@@ -5,7 +5,7 @@ import type { ToastMessengerService } from './toast-messenger';
 
 export type { ExperimentEvent, ExperimentLogState } from '../store/modules/sidebar-panels';
 
-/** Persisted with other AI search data; see `PersistedAISearchService`. */
+/** Persisted with other AI search data; see `PersistedTagInventoryService`. */
 export const EXPERIMENT_LOG_STORAGE_KEY = 'hypothesis.aiSearch.experimentLog';
 
 /** Warn when serialized log exceeds this size (bytes, UTF-16 approximation). */
@@ -38,7 +38,7 @@ export function parseExperimentLogState(raw: unknown): ExperimentLogState | null
 
 /**
  * HCI experiment log: append-only events.
- * State lives in the store; `PersistedAISearchService` syncs to `localStorage`.
+ * State lives in the store; `PersistedTagInventoryService` syncs to `localStorage`.
  *
  * @inject
  */

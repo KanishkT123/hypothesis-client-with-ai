@@ -1,16 +1,16 @@
 import type { SidebarStore } from '../store';
-import type { AISearchRow } from '../store/modules/sidebar-panels';
+import type { TagInventoryRow } from '../store/modules/sidebar-panels';
 
 function norm(value: string): string {
   return value.trim();
 }
 
-export function findAISearchRowByTagQuery(
-  rows: AISearchRow[],
+export function findTagInventoryRowByTagQuery(
+  rows: TagInventoryRow[],
   schemaTag: string,
   query: string,
   groupId?: string,
-): AISearchRow | undefined {
+): TagInventoryRow | undefined {
   const tagKey = norm(schemaTag);
   const queryKey = norm(query);
   return rows.find(row => {
@@ -25,30 +25,30 @@ export function findAISearchRowByTagQuery(
 }
 
 /**
- * Keep a single AI search row for a group/tag/query triple.
+ * Keep a single tag inventory row for a group/tag/query triple.
  * If an equivalent row already exists, merge duplicates into it.
  * Otherwise create one and immediately merge duplicates.
  */
-export function ensureAISearchHistoryRowForTagQuery(
+export function ensureTagInventoryRowForTagQuery(
   store: Pick<
     SidebarStore,
-    'addAISearchRow' | 'aiSearchRows' | 'mergeAISearchRowsWithSameTagQuery'
+    'addTagInventoryRow' | 'tagInventoryRows' | 'mergeTagInventoryRowsWithSameTagQuery'
   >,
-  row: AISearchRow,
+  row: TagInventoryRow,
 ): string {
-  const match = findAISearchRowByTagQuery(
-    store.aiSearchRows(),
+  const match = findTagInventoryRowByTagQuery(
+    store.tagInventoryRows(),
     row.schemaTag,
     row.query,
     row.groupId,
   );
 
   if (match) {
-    store.mergeAISearchRowsWithSameTagQuery(match.id);
+    store.mergeTagInventoryRowsWithSameTagQuery(match.id);
     return match.id;
   }
 
-  store.addAISearchRow(row);
-  store.mergeAISearchRowsWithSameTagQuery(row.id);
+  store.addTagInventoryRow(row);
+  store.mergeTagInventoryRowsWithSameTagQuery(row.id);
   return row.id;
 }

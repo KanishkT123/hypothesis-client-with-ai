@@ -29,7 +29,7 @@ import { GroupsService } from './services/groups';
 import { ImportAnnotationsService } from './services/import-annotations';
 import { LoadAnnotationsService } from './services/load-annotations';
 import { LocalStorageService } from './services/local-storage';
-import { PersistedAISearchService } from './services/persisted-ai-search';
+import { PersistedTagInventoryService } from './services/persisted-tag-inventory';
 import { PersistedDefaultsService } from './services/persisted-defaults';
 import { RouterService } from './services/router';
 // import { ReductoService } from './services/reducto';
@@ -45,8 +45,8 @@ import { ThumbnailService } from './services/thumbnail';
 import { ToastMessengerService } from './services/toast-messenger';
 import { createSidebarStore } from './store';
 import type { SidebarStore } from './store';
-import { setupAISearchTagPaletteSync } from './services/ai-search-tag-palette-sync';
-import { AISearchGroupHistorySyncService } from './services/ai-search-group-history-sync';
+import { setupTagPaletteSync } from './services/tag-palette-sync';
+import { TagInventoryGroupSyncService } from './services/tag-inventory-group-sync';
 import { disableOpenerForExternalLinks } from './util/disable-opener-for-external-links';
 import * as sentry from './util/sentry';
 
@@ -107,14 +107,14 @@ function loadGroupsAndProfile(groups: GroupsService, session: SessionService) {
 function initServices(
   autosaveService: AutosaveService,
   persistedDefaults: PersistedDefaultsService,
-  persistedAISearch: PersistedAISearchService,
-  aiSearchGroupHistorySync: AISearchGroupHistorySyncService,
+  persistedTagInventory: PersistedTagInventoryService,
+  tagInventoryGroupSync: TagInventoryGroupSyncService,
   serviceURL: ServiceURLService,
 ) {
   autosaveService.init();
   persistedDefaults.init();
-  persistedAISearch.init();
-  aiSearchGroupHistorySync.init();
+  persistedTagInventory.init();
+  tagInventoryGroupSync.init();
   serviceURL.init();
 }
 
@@ -128,7 +128,7 @@ function setupFrameSync(
   store: SidebarStore,
   toastMessenger: ToastMessengerService,
 ) {
-  setupAISearchTagPaletteSync(frameSync, store);
+  setupTagPaletteSync(frameSync, store);
 
   if (store.route() === 'sidebar') {
     frameSync.connect().catch(() => {
@@ -167,8 +167,8 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('loadAnnotationsService', LoadAnnotationsService)
     .register('localStorage', LocalStorageService)
     .register('persistedDefaults', PersistedDefaultsService)
-    .register('persistedAISearch', PersistedAISearchService)
-    .register('aiSearchGroupHistorySync', AISearchGroupHistorySyncService)
+    .register('persistedTagInventory', PersistedTagInventoryService)
+    .register('tagInventoryGroupSync', TagInventoryGroupSyncService)
 //    .register('reducto', ReductoService)
     .register('claude', ClaudeService)
     .register('router', RouterService)

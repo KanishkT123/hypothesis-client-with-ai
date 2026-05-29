@@ -1,11 +1,11 @@
 import {
   INITIAL_AI_TAG_HIGHLIGHT_PALETTE,
-  mergeVisibleAISearchTagHighlightPalette,
-} from '../ai-search-tag-palette';
+  mergeVisibleTagHighlightPalette,
+} from '../tag-palette';
 
-describe('sidebar/helpers/ai-search-tag-palette', () => {
+describe('sidebar/helpers/tag-palette', () => {
   it('keeps defaults and excludes tags from hidden-only rows', () => {
-    const palette = mergeVisibleAISearchTagHighlightPalette(
+    const palette = mergeVisibleTagHighlightPalette(
       [{ schemaTag: 'topic-a', hidden: true }],
       { 'topic-a': 'rgba(10, 20, 30, 0.38)' },
     );
@@ -14,7 +14,7 @@ describe('sidebar/helpers/ai-search-tag-palette', () => {
   });
 
   it('includes a tag color if at least one row for it is visible', () => {
-    const palette = mergeVisibleAISearchTagHighlightPalette(
+    const palette = mergeVisibleTagHighlightPalette(
       [
         { schemaTag: 'topic-a', hidden: true },
         { schemaTag: 'topic-a' },
@@ -31,13 +31,13 @@ describe('sidebar/helpers/ai-search-tag-palette', () => {
   it('drops and restores schema-tag entries when rows are hidden/unhidden', () => {
     const schemaTagColors = { topic: 'rgba(10, 20, 30, 0.38)' };
 
-    const hiddenPalette = mergeVisibleAISearchTagHighlightPalette(
+    const hiddenPalette = mergeVisibleTagHighlightPalette(
       [{ schemaTag: 'topic', hidden: true }],
       schemaTagColors,
     );
     assert.notProperty(hiddenPalette, 'topic');
 
-    const visiblePalette = mergeVisibleAISearchTagHighlightPalette(
+    const visiblePalette = mergeVisibleTagHighlightPalette(
       [{ schemaTag: 'topic', hidden: false }],
       schemaTagColors,
     );

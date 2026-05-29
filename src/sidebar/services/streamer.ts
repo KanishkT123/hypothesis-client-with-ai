@@ -6,7 +6,7 @@ import { watch } from '../util/watch';
 import { Socket } from '../websocket';
 import type { APIRoutesService } from './api-routes';
 import type { AuthService } from './auth';
-import type { AISearchGroupHistorySyncService } from './ai-search-group-history-sync';
+import type { TagInventoryGroupSyncService } from './tag-inventory-group-sync';
 import type { GroupsService } from './groups';
 import type { SessionService } from './session';
 
@@ -29,7 +29,7 @@ import type { SessionService } from './session';
  */
 export class StreamerService {
   private _auth: AuthService;
-  private _aiSearchGroupHistorySync: AISearchGroupHistorySyncService;
+  private _tagInventoryGroupSync: TagInventoryGroupSyncService;
   private _groups: GroupsService;
   private _session: SessionService;
   private _store: SidebarStore;
@@ -65,13 +65,13 @@ export class StreamerService {
     store: SidebarStore,
     apiRoutes: APIRoutesService,
     auth: AuthService,
-    aiSearchGroupHistorySync: AISearchGroupHistorySyncService,
+    tagInventoryGroupSync: TagInventoryGroupSyncService,
     groups: GroupsService,
     session: SessionService,
     $window: Window,
   ) {
     this._auth = auth;
-    this._aiSearchGroupHistorySync = aiSearchGroupHistorySync;
+    this._tagInventoryGroupSync = tagInventoryGroupSync;
     this._groups = groups;
     this._session = session;
     this._store = store;
@@ -125,11 +125,11 @@ export class StreamerService {
 
     const hadChanges = updates.length > 0 || deletions.length > 0;
     if (hadChanges) {
-      this._aiSearchGroupHistorySync.mergePendingUpdatesIntoCache(
+      this._tagInventoryGroupSync.mergePendingUpdatesIntoCache(
         updates,
         deletions.map(d => d.id),
       );
-      void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
+      void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
     }
   }
 

@@ -80,7 +80,7 @@ describe('StreamerService', () => {
   let fakeAuth;
   let fakeGroups;
   let fakeSession;
-  let fakeAiSearchGroupHistorySync;
+  let fakeTagInventoryGroupSync;
   let fakeWarnOnce;
   let activeStreamer;
   let fakeSetTimeout;
@@ -90,7 +90,7 @@ describe('StreamerService', () => {
       fakeStore,
       fakeAPIRoutes,
       fakeAuth,
-      fakeAiSearchGroupHistorySync,
+      fakeTagInventoryGroupSync,
       fakeGroups,
       fakeSession,
       { setTimeout: fakeSetTimeout },
@@ -146,8 +146,8 @@ describe('StreamerService', () => {
       update: sinon.stub(),
     };
 
-    fakeAiSearchGroupHistorySync = {
-      syncGroupHistory: sinon.stub().returns(Promise.resolve()),
+    fakeTagInventoryGroupSync = {
+      syncGroupInventory: sinon.stub().returns(Promise.resolve()),
       mergePendingUpdatesIntoCache: sinon.stub(),
     };
 
@@ -559,8 +559,8 @@ describe('StreamerService', () => {
       assert.notCalled(fakeStore.addAnnotations);
       assert.notCalled(fakeStore.removeAnnotations);
       assert.called(fakeStore.clearPendingUpdates);
-      assert.notCalled(fakeAiSearchGroupHistorySync.mergePendingUpdatesIntoCache);
-      assert.notCalled(fakeAiSearchGroupHistorySync.syncGroupHistory);
+      assert.notCalled(fakeTagInventoryGroupSync.mergePendingUpdatesIntoCache);
+      assert.notCalled(fakeTagInventoryGroupSync.syncGroupInventory);
     });
 
     it('merges pending updates into the group cache and syncs AI search history', () => {
@@ -571,11 +571,11 @@ describe('StreamerService', () => {
       activeStreamer.applyPendingUpdates();
 
       assert.calledWith(
-        fakeAiSearchGroupHistorySync.mergePendingUpdatesIntoCache,
+        fakeTagInventoryGroupSync.mergePendingUpdatesIntoCache,
         [update],
         ['gone-id'],
       );
-      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
         mode: 'document',
       });
     });

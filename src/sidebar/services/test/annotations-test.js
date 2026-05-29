@@ -7,7 +7,7 @@ describe('AnnotationsService', () => {
   let fakeAnnotationActivity;
   let fakeApi;
   let fakeMetadata;
-  let fakeAiSearchGroupHistorySync;
+  let fakeTagInventoryGroupSync;
   let fakeSettings;
   let fakeStore;
 
@@ -63,8 +63,8 @@ describe('AnnotationsService', () => {
     };
 
     fakeIsPrivate = sinon.stub();
-    fakeAiSearchGroupHistorySync = {
-      syncGroupHistory: sinon.stub().returns(Promise.resolve()),
+    fakeTagInventoryGroupSync = {
+      syncGroupInventory: sinon.stub().returns(Promise.resolve()),
     };
 
     fakeSettings = {};
@@ -83,10 +83,10 @@ describe('AnnotationsService', () => {
       openSidebarPanel: sinon.stub(),
       profile: sinon.stub().returns({}),
       removeAnnotations: sinon.stub(),
-      removeAnnotationIdsFromAISearchRows: sinon.stub(),
-      addAISearchRow: sinon.stub(),
-      aiSearchRows: sinon.stub().returns([]),
-      mergeAISearchRowsWithSameTagQuery: sinon.stub(),
+      removeAnnotationIdsFromTagInventoryRows: sinon.stub(),
+      addTagInventoryRow: sinon.stub(),
+      tagInventoryRows: sinon.stub().returns([]),
+      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
       removeDraft: sinon.stub(),
       selectTab: sinon.stub(),
       setExpanded: sinon.stub(),
@@ -115,7 +115,7 @@ describe('AnnotationsService', () => {
 
     svc = new AnnotationsService(
       fakeAnnotationActivity,
-      fakeAiSearchGroupHistorySync,
+      fakeTagInventoryGroupSync,
       fakeApi,
       fakeExperimentLog,
       fakeSettings,
@@ -671,7 +671,7 @@ describe('AnnotationsService', () => {
 
         await svc.save(annotation);
 
-        assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+        assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
           mode: 'document',
         });
       });
@@ -719,7 +719,7 @@ describe('AnnotationsService', () => {
         });
 
         return svc.save(annotation).catch(() => {
-          assert.notCalled(fakeAiSearchGroupHistorySync.syncGroupHistory);
+          assert.notCalled(fakeTagInventoryGroupSync.syncGroupInventory);
         });
       });
     });
@@ -751,7 +751,7 @@ describe('AnnotationsService', () => {
       const savedAnnotation =
         await fakeApi.annotation.moderate.lastCall.returnValue;
       assert.calledWith(fakeStore.addAnnotations, [savedAnnotation]);
-      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
         mode: 'document',
       });
     });
@@ -783,7 +783,7 @@ describe('AnnotationsService', () => {
           }),
         ],
       );
-      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
         mode: 'document',
       });
       assert.equal(result.moderation_status, 'APPROVED');
@@ -808,7 +808,7 @@ describe('AnnotationsService', () => {
       assert.notCalled(fakeApi.annotation.moderate);
       assert.notCalled(fakeApi.annotation.delete);
       assert.notCalled(fakeStore.removeAnnotations);
-      assert.calledWith(fakeStore.removeAnnotationIdsFromAISearchRows, [
+      assert.calledWith(fakeStore.removeAnnotationIdsFromTagInventoryRows, [
         annotation.id,
       ]);
       assert.calledWith(
@@ -819,7 +819,7 @@ describe('AnnotationsService', () => {
       assert.calledWith(fakeStore.addAnnotations, [
         sinon.match({ tags: ['methods-neg-example'] }),
       ]);
-      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
         mode: 'document',
       });
       assert.equal(result, updated);
@@ -860,7 +860,7 @@ describe('AnnotationsService', () => {
         { tags: ['other'] },
       );
       assert.calledWith(fakeStore.addAnnotations, [updated]);
-      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
         mode: 'document',
       });
       assert.equal(result, updated);

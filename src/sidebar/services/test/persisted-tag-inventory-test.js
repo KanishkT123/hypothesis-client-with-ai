@@ -5,33 +5,33 @@ import {
   EXPERIMENT_LOG_STORAGE_KEY,
 } from '../experiment-log';
 import {
-  AI_SEARCH_STORAGE_KEY,
-  parseAISearchPersisted,
-  PersistedAISearchService,
-} from '../persisted-ai-search';
+  TAG_INVENTORY_STORAGE_KEY,
+  parseTagInventoryPersisted,
+  PersistedTagInventoryService,
+} from '../persisted-tag-inventory';
 
-describe('parseAISearchPersisted', () => {
+describe('parseTagInventoryPersisted', () => {
   it('returns null for non-objects', () => {
-    assert.isNull(parseAISearchPersisted(null));
-    assert.isNull(parseAISearchPersisted('x'));
+    assert.isNull(parseTagInventoryPersisted(null));
+    assert.isNull(parseTagInventoryPersisted('x'));
   });
 
   it('returns null when revision is missing or not a non-negative integer', () => {
     assert.isNull(
-      parseAISearchPersisted({
+      parseTagInventoryPersisted({
         rows: [],
         schemaTagColors: {},
       }),
     );
     assert.isNull(
-      parseAISearchPersisted({
+      parseTagInventoryPersisted({
         revision: 1.5,
         rows: [],
         schemaTagColors: {},
       }),
     );
     assert.isNull(
-      parseAISearchPersisted({
+      parseTagInventoryPersisted({
         revision: -1,
         rows: [],
         schemaTagColors: {},
@@ -41,14 +41,14 @@ describe('parseAISearchPersisted', () => {
 
   it('returns null when rows or schemaTagColors are invalid', () => {
     assert.isNull(
-      parseAISearchPersisted({
+      parseTagInventoryPersisted({
         revision: 0,
         rows: 'nope',
         schemaTagColors: {},
       }),
     );
     assert.isNull(
-      parseAISearchPersisted({
+      parseTagInventoryPersisted({
         revision: 0,
         rows: [],
         schemaTagColors: [],
@@ -57,7 +57,7 @@ describe('parseAISearchPersisted', () => {
   });
 
   it('accepts a valid persisted envelope', () => {
-    const aiSearch = {
+    const tagInventory = {
       rows: [
         {
           id: '1',
@@ -68,9 +68,9 @@ describe('parseAISearchPersisted', () => {
       ],
       schemaTagColors: { t: 'rgba(0,0,0,0.38)' },
     };
-    assert.deepEqual(parseAISearchPersisted({ revision: 2, ...aiSearch }), {
+    assert.deepEqual(parseTagInventoryPersisted({ revision: 2, ...tagInventory }), {
       revision: 2,
-      aiSearch,
+      tagInventory,
     });
   });
 
@@ -87,9 +87,9 @@ describe('parseAISearchPersisted', () => {
       ],
       schemaTagColors: {},
     };
-    assert.deepEqual(parseAISearchPersisted({ revision: 0, ...withHidden }), {
+    assert.deepEqual(parseTagInventoryPersisted({ revision: 0, ...withHidden }), {
       revision: 0,
-      aiSearch: withHidden,
+      tagInventory: withHidden,
     });
 
     const withHiddenFalse = {
@@ -105,10 +105,10 @@ describe('parseAISearchPersisted', () => {
       schemaTagColors: {},
     };
     assert.deepEqual(
-      parseAISearchPersisted({ revision: 1, ...withHiddenFalse }),
+      parseTagInventoryPersisted({ revision: 1, ...withHiddenFalse }),
       {
         revision: 1,
-        aiSearch: {
+        tagInventory: {
           rows: [
             {
               id: '1',
@@ -125,7 +125,7 @@ describe('parseAISearchPersisted', () => {
 
   it('returns null when hidden is not a boolean', () => {
     assert.isNull(
-      parseAISearchPersisted({
+      parseTagInventoryPersisted({
         revision: 0,
         rows: [
           {
@@ -173,7 +173,7 @@ describe('parseExperimentLogState', () => {
 
 });
 
-describe('PersistedAISearchService', () => {
+describe('PersistedTagInventoryService', () => {
   let fakeLocalStorage;
   let store;
   let fakeWindow;
@@ -218,7 +218,7 @@ describe('PersistedAISearchService', () => {
   });
 
   function createService() {
-    return new PersistedAISearchService(
+    return new PersistedTagInventoryService(
       fakeLocalStorage,
       store,
       fakeWindow,
@@ -228,7 +228,7 @@ describe('PersistedAISearchService', () => {
 
   describe('#init', () => {
     it('hydrates from localStorage when data is valid', () => {
-      const aiSearch = {
+      const tagInventory = {
         rows: [
           {
             id: 'r1',
@@ -239,18 +239,18 @@ describe('PersistedAISearchService', () => {
         ],
         schemaTagColors: { methods: 'rgba(1,2,3,0.38)' },
       };
-      const persisted = { revision: 4, ...aiSearch };
+      const persisted = { revision: 4, ...tagInventory };
       fakeLocalStorage.getObject
-        .withArgs(AI_SEARCH_STORAGE_KEY)
+        .withArgs(TAG_INVENTORY_STORAGE_KEY)
         .returns(persisted);
 
       createService().init();
 
-      assert.deepEqual(store.getState().sidebarPanels.aiSearch, aiSearch);
+      assert.deepEqual(store.getState().sidebarPanels.tagInventory, tagInventory);
     });
 
     it('does not hydrate when stored data is invalid', () => {
-      fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns({
+      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns({
         revision: 0,
         rows: 'bad',
         schemaTagColors: {},
@@ -258,14 +258,14 @@ describe('PersistedAISearchService', () => {
 
       createService().init();
 
-      assert.deepEqual(store.getState().sidebarPanels.aiSearch.rows, []);
+      assert.deepEqual(store.getState().sidebarPanels.tagInventory.rows, []);
     });
 
-    it('persists when aiSearch changes after init', () => {
-      fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns(null);
+    it('persists when tagInventory changes after init', () => {
+      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
       createService().init();
 
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r1',
         schemaTag: 't',
         query: 'q',
@@ -274,10 +274,10 @@ describe('PersistedAISearchService', () => {
 
       assert.calledWith(
         fakeLocalStorage.setObject,
-        AI_SEARCH_STORAGE_KEY,
+        TAG_INVENTORY_STORAGE_KEY,
         {
           revision: 1,
-          ...store.getState().sidebarPanels.aiSearch,
+          ...store.getState().sidebarPanels.tagInventory,
         },
       );
     });
@@ -290,7 +290,7 @@ describe('PersistedAISearchService', () => {
     });
 
     it('hydrates experiment log from localStorage when data is valid', () => {
-      fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns(null);
+      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
       const expLog = {
         version: 1,
         events: [
@@ -378,11 +378,11 @@ describe('PersistedAISearchService', () => {
 
   describe('when another tab updates storage', () => {
     it('hydrates from storage event payload', () => {
-      fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns(null);
+      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
 
       createService().init();
 
-      const aiSearch = {
+      const tagInventory = {
         rows: [
           {
             id: 'x',
@@ -393,14 +393,14 @@ describe('PersistedAISearchService', () => {
         ],
         schemaTagColors: { remote: 'rgba(9,9,9,0.38)' },
       };
-      const next = { revision: 1, ...aiSearch };
+      const next = { revision: 1, ...tagInventory };
 
       triggerStorage(
-        AI_SEARCH_STORAGE_KEY,
+        TAG_INVENTORY_STORAGE_KEY,
         JSON.stringify(next),
       );
 
-      assert.deepEqual(store.getState().sidebarPanels.aiSearch, aiSearch);
+      assert.deepEqual(store.getState().sidebarPanels.tagInventory, tagInventory);
     });
 
     it('hydrates experiment log from storage event payload', () => {
@@ -437,14 +437,14 @@ describe('PersistedAISearchService', () => {
 
       createService().init();
 
-      sinon.spy(store, 'hydrateAISearch');
+      sinon.spy(store, 'hydrateTagInventory');
 
       triggerStorage(
-        AI_SEARCH_STORAGE_KEY,
+        TAG_INVENTORY_STORAGE_KEY,
         JSON.stringify(initial),
       );
 
-      assert.notCalled(store.hydrateAISearch);
+      assert.notCalled(store.hydrateTagInventory);
     });
 
     it('hydrates empty state when key is removed', () => {
@@ -464,27 +464,27 @@ describe('PersistedAISearchService', () => {
 
       createService().init();
 
-      triggerStorage(AI_SEARCH_STORAGE_KEY, null);
+      triggerStorage(TAG_INVENTORY_STORAGE_KEY, null);
 
-      assert.deepEqual(store.getState().sidebarPanels.aiSearch, {
+      assert.deepEqual(store.getState().sidebarPanels.tagInventory, {
         rows: [],
         schemaTagColors: {},
       });
     });
 
     it('does not hydrate when storage revision is older than local', () => {
-      fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns(null);
+      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
 
       createService().init();
 
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r1',
         schemaTag: 't',
         query: 'q',
         annotationIds: [],
       });
 
-      sinon.spy(store, 'hydrateAISearch');
+      sinon.spy(store, 'hydrateTagInventory');
 
       const stale = {
         revision: 0,
@@ -499,18 +499,18 @@ describe('PersistedAISearchService', () => {
         schemaTagColors: {},
       };
 
-      triggerStorage(AI_SEARCH_STORAGE_KEY, JSON.stringify(stale));
+      triggerStorage(TAG_INVENTORY_STORAGE_KEY, JSON.stringify(stale));
 
-      assert.notCalled(store.hydrateAISearch);
-      assert.equal(store.getState().sidebarPanels.aiSearch.rows[0].id, 'r1');
+      assert.notCalled(store.hydrateTagInventory);
+      assert.equal(store.getState().sidebarPanels.tagInventory.rows[0].id, 'r1');
     });
 
     it('hydrates when storage revision is newer than local', () => {
-      fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns(null);
+      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
 
       createService().init();
 
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r1',
         schemaTag: 't',
         query: 'q',
@@ -531,11 +531,11 @@ describe('PersistedAISearchService', () => {
       };
 
       triggerStorage(
-        AI_SEARCH_STORAGE_KEY,
+        TAG_INVENTORY_STORAGE_KEY,
         JSON.stringify(remote),
       );
 
-      assert.deepEqual(store.getState().sidebarPanels.aiSearch, {
+      assert.deepEqual(store.getState().sidebarPanels.tagInventory, {
         rows: remote.rows,
         schemaTagColors: remote.schemaTagColors,
       });

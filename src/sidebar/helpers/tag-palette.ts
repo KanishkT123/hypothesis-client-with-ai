@@ -6,23 +6,23 @@ export const INITIAL_AI_TAG_HIGHLIGHT_PALETTE: Record<string, string> = {
   'ai-user-approved': 'rgba(255, 64, 223, 0.38)',
 };
 
-export function mergeAISearchTagHighlightPalette(
+export function mergeTagHighlightPalette(
   schemaTagColors: Record<string, string>,
 ): Record<string, string> {
   return { ...INITIAL_AI_TAG_HIGHLIGHT_PALETTE, ...schemaTagColors };
 }
 
-type AISearchPaletteRow = {
+type TagPaletteRow = {
   schemaTag: string;
   hidden?: boolean;
 };
 
 /**
  * Merge defaults with tag colors for schema tags that appear in at least one
- * visible (non-hidden) AI search history row.
+ * visible (non-hidden) tag inventory row.
  */
-export function mergeVisibleAISearchTagHighlightPalette(
-  rows: AISearchPaletteRow[],
+export function mergeVisibleTagHighlightPalette(
+  rows: TagPaletteRow[],
   schemaTagColors: Record<string, string>,
 ): Record<string, string> {
   const visibleTags = new Set(
@@ -36,5 +36,5 @@ export function mergeVisibleAISearchTagHighlightPalette(
     Object.entries(schemaTagColors).filter(([tag]) => visibleTags.has(tag.trim())),
   );
 
-  return mergeAISearchTagHighlightPalette(visibleSchemaTagColors);
+  return mergeTagHighlightPalette(visibleSchemaTagColors);
 }

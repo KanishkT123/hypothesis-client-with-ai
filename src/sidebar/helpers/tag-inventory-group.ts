@@ -1,5 +1,5 @@
 import type { SavedAnnotation } from '../../types/api';
-import type { AISearchRow } from '../store/modules/sidebar-panels';
+import type { TagInventoryRow } from '../store/modules/sidebar-panels';
 import { isReply, isSaved } from './annotation-metadata';
 import { PUBLIC_GROUP_ID } from './groups';
 
@@ -7,7 +7,7 @@ import { PUBLIC_GROUP_ID } from './groups';
  * AI search schema tag helpers.
  *
  * Annotations carry Hypothesis **tags**. Besides system tags (`ai-pending`,
- * `ai-user-approved`), **schema tags** drive the history table and Claude few-shot
+ * `ai-user-approved`), **schema tags** drive the inventory table and Claude few-shot
  * examples:
  *
  * - **Positive schema tag** — e.g. `methods` (match / teach the model what to find)
@@ -26,13 +26,13 @@ const AI_PENDING = 'ai-pending';
 
 const DESCRIPTOR_SEP = '\0';
 
-/** One history row per `(schemaTag, query)` within a group — not per document. */
-export type AISearchHistoryRowDescriptor = {
+/** One inventory row per `(schemaTag, query)` within a group — not per document. */
+export type TagInventoryRowDescriptor = {
   schemaTag: string;
   query: string;
 };
 
-export type ScopedAISearchRow = AISearchRow & {
+export type ScopedTagInventoryRow = TagInventoryRow & {
   groupId?: string;
 };
 
@@ -167,23 +167,23 @@ export function negativeSchemaTags(annotationTags: string[]): string[] {
   return annotationTags.filter(isNegativeSchemaTag);
 }
 
-/** Stable key for a history row: `(schemaTag, query)` within one group. */
+/** Stable key for an inventory row: `(schemaTag, query)` within one group. */
 export function rowDescriptorKey(schemaTag: string, query: string): string {
   return `${norm(schemaTag)}${DESCRIPTOR_SEP}${norm(query)}`;
 }
 
 /**
- * Derive history row descriptors from annotations (positive + negative schema tags).
+ * Derive inventory row descriptors from annotations (positive + negative schema tags).
  * Dedupes by `(schemaTag, query)` across all input annotations (including cross-URL
  * in a private group).
  */
-export function deriveAISearchHistoryRowDescriptors(
+export function deriveTagInventoryRowDescriptors(
   annotations: SavedAnnotation[],
-): AISearchHistoryRowDescriptor[] {
+): TagInventoryRowDescriptor[] {
   const seen = new Set<string>();
-  const out: AISearchHistoryRowDescriptor[] = [];
+  const out: TagInventoryRowDescriptor[] = [];
 
-  const push = (descriptor: AISearchHistoryRowDescriptor) => {
+  const push = (descriptor: TagInventoryRowDescriptor) => {
     const key = rowDescriptorKey(descriptor.schemaTag, descriptor.query);
     if (seen.has(key)) {
       return;
@@ -227,9 +227,9 @@ export function deriveAISearchHistoryRowDescriptors(
   return out;
 }
 
-/** History table visibility for the focused group. */
-export function isAISearchRowVisibleInScope(
-  row: ScopedAISearchRow,
+/** Inventory table visibility for the focused group. */
+export function isTagInventoryRowVisibleInScope(
+  row: ScopedTagInventoryRow,
   scope: {
     focusedGroupId: string;
     /**
@@ -257,11 +257,11 @@ export function isAISearchRowVisibleInScope(
  * Keep rows for other groups; for `groupId`, drop rows whose `(schemaTag, query)`
  * no longer appears in the derived set (annotation deleted on server).
  */
-export function pruneAISearchRowsToDescriptors(
-  rows: ScopedAISearchRow[],
-  descriptors: AISearchHistoryRowDescriptor[],
+export function pruneTagInventoryRowsToDescriptors(
+  rows: ScopedTagInventoryRow[],
+  descriptors: TagInventoryRowDescriptor[],
   groupId: string,
-): ScopedAISearchRow[] {
+): ScopedTagInventoryRow[] {
   const allowed = new Set(
     descriptors.map(d => rowDescriptorKey(d.schemaTag, d.query)),
   );
@@ -274,7 +274,7 @@ export function pruneAISearchRowsToDescriptors(
   });
 }
 
-export function sortAISearchRows<T extends AISearchRow>(rows: T[]): T[] {
+export function sortTagInventoryRows<T extends TagInventoryRow>(rows: T[]): T[] {
   return [...rows].sort((a, b) => {
     const tagCmp = norm(a.schemaTag).localeCompare(norm(b.schemaTag), undefined, {
       sensitivity: 'base',

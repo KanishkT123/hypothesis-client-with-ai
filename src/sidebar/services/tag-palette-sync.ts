@@ -1,26 +1,26 @@
-import { isAISearchRowVisibleInScope } from '../helpers/ai-search-group-history';
-import { mergeVisibleAISearchTagHighlightPalette } from '../helpers/ai-search-tag-palette';
-import type { AISearchRow } from '../store/modules/sidebar-panels';
+import { isTagInventoryRowVisibleInScope } from '../helpers/tag-inventory-group';
+import { mergeVisibleTagHighlightPalette } from '../helpers/tag-palette';
+import type { TagInventoryRow } from '../store/modules/sidebar-panels';
 import type { FrameSyncService } from './frame-sync';
 import type { SidebarStore } from '../store';
 import { watch } from '../util/watch';
 
-export function pushAiSearchTagPalette(
+export function pushTagPalette(
   frameSync: FrameSyncService,
   store: SidebarStore,
 ) {
-  const aiSearch = store.getState().sidebarPanels.aiSearch;
+  const tagInventory = store.getState().sidebarPanels.tagInventory;
   const focusedGroupId = store.focusedGroupId();
-  const publicScope = store.aiSearchPublicDocumentScope();
+  const publicScope = store.tagInventoryPublicDocumentScope();
   const publicDocumentDescriptorKeys = publicScope
     ? new Set(publicScope.visibleDescriptorKeys)
     : null;
 
   // Only the focused group's visible rows contribute highlight colors, so the
-  // PDF palette matches the (group-scoped) history table.
+  // PDF palette matches the (group-scoped) inventory table.
   const visibleRows = focusedGroupId
-    ? (aiSearch.rows as AISearchRow[]).filter((row: AISearchRow) =>
-        isAISearchRowVisibleInScope(row, {
+    ? (tagInventory.rows as TagInventoryRow[]).filter((row: TagInventoryRow) =>
+        isTagInventoryRowVisibleInScope(row, {
           focusedGroupId,
           publicDocumentDescriptorKeys,
         }),
@@ -28,14 +28,14 @@ export function pushAiSearchTagPalette(
     : [];
 
   frameSync.setTagHighlightPalette(
-    mergeVisibleAISearchTagHighlightPalette(
+    mergeVisibleTagHighlightPalette(
       visibleRows,
-      aiSearch.schemaTagColors,
+      tagInventory.schemaTagColors,
     ),
   );
 }
 
-export function setupAISearchTagPaletteSync(
+export function setupTagPaletteSync(
   frameSync: FrameSyncService,
   store: SidebarStore,
 ) {
@@ -43,15 +43,15 @@ export function setupAISearchTagPaletteSync(
     store.subscribe,
     () =>
       [
-        store.getState().sidebarPanels.aiSearch,
+        store.getState().sidebarPanels.tagInventory,
         store.focusedGroupId(),
-        store.aiSearchPublicDocumentScope(),
+        store.tagInventoryPublicDocumentScope(),
       ] as const,
     () => {
-      pushAiSearchTagPalette(frameSync, store);
+      pushTagPalette(frameSync, store);
     },
     (a, b) => JSON.stringify(a) === JSON.stringify(b),
   );
 
-  pushAiSearchTagPalette(frameSync, store);
+  pushTagPalette(frameSync, store);
 }

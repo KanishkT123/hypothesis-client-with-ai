@@ -1,13 +1,13 @@
 import type { Annotation, SavedAnnotation } from '../../types/api';
 import { isSaved } from '../helpers/annotation-metadata';
 import {
-  deriveAISearchHistoryRowDescriptors,
-} from '../helpers/ai-search-group-history';
+  deriveTagInventoryRowDescriptors,
+} from '../helpers/tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
 import type { SidebarStore } from '../store';
 import { watch } from '../util/watch';
 import type { APIService } from './api';
-import { applyDerivedAISearchHistoryRows } from './ai-search-history-reconcile';
+import { applyDerivedTagInventoryRows } from './tag-inventory-reconcile';
 
 /** Max page size accepted by `GET /api/groups/{id}/annotations`. */
 const GROUP_ANNOTATIONS_PAGE_SIZE = 100;
@@ -22,11 +22,11 @@ const MAX_GROUP_ANNOTATION_PAGES = 1000;
  * - `document`: cheap, no-network re-derive from already-loaded `savedAnnotations()`
  *   (used for local annotation CRUD and realtime updates on the current page).
  */
-export type SyncGroupHistoryMode = 'auto' | 'document';
+export type SyncGroupInventoryMode = 'auto' | 'document';
 
-export type SyncGroupHistoryOptions = {
+export type SyncGroupInventoryOptions = {
   documentUris?: string[];
-  mode?: SyncGroupHistoryMode;
+  mode?: SyncGroupInventoryMode;
 };
 
 function filterAnnotationsForDocumentScope(
@@ -55,7 +55,7 @@ export function savedAnnotationsForCurrentDocument(
 
 function resolveEffectiveMode(
   groupId: string,
-  mode: SyncGroupHistoryMode,
+  mode: SyncGroupInventoryMode,
 ): 'document' | 'fullGroup' {
   if (mode === 'document') {
     return 'document';
@@ -117,12 +117,12 @@ async function fetchAllGroupAnnotations(
 }
 
 /**
- * Sync AI search history rows with annotations in the focused group.
+ * Sync tag inventory rows with annotations in the focused group.
  *
  * Private groups fetch all group annotations; Public uses the current document only.
  */
 // @inject
-export class AISearchGroupHistorySyncService {
+export class TagInventoryGroupSyncService {
   private _api: APIService;
   private _store: SidebarStore;
   private _syncController: AbortController | null = null;
@@ -159,12 +159,12 @@ export class AISearchGroupHistorySyncService {
           this._abortSync();
           this._clearGroupAnnotationCache();
         }
-        void this.syncGroupHistory({ mode: 'auto' });
+        void this.syncGroupInventory({ mode: 'auto' });
       },
     );
   }
 
-  isSyncingGroupHistory(): boolean {
+  isSyncingGroupInventory(): boolean {
     return this._syncing;
   }
 
@@ -241,7 +241,7 @@ export class AISearchGroupHistorySyncService {
     this._syncing = false;
   }
 
-  async syncGroupHistory(options: SyncGroupHistoryOptions = {}) {
+  async syncGroupInventory(options: SyncGroupInventoryOptions = {}) {
     const groupId = this._store.focusedGroupId();
     if (!groupId) {
       return;
@@ -278,7 +278,7 @@ export class AISearchGroupHistorySyncService {
           this._setGroupAnnotationCache(groupId, annotations);
         }
 
-        applyDerivedAISearchHistoryRows(this._store, {
+        applyDerivedTagInventoryRows(this._store, {
           groupId,
           annotations,
           updatePublicScope: groupId === PUBLIC_GROUP_ID,
@@ -290,12 +290,12 @@ export class AISearchGroupHistorySyncService {
           groupId !== PUBLIC_GROUP_ID &&
           !signal.aborted
         ) {
-          const descriptors = deriveAISearchHistoryRowDescriptors(annotations);
-          this._store.pruneAISearchRowsForGroup(groupId, descriptors);
+          const descriptors = deriveTagInventoryRowDescriptors(annotations);
+          this._store.pruneTagInventoryRowsForGroup(groupId, descriptors);
         }
       } catch (err) {
         if (!signal.aborted) {
-          console.warn('[AISearchGroupHistorySync] sync failed', err);
+          console.warn('[TagInventoryGroupSync] sync failed', err);
         }
       } finally {
         if (!signal.aborted) {

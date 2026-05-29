@@ -1,19 +1,19 @@
 import sinon from 'sinon';
 
 import { fakeReduxStore } from '../../test/fake-redux-store';
-import { setupAISearchTagPaletteSync } from '../ai-search-tag-palette-sync';
+import { setupTagPaletteSync } from '../tag-palette-sync';
 
-describe('setupAISearchTagPaletteSync', () => {
-  function createStore(aiSearch, { focusedGroupId = 'group-1', publicScope = null } = {}) {
+describe('setupTagPaletteSync', () => {
+  function createStore(tagInventory, { focusedGroupId = 'group-1', publicScope = null } = {}) {
     return fakeReduxStore(
       {
         sidebarPanels: {
-          aiSearch,
+          tagInventory,
         },
       },
       {
         focusedGroupId: () => focusedGroupId,
-        aiSearchPublicDocumentScope: () => publicScope,
+        tagInventoryPublicDocumentScope: () => publicScope,
       },
     );
   }
@@ -35,7 +35,7 @@ describe('setupAISearchTagPaletteSync', () => {
       schemaTagColors: { topic: 'rgba(1, 2, 3, 0.38)' },
     });
 
-    setupAISearchTagPaletteSync(frameSync, store);
+    setupTagPaletteSync(frameSync, store);
 
     assert.calledOnce(frameSync.setTagHighlightPalette);
     assert.deepEqual(frameSync.setTagHighlightPalette.firstCall.args[0], {
@@ -62,11 +62,11 @@ describe('setupAISearchTagPaletteSync', () => {
       schemaTagColors: { topic: 'rgba(1, 2, 3, 0.38)' },
     });
 
-    setupAISearchTagPaletteSync(frameSync, store);
+    setupTagPaletteSync(frameSync, store);
 
     store.setState({
       sidebarPanels: {
-        aiSearch: {
+        tagInventory: {
           rows: [
             {
               id: 'r1',
@@ -83,7 +83,7 @@ describe('setupAISearchTagPaletteSync', () => {
     });
     store.setState({
       sidebarPanels: {
-        aiSearch: {
+        tagInventory: {
           rows: [
             {
               id: 'r1',

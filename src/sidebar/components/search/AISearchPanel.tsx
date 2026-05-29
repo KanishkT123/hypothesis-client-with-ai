@@ -24,29 +24,29 @@ import {
   collectNegativeExamplesFromAnnotations,
   collectPositiveExamplesFromAnnotations,
   countAiSearchQuotesSkippedAsDuplicates,
-  countAISearchRowPendingAnnotations,
-  countAISearchRowTotalAnnotations,
-  deleteAllActionForAISearchRowMatch,
+  countTagInventoryRowPendingAnnotations,
+  countTagInventoryRowTotalAnnotations,
+  deleteAllActionForTagInventoryRowMatch,
   expectedTagsForStrictAISearchPending,
   filterAiSearchQuotesAgainstExisting,
-  listSavedAnnotationsMatchingAISearchRow,
-  listStrictAISearchRowPendingAnnotations,
-  tagsAfterRemovingAISearchRowSchemaTag,
+  listSavedAnnotationsMatchingTagInventoryRow,
+  listStrictTagInventoryRowPendingAnnotations,
+  tagsAfterRemovingTagInventoryRowSchemaTag,
 } from '../../helpers/claude-ai-search-user-message';
 import { quote as annotationQuote } from '../../helpers/annotation-metadata';
-import { mergeVisibleAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
+import { mergeVisibleTagHighlightPalette } from '../../helpers/tag-palette';
 import {
-  isAISearchRowVisibleInScope,
-  sortAISearchRows,
-} from '../../helpers/ai-search-group-history';
+  isTagInventoryRowVisibleInScope,
+  sortTagInventoryRows,
+} from '../../helpers/tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../../helpers/groups';
 import { formatSidebarTagFilter } from '../../helpers/filter-query-for-tag';
 import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
 import {
   savedAnnotationsForCurrentDocument,
-  type AISearchGroupHistorySyncService,
-} from '../../services/ai-search-group-history-sync';
+  type TagInventoryGroupSyncService,
+} from '../../services/tag-inventory-group-sync';
 import type { ExperimentLogService } from '../../services/experiment-log';
 import type { SavedAnnotation } from '../../../types/api';
 import type { AnnotationsService } from '../../services/annotations';
@@ -59,7 +59,7 @@ import type {
 } from '../../services/claude';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
-import type { AISearchRow } from '../../store/modules/sidebar-panels';
+import type { TagInventoryRow } from '../../store/modules/sidebar-panels';
 import SidebarPanel from '../SidebarPanel';
 import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
 import SearchField from './SearchField';
@@ -107,7 +107,7 @@ type AISearchPanelProps = {
   claude: ClaudeService;
   api: APIService;
   toastMessenger: ToastMessengerService;
-  aiSearchGroupHistorySync: AISearchGroupHistorySyncService;
+  tagInventoryGroupSync: TagInventoryGroupSyncService;
 };
 
 function AISearchPanel({
@@ -118,7 +118,7 @@ function AISearchPanel({
   claude,
   api,
   toastMessenger,
-  aiSearchGroupHistorySync,
+  tagInventoryGroupSync,
 }: AISearchPanelProps) {
   const store = useSidebarStore();
   /** AI prompt text only; not the global sidebar filter query (see setFilterQuery). */
@@ -142,11 +142,11 @@ function AISearchPanel({
   /** True while a user-triggered "Refresh group tags" sync is in flight. */
   const [refreshingGroupTags, setRefreshingGroupTags] = useState(false);
 
-  const aiRows = store.aiSearchRows();
+  const aiRows = store.tagInventoryRows();
   const focusedGroupId = store.focusedGroupId();
-  const publicDocumentScope = store.aiSearchPublicDocumentScope();
+  const publicDocumentScope = store.tagInventoryPublicDocumentScope();
   const savedAnnotations = store.savedAnnotations();
-  const schemaTagColors = store.aiSearchSchemaTagColors();
+  const schemaTagColors = store.tagInventorySchemaTagColors();
   const documentURL = claude.firstPDFURI(store.searchUris());
 
   const globalRowLock =
@@ -168,7 +168,7 @@ function AISearchPanel({
       return [];
     }
     return aiRows.filter(row =>
-      isAISearchRowVisibleInScope(row, {
+      isTagInventoryRowVisibleInScope(row, {
         focusedGroupId,
         publicDocumentDescriptorKeys,
       }),
@@ -176,7 +176,7 @@ function AISearchPanel({
   }, [aiRows, focusedGroupId, publicDocumentDescriptorKeys]);
   const displayRows = useMemo(
     () =>
-      sortAISearchRows(
+      sortTagInventoryRows(
         showHiddenRows ? scopedRows : scopedRows.filter(r => !r.hidden),
       ),
     [scopedRows, showHiddenRows],
@@ -238,7 +238,7 @@ function AISearchPanel({
     }
     setRefreshingGroupTags(true);
     try {
-      await aiSearchGroupHistorySync.syncGroupHistory({ mode: 'auto' });
+      await tagInventoryGroupSync.syncGroupInventory({ mode: 'auto' });
     } finally {
       setRefreshingGroupTags(false);
     }
@@ -267,14 +267,14 @@ function AISearchPanel({
           store.searchUris(),
         );
       } else {
-        let cached = aiSearchGroupHistorySync.cachedGroupAnnotations(groupId);
-        if (cached === null && aiSearchGroupHistorySync.isSyncingGroupHistory()) {
-          await aiSearchGroupHistorySync.waitForSyncIfInFlight();
-          cached = aiSearchGroupHistorySync.cachedGroupAnnotations(groupId);
+        let cached = tagInventoryGroupSync.cachedGroupAnnotations(groupId);
+        if (cached === null && tagInventoryGroupSync.isSyncingGroupInventory()) {
+          await tagInventoryGroupSync.waitForSyncIfInFlight();
+          cached = tagInventoryGroupSync.cachedGroupAnnotations(groupId);
         }
         if (cached === null) {
-          await aiSearchGroupHistorySync.syncGroupHistory({ mode: 'auto' });
-          cached = aiSearchGroupHistorySync.cachedGroupAnnotations(groupId);
+          await tagInventoryGroupSync.syncGroupInventory({ mode: 'auto' });
+          cached = tagInventoryGroupSync.cachedGroupAnnotations(groupId);
         }
         if (cached === null) {
           toastMessenger.error(
@@ -371,17 +371,17 @@ function AISearchPanel({
       const rowId = options?.replaceRowId ?? crypto.randomUUID();
 
       if (options?.replaceRowId) {
-        store.setAISearchRowAnnotationIds(options.replaceRowId, newIds);
-        store.setAISearchRowHidden(options.replaceRowId, false);
+        store.setTagInventoryRowAnnotationIds(options.replaceRowId, newIds);
+        store.setTagInventoryRowHidden(options.replaceRowId, false);
       } else {
-        const row: AISearchRow = {
+        const row: TagInventoryRow = {
           id: rowId,
           groupId,
           schemaTag: schemaTagForRow,
           query,
           annotationIds: newIds,
         };
-        store.addAISearchRow(row);
+        store.addTagInventoryRow(row);
       }
 
       experimentLog.logSearch({
@@ -426,7 +426,7 @@ function AISearchPanel({
     }
   }
 
-  async function onRerunRow(row: AISearchRow) {
+  async function onRerunRow(row: TagInventoryRow) {
     if (rerunLockRef.current) {
       return;
     }
@@ -443,9 +443,9 @@ function AISearchPanel({
 
       setRerunningRowId(row.id);
       try {
-        store.mergeAISearchRowsWithSameTagQuery(row.id);
+        store.mergeTagInventoryRowsWithSameTagQuery(row.id);
 
-        const pending = listStrictAISearchRowPendingAnnotations(
+        const pending = listStrictTagInventoryRowPendingAnnotations(
           store.savedAnnotations() as SavedAnnotation[],
           documentURL,
           row.schemaTag,
@@ -469,7 +469,7 @@ function AISearchPanel({
           }
         }
         if (deletedIds.length) {
-          store.removeAnnotationIdsFromAISearchRows(deletedIds);
+          store.removeAnnotationIdsFromTagInventoryRows(deletedIds);
         }
 
         experimentLog.logRerunSearch({
@@ -491,7 +491,7 @@ function AISearchPanel({
     }
   }
 
-  async function onDeletePending(row: AISearchRow) {
+  async function onDeletePending(row: TagInventoryRow) {
     if (!documentURL) {
       toastMessenger.error('Missing PDF URL');
       return;
@@ -499,7 +499,7 @@ function AISearchPanel({
 
     setDeletingRowId(row.id);
     try {
-      const pending = listStrictAISearchRowPendingAnnotations(
+      const pending = listStrictTagInventoryRowPendingAnnotations(
         savedAnnotations as SavedAnnotation[],
         documentURL,
         row.schemaTag,
@@ -522,7 +522,7 @@ function AISearchPanel({
         }
       }
       if (deletedIds.length) {
-        store.removeAnnotationIdsFromAISearchRows(deletedIds);
+        store.removeAnnotationIdsFromTagInventoryRows(deletedIds);
         experimentLog.logDeletePending({
           searchRowId: row.id,
           query: row.query,
@@ -542,7 +542,7 @@ function AISearchPanel({
     }
   }
 
-  async function onDeleteAll(row: AISearchRow) {
+  async function onDeleteAll(row: TagInventoryRow) {
     if (!documentURL) {
       toastMessenger.error('Missing PDF URL');
       return;
@@ -560,7 +560,7 @@ function AISearchPanel({
 
     setDeletingRowId(row.id);
     try {
-      const matches = listSavedAnnotationsMatchingAISearchRow(
+      const matches = listSavedAnnotationsMatchingTagInventoryRow(
         savedAnnotations as SavedAnnotation[],
         documentURL,
         row.schemaTag,
@@ -574,10 +574,10 @@ function AISearchPanel({
         if (!ann.id) {
           continue;
         }
-        const action = deleteAllActionForAISearchRowMatch(ann, schemaTrim);
+        const action = deleteAllActionForTagInventoryRowMatch(ann, schemaTrim);
         try {
           if (action === 'removeRowTag') {
-            const newTags = tagsAfterRemovingAISearchRowSchemaTag(
+            const newTags = tagsAfterRemovingTagInventoryRowSchemaTag(
               ann.tags,
               schemaTrim,
             );
@@ -603,9 +603,9 @@ function AISearchPanel({
       }
 
       if (touchedIds.length) {
-        store.removeAnnotationIdsFromAISearchRows(touchedIds);
+        store.removeAnnotationIdsFromTagInventoryRows(touchedIds);
       }
-      store.removeAISearchRow(row.id);
+      store.removeTagInventoryRow(row.id);
 
       experimentLog.logDeleteAll({
         searchRowId: row.id,
@@ -629,7 +629,7 @@ function AISearchPanel({
     }
   }
 
-  function colorForRow(row: AISearchRow): string {
+  function colorForRow(row: TagInventoryRow): string {
     const tag = row.schemaTag.trim();
     if (!tag) {
       return highlightRgbaFromString('');
@@ -650,9 +650,9 @@ function AISearchPanel({
           store.setAISearchPanelQueryInput(null);
         } else {
           frameSync.setTagHighlightPalette(
-            mergeVisibleAISearchTagHighlightPalette(
-              store.aiSearchRows(),
-              store.aiSearchSchemaTagColors(),
+            mergeVisibleTagHighlightPalette(
+              store.tagInventoryRows(),
+              store.tagInventorySchemaTagColors(),
             ),
           );
         }
@@ -815,7 +815,7 @@ function AISearchPanel({
                       const rgba = colorForRow(row);
                       const hex = rgbaStringToHexColorInput(rgba);
                       const pendingCount = documentURL
-                        ? countAISearchRowPendingAnnotations(
+                        ? countTagInventoryRowPendingAnnotations(
                             savedAnnotations,
                             documentURL,
                             row.schemaTag,
@@ -823,7 +823,7 @@ function AISearchPanel({
                           )
                         : 0;
                       const totalCount = documentURL
-                        ? countAISearchRowTotalAnnotations(
+                        ? countTagInventoryRowTotalAnnotations(
                             savedAnnotations,
                             documentURL,
                             row.schemaTag,
@@ -865,7 +865,7 @@ function AISearchPanel({
                                     : 'Hide this highlight from the PDF'
                                 }
                                 onClick={() =>
-                                  store.setAISearchRowHidden(
+                                  store.setTagInventoryRowHidden(
                                     row.id,
                                     !row.hidden,
                                   )
@@ -894,7 +894,7 @@ function AISearchPanel({
                                   }
                                   const v = (e.target as HTMLInputElement)
                                     .value;
-                                  store.setAISearchSchemaTagColor(
+                                  store.setTagInventorySchemaTagColor(
                                     tagKey,
                                     hexColorInputToRgba(v, TAG_HIGHLIGHT_ALPHA),
                                   );
@@ -1100,5 +1100,5 @@ export default withServices(AISearchPanel, [
   'claude',
   'api',
   'toastMessenger',
-  'aiSearchGroupHistorySync',
+  'tagInventoryGroupSync',
 ]);

@@ -350,7 +350,7 @@ describe('sidebar/helpers/thread-annotations', () => {
           },
         ];
 
-        fakeThreadState.hiddenAISearchRows = [
+        fakeThreadState.hiddenTagInventoryRows = [
           { schemaTag: 'methods', query: 'find it' },
         ];
         fakeThreadState.documentUri = 'http://example.com/doc.pdf';
@@ -374,7 +374,7 @@ describe('sidebar/helpers/thread-annotations', () => {
           },
         ];
 
-        fakeThreadState.hiddenAISearchRows = [
+        fakeThreadState.hiddenTagInventoryRows = [
           { schemaTag: 'methods', query: 'find it' },
         ];
         fakeThreadState.documentUri = 'http://example.com/doc.pdf';

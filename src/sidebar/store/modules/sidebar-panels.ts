@@ -7,41 +7,41 @@
  * extant `SidebarPanel` components. Only one panel (as keyed by `panelName`)
  * may be "active" (open) at one time.
  *
- * Also holds state for the AI search panel (`aiSearch`). Rows and colors are
+ * Also holds tag inventory state for the AI search panel (`tagInventory`). Rows and colors are
  * hydrated from `localStorage` at startup and kept in sync across tabs by
- * `PersistedAISearchService`.
+ * `PersistedTagInventoryService`.
  */
 import type { PanelName } from '../../../types/sidebar';
 import { highlightRgbaFromString } from '../../../shared/tag-color-from-string';
 import {
-  pruneAISearchRowsToDescriptors,
-  type AISearchHistoryRowDescriptor,
-} from '../../helpers/ai-search-group-history';
+  pruneTagInventoryRowsToDescriptors,
+  type TagInventoryRowDescriptor,
+} from '../../helpers/tag-inventory-group';
 import { createStoreModule, makeAction } from '../create-store';
 
-export type AISearchRow = {
+export type TagInventoryRow = {
   id: string;
   schemaTag: string;
   query: string;
   annotationIds: string[];
   /** Focused group when the row was created or synced. */
   groupId?: string;
-  /** When true, row can be filtered out of the history table (see AISearchPanel). */
+  /** When true, row can be filtered out of the inventory table (see AISearchPanel). */
   hidden?: boolean;
 };
 
-/** Which Public-document history rows are visible for the current PDF. */
-export type AISearchPublicDocumentScope = {
+/** Which Public-document inventory rows are visible for the current PDF. */
+export type TagInventoryPublicDocumentScope = {
   documentUri: string;
   visibleDescriptorKeys: string[];
 };
 
-export type AISearchState = {
-  rows: AISearchRow[];
+export type TagInventoryState = {
+  rows: TagInventoryRow[];
   schemaTagColors: Record<string, string>;
 };
 
-/** Single-participant HCI experiment log (persisted via `PersistedAISearchService`). */
+/** Single-participant HCI experiment log (persisted via `PersistedTagInventoryService`). */
 export type ExperimentEvent =
   | {
       type: 'search';
@@ -121,7 +121,7 @@ export type State = {
   activePanelName: PanelName | null;
 
   /** Table rows and per–schema-tag highlight colors for the AI search panel. */
-  aiSearch: AISearchState;
+  tagInventory: TagInventoryState;
 
   /** AI search experiment log; persisted under `hypothesis.aiSearch.experimentLog`. */
   experimentLog: ExperimentLogState;
@@ -130,10 +130,10 @@ export type State = {
    * Public group only: descriptor keys for rows derived on the current document.
    * Other Public rows stay stored but are hidden until that document is opened again.
    */
-  aiSearchPublicDocumentScope: AISearchPublicDocumentScope | null;
+  tagInventoryPublicDocumentScope: TagInventoryPublicDocumentScope | null;
 };
 
-const initialAiSearch: AISearchState = {
+const initialTagInventory: TagInventoryState = {
   rows: [],
   schemaTagColors: {},
 };
@@ -145,9 +145,9 @@ export const emptyExperimentLog = (): ExperimentLogState => ({
 
 const initialState: State = {
   activePanelName: null,
-  aiSearch: initialAiSearch, //TODO: Rename
+  tagInventory: initialTagInventory,
   experimentLog: emptyExperimentLog(),
-  aiSearchPublicDocumentScope: null,
+  tagInventoryPublicDocumentScope: null,
 };
 
 const reducers = {
@@ -196,11 +196,11 @@ const reducers = {
     };
   },
 
-  ADD_AI_SEARCH_ROW(state: State, action: { row: AISearchRow }) {
+  ADD_TAG_INVENTORY_ROW(state: State, action: { row: TagInventoryRow }) {
     const { row } = action;
-    const rows = [row, ...state.aiSearch.rows];
+    const rows = [row, ...state.tagInventory.rows];
     const tag = row.schemaTag.trim();
-    let { schemaTagColors } = state.aiSearch;
+    let { schemaTagColors } = state.tagInventory;
     if (tag && schemaTagColors[tag] === undefined) {
       schemaTagColors = {
         ...schemaTagColors,
@@ -208,18 +208,18 @@ const reducers = {
       };
     }
     return {
-      aiSearch: { rows, schemaTagColors },
+      tagInventory: { rows, schemaTagColors },
     };
   },
 
-  SET_AI_SEARCH_ROW_HIDDEN(
+  SET_TAG_INVENTORY_ROW_HIDDEN(
     state: State,
     action: { rowId: string; hidden: boolean },
   ) {
     return {
-      aiSearch: {
-        ...state.aiSearch,
-        rows: state.aiSearch.rows.map(r => {
+      tagInventory: {
+        ...state.tagInventory,
+        rows: state.tagInventory.rows.map(r => {
           if (r.id !== action.rowId) {
             return r;
           }
@@ -237,25 +237,25 @@ const reducers = {
     };
   },
 
-  REMOVE_AI_SEARCH_ROW(state: State, action: { rowId: string }) {
-    const rows = state.aiSearch.rows.filter(r => r.id !== action.rowId);
+  REMOVE_TAG_INVENTORY_ROW(state: State, action: { rowId: string }) {
+    const rows = state.tagInventory.rows.filter(r => r.id !== action.rowId);
     // Keep `schemaTagColors` untouched: a tag's color (including any user
-    // override via SET_AI_SEARCH_SCHEMA_TAG_COLOR) is sticky, so if the tag
+    // override via SET_TAG_INVENTORY_SCHEMA_TAG_COLOR) is sticky, so if the tag
     // reappears later it reuses the same color instead of resetting.
     return {
-      aiSearch: { ...state.aiSearch, rows },
+      tagInventory: { ...state.tagInventory, rows },
     };
   },
 
-  SET_AI_SEARCH_SCHEMA_TAG_COLOR(
+  SET_TAG_INVENTORY_SCHEMA_TAG_COLOR(
     state: State,
     action: { schemaTag: string; rgba: string },
   ) {
     return {
-      aiSearch: {
-        ...state.aiSearch,
+      tagInventory: {
+        ...state.tagInventory,
         schemaTagColors: {
-          ...state.aiSearch.schemaTagColors,
+          ...state.tagInventory.schemaTagColors,
           [action.schemaTag]: action.rgba,
         },
       },
@@ -263,12 +263,12 @@ const reducers = {
   },
 
   /**
-   * Replace the full `aiSearch` slice (e.g. from `localStorage` on load or
+   * Replace the full `tagInventory` slice (e.g. from `localStorage` on load or
    * when another tab updates storage).
    */
-  HYDRATE_AI_SEARCH(state: State, action: { aiSearch: AISearchState }) {
+  HYDRATE_TAG_INVENTORY(state: State, action: { tagInventory: TagInventoryState }) {
     return {
-      aiSearch: action.aiSearch,
+      tagInventory: action.tagInventory,
     };
   },
 
@@ -276,11 +276,11 @@ const reducers = {
    * Merge all rows with the same trimmed tag+query as `keepRowId` into that
    * row (union of `annotationIds`) and remove the other duplicate rows.
    */
-  MERGE_AI_SEARCH_ROWS_SAME_TAG_QUERY(
+  MERGE_TAG_INVENTORY_ROWS_SAME_TAG_QUERY(
     state: State,
     action: { keepRowId: string },
   ) {
-    const { rows } = state.aiSearch;
+    const { rows } = state.tagInventory;
     const keep = rows.find(r => r.id === action.keepRowId);
     if (!keep) {
       return state;
@@ -288,7 +288,7 @@ const reducers = {
     const tagKey = keep.schemaTag.trim();
     const queryKey = keep.query.trim();
     const groupKey = keep.groupId ?? '';
-    const sameKey = (r: AISearchRow) =>
+    const sameKey = (r: TagInventoryRow) =>
       (r.groupId ?? '') === groupKey &&
       r.schemaTag.trim() === tagKey &&
       r.query.trim() === queryKey;
@@ -324,21 +324,21 @@ const reducers = {
       });
 
     return {
-      aiSearch: {
-        ...state.aiSearch,
+      tagInventory: {
+        ...state.tagInventory,
         rows: newRows,
       },
     };
   },
 
-  SET_AI_SEARCH_ROW_ANNOTATION_IDS(
+  SET_TAG_INVENTORY_ROW_ANNOTATION_IDS(
     state: State,
     action: { rowId: string; annotationIds: string[] },
   ) {
     return {
-      aiSearch: {
-        ...state.aiSearch,
-        rows: state.aiSearch.rows.map(r =>
+      tagInventory: {
+        ...state.tagInventory,
+        rows: state.tagInventory.rows.map(r =>
           r.id === action.rowId
             ? { ...r, annotationIds: action.annotationIds }
             : r,
@@ -347,15 +347,15 @@ const reducers = {
     };
   },
 
-  REMOVE_AI_SEARCH_ANNOTATION_IDS(
+  REMOVE_TAG_INVENTORY_ANNOTATION_IDS(
     state: State,
     action: { annotationIds: string[] },
   ) {
     const idSet = new Set(action.annotationIds);
     return {
-      aiSearch: {
-        ...state.aiSearch,
-        rows: state.aiSearch.rows.map(r => ({
+      tagInventory: {
+        ...state.tagInventory,
+        rows: state.tagInventory.rows.map(r => ({
           ...r,
           annotationIds: r.annotationIds.filter(id => !idSet.has(id)),
         })),
@@ -375,28 +375,28 @@ const reducers = {
     };
   },
 
-  SET_AI_SEARCH_PUBLIC_DOCUMENT_SCOPE(
+  SET_TAG_INVENTORY_PUBLIC_DOCUMENT_SCOPE(
     state: State,
-    action: { scope: AISearchPublicDocumentScope },
+    action: { scope: TagInventoryPublicDocumentScope },
   ) {
     return {
-      aiSearchPublicDocumentScope: action.scope,
+      tagInventoryPublicDocumentScope: action.scope,
     };
   },
 
-  PRUNE_AI_SEARCH_ROWS_FOR_GROUP(
+  PRUNE_TAG_INVENTORY_ROWS_FOR_GROUP(
     state: State,
-    action: { groupId: string; descriptors: AISearchHistoryRowDescriptor[] },
+    action: { groupId: string; descriptors: TagInventoryRowDescriptor[] },
   ) {
-    const rows = pruneAISearchRowsToDescriptors(
-      state.aiSearch.rows,
+    const rows = pruneTagInventoryRowsToDescriptors(
+      state.tagInventory.rows,
       action.descriptors,
       action.groupId,
     );
     // Keep `schemaTagColors` untouched so colors stay stable when a tag is
     // pruned and later reappears (and so user overrides survive a re-sync).
     return {
-      aiSearch: { ...state.aiSearch, rows },
+      tagInventory: { ...state.tagInventory, rows },
     };
   },
 };
@@ -429,44 +429,44 @@ function toggleSidebarPanel(panelName: PanelName, panelState?: boolean) {
   });
 }
 
-function addAISearchRow(row: AISearchRow) {
-  return makeAction(reducers, 'ADD_AI_SEARCH_ROW', { row });
+function addTagInventoryRow(row: TagInventoryRow) {
+  return makeAction(reducers, 'ADD_TAG_INVENTORY_ROW', { row });
 }
 
-function removeAISearchRow(rowId: string) {
-  return makeAction(reducers, 'REMOVE_AI_SEARCH_ROW', { rowId });
+function removeTagInventoryRow(rowId: string) {
+  return makeAction(reducers, 'REMOVE_TAG_INVENTORY_ROW', { rowId });
 }
 
-function setAISearchRowHidden(rowId: string, hidden: boolean) {
-  return makeAction(reducers, 'SET_AI_SEARCH_ROW_HIDDEN', { rowId, hidden });
+function setTagInventoryRowHidden(rowId: string, hidden: boolean) {
+  return makeAction(reducers, 'SET_TAG_INVENTORY_ROW_HIDDEN', { rowId, hidden });
 }
 
-function setAISearchSchemaTagColor(schemaTag: string, rgba: string) {
-  return makeAction(reducers, 'SET_AI_SEARCH_SCHEMA_TAG_COLOR', {
+function setTagInventorySchemaTagColor(schemaTag: string, rgba: string) {
+  return makeAction(reducers, 'SET_TAG_INVENTORY_SCHEMA_TAG_COLOR', {
     schemaTag,
     rgba,
   });
 }
 
-function hydrateAISearch(aiSearch: AISearchState) {
-  return makeAction(reducers, 'HYDRATE_AI_SEARCH', { aiSearch });
+function hydrateTagInventory(tagInventory: TagInventoryState) {
+  return makeAction(reducers, 'HYDRATE_TAG_INVENTORY', { tagInventory });
 }
 
-function mergeAISearchRowsWithSameTagQuery(keepRowId: string) {
-  return makeAction(reducers, 'MERGE_AI_SEARCH_ROWS_SAME_TAG_QUERY', {
+function mergeTagInventoryRowsWithSameTagQuery(keepRowId: string) {
+  return makeAction(reducers, 'MERGE_TAG_INVENTORY_ROWS_SAME_TAG_QUERY', {
     keepRowId,
   });
 }
 
-function setAISearchRowAnnotationIds(rowId: string, annotationIds: string[]) {
-  return makeAction(reducers, 'SET_AI_SEARCH_ROW_ANNOTATION_IDS', {
+function setTagInventoryRowAnnotationIds(rowId: string, annotationIds: string[]) {
+  return makeAction(reducers, 'SET_TAG_INVENTORY_ROW_ANNOTATION_IDS', {
     rowId,
     annotationIds,
   });
 }
 
-function removeAnnotationIdsFromAISearchRows(annotationIds: string[]) {
-  return makeAction(reducers, 'REMOVE_AI_SEARCH_ANNOTATION_IDS', {
+function removeAnnotationIdsFromTagInventoryRows(annotationIds: string[]) {
+  return makeAction(reducers, 'REMOVE_TAG_INVENTORY_ANNOTATION_IDS', {
     annotationIds,
   });
 }
@@ -479,15 +479,15 @@ function hydrateExperimentLog(experimentLog: ExperimentLogState) {
   return makeAction(reducers, 'HYDRATE_EXPERIMENT_LOG', { experimentLog });
 }
 
-function setAISearchPublicDocumentScope(scope: AISearchPublicDocumentScope) {
-  return makeAction(reducers, 'SET_AI_SEARCH_PUBLIC_DOCUMENT_SCOPE', { scope });
+function setTagInventoryPublicDocumentScope(scope: TagInventoryPublicDocumentScope) {
+  return makeAction(reducers, 'SET_TAG_INVENTORY_PUBLIC_DOCUMENT_SCOPE', { scope });
 }
 
-function pruneAISearchRowsForGroup(
+function pruneTagInventoryRowsForGroup(
   groupId: string,
-  descriptors: AISearchHistoryRowDescriptor[],
+  descriptors: TagInventoryRowDescriptor[],
 ) {
-  return makeAction(reducers, 'PRUNE_AI_SEARCH_ROWS_FOR_GROUP', {
+  return makeAction(reducers, 'PRUNE_TAG_INVENTORY_ROWS_FOR_GROUP', {
     groupId,
     descriptors,
   });
@@ -500,20 +500,20 @@ function isSidebarPanelOpen(state: State, panelName: PanelName) {
   return state.activePanelName === panelName;
 }
 
-function aiSearchRows(state: State) {
-  return state.aiSearch.rows;
+function tagInventoryRows(state: State) {
+  return state.tagInventory.rows;
 }
 
-function aiSearchSchemaTagColors(state: State) {
-  return state.aiSearch.schemaTagColors;
+function tagInventorySchemaTagColors(state: State) {
+  return state.tagInventory.schemaTagColors;
 }
 
 function experimentLog(state: State) {
   return state.experimentLog;
 }
 
-function aiSearchPublicDocumentScope(state: State) {
-  return state.aiSearchPublicDocumentScope;
+function tagInventoryPublicDocumentScope(state: State) {
+  return state.tagInventoryPublicDocumentScope;
 }
 
 export const sidebarPanelsModule = createStoreModule(initialState, {
@@ -524,25 +524,25 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     openSidebarPanel,
     closeSidebarPanel,
     toggleSidebarPanel,
-    addAISearchRow,
-    removeAISearchRow,
-    setAISearchRowHidden,
-    setAISearchSchemaTagColor,
-    hydrateAISearch,
-    mergeAISearchRowsWithSameTagQuery,
-    setAISearchRowAnnotationIds,
-    removeAnnotationIdsFromAISearchRows,
+    addTagInventoryRow,
+    removeTagInventoryRow,
+    setTagInventoryRowHidden,
+    setTagInventorySchemaTagColor,
+    hydrateTagInventory,
+    mergeTagInventoryRowsWithSameTagQuery,
+    setTagInventoryRowAnnotationIds,
+    removeAnnotationIdsFromTagInventoryRows,
     setExperimentLog,
     hydrateExperimentLog,
-    setAISearchPublicDocumentScope,
-    pruneAISearchRowsForGroup,
+    setTagInventoryPublicDocumentScope,
+    pruneTagInventoryRowsForGroup,
   },
 
   selectors: {
     isSidebarPanelOpen,
-    aiSearchRows,
-    aiSearchSchemaTagColors,
+    tagInventoryRows,
+    tagInventorySchemaTagColors,
     experimentLog,
-    aiSearchPublicDocumentScope,
+    tagInventoryPublicDocumentScope,
   },
 });

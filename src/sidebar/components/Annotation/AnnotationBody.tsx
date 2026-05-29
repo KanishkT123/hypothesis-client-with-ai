@@ -9,7 +9,7 @@ import { isThirdPartyUser } from '../../helpers/account-id';
 import {
   canMarkTagAsNegativeExample,
   canRevertNegativeExampleTag,
-} from '../../helpers/ai-search-group-history';
+} from '../../helpers/tag-inventory-group';
 import type { MentionMode } from '../../helpers/mentions';
 import { applyTheme } from '../../helpers/theme';
 import { withServices } from '../../service-context';

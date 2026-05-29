@@ -1,14 +1,14 @@
 import sinon from 'sinon';
 
 import { PUBLIC_GROUP_ID } from '../../helpers/groups';
-import { rowDescriptorKey } from '../../helpers/ai-search-group-history';
+import { rowDescriptorKey } from '../../helpers/tag-inventory-group';
 import {
-  AISearchGroupHistorySyncService,
+  TagInventoryGroupSyncService,
   savedAnnotationsForCurrentDocument,
-} from '../ai-search-group-history-sync';
-import { loadSyncRowID } from '../ai-search-history-reconcile';
+} from '../tag-inventory-group-sync';
+import { loadSyncRowID } from '../tag-inventory-reconcile';
 
-describe('AISearchGroupHistorySyncService', () => {
+describe('TagInventoryGroupSyncService', () => {
   let fakeApi;
   let fakeStore;
   let svc;
@@ -38,20 +38,20 @@ describe('AISearchGroupHistorySyncService', () => {
     };
 
     fakeStore = {
-      addAISearchRow: sinon.stub(),
-      aiSearchRows: sinon.stub().returns([]),
+      addTagInventoryRow: sinon.stub(),
+      tagInventoryRows: sinon.stub().returns([]),
       focusedGroupId: sinon.stub().returns('private-group'),
       hasFetchedProfile: sinon.stub().returns(true),
       mainFrame: sinon.stub().returns({ uri: 'http://example.com' }),
-      mergeAISearchRowsWithSameTagQuery: sinon.stub(),
-      pruneAISearchRowsForGroup: sinon.stub(),
+      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
+      pruneTagInventoryRowsForGroup: sinon.stub(),
       savedAnnotations: sinon.stub().returns([]),
       searchUris: sinon.stub().returns(['http://example.com']),
-      setAISearchPublicDocumentScope: sinon.stub(),
+      setTagInventoryPublicDocumentScope: sinon.stub(),
       subscribe: sinon.stub().returns(sinon.stub()),
     };
 
-    svc = new AISearchGroupHistorySyncService(fakeApi, fakeStore);
+    svc = new TagInventoryGroupSyncService(fakeApi, fakeStore);
   });
 
   it('uses savedAnnotations only for Public group document sync', async () => {
@@ -71,24 +71,24 @@ describe('AISearchGroupHistorySyncService', () => {
       },
     ]);
 
-    await svc.syncGroupHistory({ mode: 'document' });
+    await svc.syncGroupInventory({ mode: 'document' });
 
     assert.notCalled(groupAnnotationsRead);
-    assert.calledWith(fakeStore.addAISearchRow, {
+    assert.calledWith(fakeStore.addTagInventoryRow, {
       id: loadSyncRowID('methods', ''),
       groupId: PUBLIC_GROUP_ID,
       schemaTag: 'methods',
       query: '',
       annotationIds: [],
     });
-    assert.calledWith(fakeStore.setAISearchPublicDocumentScope, {
+    assert.calledWith(fakeStore.setTagInventoryPublicDocumentScope, {
       documentUri: 'http://example.com',
       visibleDescriptorKeys: [rowDescriptorKey('methods', '')],
     });
   });
 
   it('fetches all group annotations for private groups via the group annotations endpoint', async () => {
-    await svc.syncGroupHistory({ mode: 'auto' });
+    await svc.syncGroupInventory({ mode: 'auto' });
 
     assert.calledOnce(groupAnnotationsRead);
     assert.calledWith(
@@ -96,14 +96,14 @@ describe('AISearchGroupHistorySyncService', () => {
       sinon.match({ id: 'private-group', 'page[size]': 100 }),
     );
 
-    assert.calledWith(fakeStore.addAISearchRow, {
+    assert.calledWith(fakeStore.addTagInventoryRow, {
       id: loadSyncRowID('methods', 'find it'),
       groupId: 'private-group',
       schemaTag: 'methods',
       query: 'find it',
       annotationIds: [],
     });
-    assert.calledOnce(fakeStore.pruneAISearchRowsForGroup);
+    assert.calledOnce(fakeStore.pruneTagInventoryRowsForGroup);
   });
 
   it('returns null from cachedGroupAnnotations before a full fetch', () => {
@@ -111,7 +111,7 @@ describe('AISearchGroupHistorySyncService', () => {
   });
 
   it('caches annotations after a private full-group sync', async () => {
-    await svc.syncGroupHistory({ mode: 'auto' });
+    await svc.syncGroupInventory({ mode: 'auto' });
 
     const cached = svc.cachedGroupAnnotations('private-group');
     assert.lengthOf(cached, 1);
@@ -128,7 +128,7 @@ describe('AISearchGroupHistorySyncService', () => {
       },
     ]);
 
-    await svc.syncGroupHistory({ mode: 'document' });
+    await svc.syncGroupInventory({ mode: 'document' });
 
     assert.isNull(svc.cachedGroupAnnotations('private-group'));
   });
@@ -148,7 +148,7 @@ describe('AISearchGroupHistorySyncService', () => {
   });
 
   it('mergePendingUpdatesIntoCache upserts updates and removes deletions', async () => {
-    await svc.syncGroupHistory({ mode: 'auto' });
+    await svc.syncGroupInventory({ mode: 'auto' });
 
     svc.mergePendingUpdatesIntoCache(
       [
@@ -201,7 +201,7 @@ describe('AISearchGroupHistorySyncService', () => {
       ],
     });
 
-    await svc.syncGroupHistory({ mode: 'auto' });
+    await svc.syncGroupInventory({ mode: 'auto' });
 
     assert.calledTwice(groupAnnotationsRead);
     assert.calledWith(

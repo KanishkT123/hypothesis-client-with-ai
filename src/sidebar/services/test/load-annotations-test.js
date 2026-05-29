@@ -3,7 +3,7 @@ import { LoadAnnotationsService, $imports } from '../load-annotations';
 
 let searchClients;
 let longRunningSearchClient = false;
-let fakeAiSearchGroupHistorySync;
+let fakeTagInventoryGroupSync;
 class FakeSearchClient extends EventEmitter {
   constructor(
     searchFn,
@@ -67,14 +67,14 @@ describe('LoadAnnotationsService', () => {
     };
 
     fakeStore = {
-      addAISearchRow: sinon.stub(),
+      addTagInventoryRow: sinon.stub(),
       addAnnotations: sinon.stub(),
       annotationFetchFinished: sinon.stub(),
       annotationFetchStarted: sinon.stub(),
-      aiSearchRows: sinon.stub().returns([]),
+      tagInventoryRows: sinon.stub().returns([]),
       clearAnnotations: sinon.stub(),
       frames: sinon.stub(),
-      mergeAISearchRowsWithSameTagQuery: sinon.stub(),
+      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
       removeAnnotations: sinon.stub(),
       savedAnnotations: sinon.stub(),
       setAnnotationResultCount: sinon.stub(),
@@ -97,8 +97,8 @@ describe('LoadAnnotationsService', () => {
     };
 
     fakeUris = ['http://example.com'];
-    fakeAiSearchGroupHistorySync = {
-      syncGroupHistory: sinon.stub().returns(Promise.resolve()),
+    fakeTagInventoryGroupSync = {
+      syncGroupInventory: sinon.stub().returns(Promise.resolve()),
     };
     $imports.$mock({
       '../search-client': {
@@ -120,7 +120,7 @@ describe('LoadAnnotationsService', () => {
     );
     return new LoadAnnotationsService(
       fakeApi,
-      fakeAiSearchGroupHistorySync,
+      fakeTagInventoryGroupSync,
       fakeStore,
       fakeStreamer,
       fakeStreamFilter,
@@ -343,8 +343,8 @@ describe('LoadAnnotationsService', () => {
 
       svc.load({ groupId: fakeGroupId, uris: fakeUris });
 
-      assert.calledOnce(fakeAiSearchGroupHistorySync.syncGroupHistory);
-      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+      assert.calledOnce(fakeTagInventoryGroupSync.syncGroupInventory);
+      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
         mode: 'auto',
         documentUris: fakeUris,
       });
@@ -355,7 +355,7 @@ describe('LoadAnnotationsService', () => {
 
       svc.load({ groupId: fakeGroupId });
 
-      assert.notCalled(fakeAiSearchGroupHistorySync.syncGroupHistory);
+      assert.notCalled(fakeTagInventoryGroupSync.syncGroupInventory);
     });
 
     it('logs an error by default to the console if the search client emits an error', () => {

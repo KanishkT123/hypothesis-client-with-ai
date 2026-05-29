@@ -1,20 +1,20 @@
 import * as fixtures from '../../test/annotation-fixtures';
 
 import {
-  annotationMatchesHiddenAISearchRow,
+  annotationMatchesHiddenTagInventoryRow,
   buildCandidateRows,
   buildClaudeAISearchUserMessage,
   collectNegativeExamplesFromAnnotations,
   collectPositiveExamplesFromAnnotations,
   countAiSearchQuotesSkippedAsDuplicates,
-  countAISearchRowPendingAnnotations,
-  countAISearchRowTotalAnnotations,
+  countTagInventoryRowPendingAnnotations,
+  countTagInventoryRowTotalAnnotations,
   dedupeTagQueryRows,
-  deleteAllActionForAISearchRowMatch,
+  deleteAllActionForTagInventoryRowMatch,
   filterAiSearchQuotesAgainstExisting,
   formatFewShotExampleLine,
-  listSavedAnnotationsMatchingAISearchRow,
-  tagsAfterRemovingAISearchRowSchemaTag,
+  listSavedAnnotationsMatchingTagInventoryRow,
+  tagsAfterRemovingTagInventoryRowSchemaTag,
 } from '../claude-ai-search-user-message';
 
 describe('sidebar/helpers/claude-ai-search-user-message', () => {
@@ -536,7 +536,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
     });
   });
 
-  describe('countAISearchRowPendingAnnotations / countAISearchRowTotalAnnotations', () => {
+  describe('countTagInventoryRowPendingAnnotations / countTagInventoryRowTotalAnnotations', () => {
     it('counts pending only for strict ai-pending tag shape with matching query', () => {
       const pending = textQuoteAnn({
         id: 'p1',
@@ -549,11 +549,11 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'find me',
       });
       assert.equal(
-        countAISearchRowPendingAnnotations([pending, approved], pdf, 'schema', 'find me'),
+        countTagInventoryRowPendingAnnotations([pending, approved], pdf, 'schema', 'find me'),
         1,
       );
       assert.equal(
-        countAISearchRowTotalAnnotations([pending, approved], pdf, 'schema', 'find me'),
+        countTagInventoryRowTotalAnnotations([pending, approved], pdf, 'schema', 'find me'),
         2,
       );
     });
@@ -565,11 +565,11 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'find me',
       });
       assert.equal(
-        countAISearchRowPendingAnnotations([wrongOrder], pdf, 'schema', 'find me'),
+        countTagInventoryRowPendingAnnotations([wrongOrder], pdf, 'schema', 'find me'),
         0,
       );
       assert.equal(
-        countAISearchRowTotalAnnotations([wrongOrder], pdf, 'schema', 'find me'),
+        countTagInventoryRowTotalAnnotations([wrongOrder], pdf, 'schema', 'find me'),
         1,
       );
     });
@@ -580,8 +580,8 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['t1'],
         text: 'q',
       });
-      assert.equal(countAISearchRowPendingAnnotations([manual], pdf, 't1', 'q'), 0);
-      assert.equal(countAISearchRowTotalAnnotations([manual], pdf, 't1', 'q'), 1);
+      assert.equal(countTagInventoryRowPendingAnnotations([manual], pdf, 't1', 'q'), 0);
+      assert.equal(countTagInventoryRowTotalAnnotations([manual], pdf, 't1', 'q'), 1);
     });
 
     it('does not include empty-text manual annotation for non-empty query rows', () => {
@@ -590,7 +590,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['t1'],
         text: '',
       });
-      assert.equal(countAISearchRowTotalAnnotations([manual], pdf, 't1', 'q'), 0);
+      assert.equal(countTagInventoryRowTotalAnnotations([manual], pdf, 't1', 'q'), 0);
     });
 
     it('includes empty-text manual annotation for empty-query rows', () => {
@@ -599,7 +599,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['t1'],
         text: '',
       });
-      assert.equal(countAISearchRowTotalAnnotations([manual], pdf, 't1', ''), 1);
+      assert.equal(countTagInventoryRowTotalAnnotations([manual], pdf, 't1', ''), 1);
     });
 
     it('includes non-empty-text manual annotation for empty-query rows', () => {
@@ -608,7 +608,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['t1'],
         text: 'my note body',
       });
-      assert.equal(countAISearchRowTotalAnnotations([manual], pdf, 't1', ''), 1);
+      assert.equal(countTagInventoryRowTotalAnnotations([manual], pdf, 't1', ''), 1);
     });
 
     it('excludes replies and wrong uri', () => {
@@ -624,18 +624,18 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['ai-pending', 'x'],
         text: 'q',
       });
-      assert.equal(countAISearchRowTotalAnnotations([reply, other], pdf, 'x', 'q'), 0);
+      assert.equal(countTagInventoryRowTotalAnnotations([reply, other], pdf, 'x', 'q'), 0);
     });
   });
 
-  describe('deleteAllActionForAISearchRowMatch / listSavedAnnotationsMatchingAISearchRow / tagsAfterRemovingAISearchRowSchemaTag', () => {
+  describe('deleteAllActionForTagInventoryRowMatch / listSavedAnnotationsMatchingTagInventoryRow / tagsAfterRemovingTagInventoryRowSchemaTag', () => {
     it('deleteAll: empty schema row always deletes', () => {
       const ann = textQuoteAnn({
         id: 'e1',
         tags: ['ai-pending'],
         text: 'q',
       });
-      assert.equal(deleteAllActionForAISearchRowMatch(ann, ''), 'deleteAnnotation');
+      assert.equal(deleteAllActionForTagInventoryRowMatch(ann, ''), 'deleteAnnotation');
     });
 
     it('deleteAll: multiple content tags yields removeRowTag', () => {
@@ -644,7 +644,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['ai-pending', 'a', 'b'],
         text: 'q',
       });
-      assert.equal(deleteAllActionForAISearchRowMatch(ann, 'a'), 'removeRowTag');
+      assert.equal(deleteAllActionForTagInventoryRowMatch(ann, 'a'), 'removeRowTag');
     });
 
     it('deleteAll: single content tag yields deleteAnnotation', () => {
@@ -653,10 +653,10 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['schema', 'ai-user-approved'],
         text: 'q',
       });
-      assert.equal(deleteAllActionForAISearchRowMatch(ann, 'schema'), 'deleteAnnotation');
+      assert.equal(deleteAllActionForTagInventoryRowMatch(ann, 'schema'), 'deleteAnnotation');
     });
 
-    it('listSavedAnnotationsMatchingAISearchRow returns Total matches', () => {
+    it('listSavedAnnotationsMatchingTagInventoryRow returns Total matches', () => {
       const a = textQuoteAnn({
         id: '1',
         tags: ['t', 'ai-user-approved'],
@@ -667,20 +667,20 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['other'],
         text: 'xx',
       });
-      const list = listSavedAnnotationsMatchingAISearchRow([a, b], pdf, 't', 'qq');
+      const list = listSavedAnnotationsMatchingTagInventoryRow([a, b], pdf, 't', 'qq');
       assert.lengthOf(list, 1);
       assert.equal(list[0].id, '1');
     });
 
-    it('tagsAfterRemovingAISearchRowSchemaTag removes the schema tag', () => {
+    it('tagsAfterRemovingTagInventoryRowSchemaTag removes the schema tag', () => {
       assert.deepEqual(
-        tagsAfterRemovingAISearchRowSchemaTag(['ai-pending', 'a', 'b'], 'a'),
+        tagsAfterRemovingTagInventoryRowSchemaTag(['ai-pending', 'a', 'b'], 'a'),
         ['ai-pending', 'b'],
       );
     });
   });
 
-  describe('annotationMatchesHiddenAISearchRow', () => {
+  describe('annotationMatchesHiddenTagInventoryRow', () => {
     it('returns true when annotation matches a hidden row', () => {
       const ann = textQuoteAnn({
         id: 'h1',
@@ -688,7 +688,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'find it',
       });
       assert.isTrue(
-        annotationMatchesHiddenAISearchRow(ann, pdf, [
+        annotationMatchesHiddenTagInventoryRow(ann, pdf, [
           { schemaTag: 'methods', query: 'find it' },
         ]),
       );
@@ -701,7 +701,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'find it',
       });
       assert.isFalse(
-        annotationMatchesHiddenAISearchRow(ann, pdf, [
+        annotationMatchesHiddenTagInventoryRow(ann, pdf, [
           { schemaTag: 'methods', query: 'find it' },
         ]),
       );

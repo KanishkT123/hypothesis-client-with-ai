@@ -1,6 +1,6 @@
 import { useMemo } from 'preact/hooks';
 
-import { isAISearchRowVisibleInScope } from '../../helpers/ai-search-group-history';
+import { isTagInventoryRowVisibleInScope } from '../../helpers/tag-inventory-group';
 import { threadAnnotations } from '../../helpers/thread-annotations';
 import type {
   ThreadAnnotationsResult,
@@ -21,8 +21,8 @@ export function useRootThread(): ThreadAnnotationsResult {
   const filters = store.getFilterValues();
   const showTabs = route === 'sidebar';
   const focusedGroupId = store.focusedGroupId();
-  const aiSearchRows = store.aiSearchRows();
-  const publicScope = store.aiSearchPublicDocumentScope();
+  const tagInventoryRows = store.tagInventoryRows();
+  const publicScope = store.tagInventoryPublicDocumentScope();
   const publicDocumentDescriptorKeys = useMemo(
     () =>
       publicScope?.visibleDescriptorKeys
@@ -35,12 +35,12 @@ export function useRootThread(): ThreadAnnotationsResult {
 
   const threadState = useMemo((): ThreadState => {
     const selection = { ...selectionState, filterQuery: query, filters };
-    const hiddenAISearchRows = focusedGroupId
-      ? aiSearchRows
+    const hiddenTagInventoryRows = focusedGroupId
+      ? tagInventoryRows
           .filter(
             row =>
               row.hidden &&
-              isAISearchRowVisibleInScope(row, {
+              isTagInventoryRowVisibleInScope(row, {
                 focusedGroupId,
                 publicDocumentDescriptorKeys,
               }),
@@ -54,7 +54,7 @@ export function useRootThread(): ThreadAnnotationsResult {
       annotations,
       selection,
       showTabs,
-      hiddenAISearchRows,
+      hiddenTagInventoryRows,
       documentUri,
     };
   }, [
@@ -64,7 +64,7 @@ export function useRootThread(): ThreadAnnotationsResult {
     annotations,
     showTabs,
     focusedGroupId,
-    aiSearchRows,
+    tagInventoryRows,
     publicDocumentDescriptorKeys,
     documentUri,
   ]);

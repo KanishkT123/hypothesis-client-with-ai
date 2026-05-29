@@ -28,7 +28,7 @@ import type {
   SidebarToGuestCalls,
   GuestToSidebarCalls,
 } from '../../types/port-rpc-calls';
-import { ensureAISearchHistoryRowForTagQuery } from '../helpers/ai-search-history-row';
+import { ensureTagInventoryRowForTagQuery } from '../helpers/tag-inventory-row';
 import { isReply } from '../helpers/annotation-metadata';
 import {
   annotationMatchesSegment,
@@ -493,7 +493,7 @@ export class FrameSyncService {
           annot.tags = [...tags, schemaTag];
         }
 
-        ensureAISearchHistoryRowForTagQuery(this._store, {
+        ensureTagInventoryRowForTagQuery(this._store, {
           id: `manual-${annot.$tag}`,
           groupId: this._store.focusedGroupId() ?? undefined,
           schemaTag,

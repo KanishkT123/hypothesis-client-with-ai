@@ -1,6 +1,6 @@
 import { createStore } from '../../create-store';
-import { rowDescriptorKey } from '../../../helpers/ai-search-group-history';
-import { isAISearchRowVisibleInScope } from '../../../helpers/ai-search-group-history';
+import { rowDescriptorKey } from '../../../helpers/tag-inventory-group';
+import { isTagInventoryRowVisibleInScope } from '../../../helpers/tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../../../helpers/groups';
 import { sidebarPanelsModule } from '../sidebar-panels';
 
@@ -20,8 +20,8 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       assert.equal(getSidebarPanelsState().activePanelName, null);
     });
 
-    it('sets initial `aiSearch` rows and colors empty', () => {
-      const ai = getSidebarPanelsState().aiSearch;
+    it('sets initial `tagInventory` rows and colors empty', () => {
+      const ai = getSidebarPanelsState().tagInventory;
       assert.deepEqual(ai.rows, []);
       assert.deepEqual(ai.schemaTagColors, {});
     });
@@ -33,8 +33,8 @@ describe('sidebar/store/modules/sidebar-panels', () => {
         events: [],
       });
     });
-    it('sets initial `aiSearchPublicDocumentScope` to null', () => {
-      assert.isNull(getSidebarPanelsState().aiSearchPublicDocumentScope);
+    it('sets initial `tagInventoryPublicDocumentScope` to null', () => {
+      assert.isNull(getSidebarPanelsState().tagInventoryPublicDocumentScope);
     });
   });
 
@@ -92,109 +92,109 @@ describe('sidebar/store/modules/sidebar-panels', () => {
     });
   });
 
-  describe('aiSearch reducers', () => {
+  describe('tagInventory reducers', () => {
     it('prepends newly added rows to the top of history', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'older',
         schemaTag: 'methods',
         query: 'q1',
         annotationIds: [],
       });
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'newer',
         schemaTag: 'results',
         query: 'q2',
         annotationIds: [],
       });
 
-      const rows = getSidebarPanelsState().aiSearch.rows;
+      const rows = getSidebarPanelsState().tagInventory.rows;
       assert.deepEqual(rows.map(r => r.id), ['newer', 'older']);
     });
 
     it('adds a row and assigns a default color for a new schema tag', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r1',
         schemaTag: 'methods',
         query: 'q1',
         annotationIds: ['a1'],
       });
-      const ai = getSidebarPanelsState().aiSearch;
+      const ai = getSidebarPanelsState().tagInventory;
       assert.lengthOf(ai.rows, 1);
       assert.equal(ai.rows[0].schemaTag, 'methods');
       assert.include(ai.schemaTagColors.methods, 'rgba(');
     });
 
     it('does not duplicate default color when adding another row for the same tag', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r1',
         schemaTag: 't',
         query: 'q1',
         annotationIds: [],
       });
-      const first = getSidebarPanelsState().aiSearch.schemaTagColors.t;
-      store.addAISearchRow({
+      const first = getSidebarPanelsState().tagInventory.schemaTagColors.t;
+      store.addTagInventoryRow({
         id: 'r2',
         schemaTag: 't',
         query: 'q2',
         annotationIds: [],
       });
       assert.equal(
-        getSidebarPanelsState().aiSearch.schemaTagColors.t,
+        getSidebarPanelsState().tagInventory.schemaTagColors.t,
         first,
       );
     });
 
     it('removes a row but keeps the tag color sticky', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r1',
         schemaTag: 'x',
         query: 'q',
         annotationIds: [],
       });
-      store.setAISearchSchemaTagColor('x', 'rgba(9, 9, 9, 0.38)');
-      store.removeAISearchRow('r1');
+      store.setTagInventorySchemaTagColor('x', 'rgba(9, 9, 9, 0.38)');
+      store.removeTagInventoryRow('r1');
       // Color is retained so a re-added 'x' row reuses the same (overridden) color.
       assert.equal(
-        getSidebarPanelsState().aiSearch.schemaTagColors.x,
+        getSidebarPanelsState().tagInventory.schemaTagColors.x,
         'rgba(9, 9, 9, 0.38)',
       );
     });
 
     it('updates schema tag color', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r1',
         schemaTag: 'z',
         query: 'q',
         annotationIds: [],
       });
-      store.setAISearchSchemaTagColor('z', 'rgba(1, 2, 3, 0.38)');
+      store.setTagInventorySchemaTagColor('z', 'rgba(1, 2, 3, 0.38)');
       assert.equal(
-        getSidebarPanelsState().aiSearch.schemaTagColors.z,
+        getSidebarPanelsState().tagInventory.schemaTagColors.z,
         'rgba(1, 2, 3, 0.38)',
       );
     });
 
     it('merges duplicate tag+query rows into keep row and unions annotation ids', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'keep',
         schemaTag: 't',
         query: 'q1',
         annotationIds: ['a1'],
       });
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'dup',
         schemaTag: 't',
         query: 'q1',
         annotationIds: ['a2', 'a1'],
       });
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'other',
         schemaTag: 'u',
         query: 'q2',
         annotationIds: ['x'],
       });
-      store.mergeAISearchRowsWithSameTagQuery('keep');
-      const ai = getSidebarPanelsState().aiSearch;
+      store.mergeTagInventoryRowsWithSameTagQuery('keep');
+      const ai = getSidebarPanelsState().tagInventory;
       assert.lengthOf(ai.rows, 2);
       const merged = ai.rows.find(r => r.id === 'keep');
       assert.deepEqual(merged.annotationIds, ['a1', 'a2']);
@@ -202,105 +202,105 @@ describe('sidebar/store/modules/sidebar-panels', () => {
     });
 
     it('merge with trim-equivalent tag and query still merges', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'k',
         schemaTag: ' tag ',
         query: ' q ',
         annotationIds: ['1'],
       });
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'd',
         schemaTag: 'tag',
         query: 'q',
         annotationIds: ['2'],
       });
-      store.mergeAISearchRowsWithSameTagQuery('k');
-      assert.lengthOf(getSidebarPanelsState().aiSearch.rows, 1);
+      store.mergeTagInventoryRowsWithSameTagQuery('k');
+      assert.lengthOf(getSidebarPanelsState().tagInventory.rows, 1);
     });
 
     it('sets and clears row hidden flag', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r1',
         schemaTag: 's',
         query: 'q',
         annotationIds: [],
       });
-      store.setAISearchRowHidden('r1', true);
-      let row = getSidebarPanelsState().aiSearch.rows[0];
+      store.setTagInventoryRowHidden('r1', true);
+      let row = getSidebarPanelsState().tagInventory.rows[0];
       assert.isTrue(row.hidden);
-      store.setAISearchRowHidden('r1', false);
-      row = getSidebarPanelsState().aiSearch.rows[0];
+      store.setTagInventoryRowHidden('r1', false);
+      row = getSidebarPanelsState().tagInventory.rows[0];
       assert.notProperty(row, 'hidden');
     });
 
     it('merge clears hidden when any duplicate is non-hidden', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'keep',
         schemaTag: 't',
         query: 'q',
         annotationIds: ['a1'],
         hidden: true,
       });
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'dup',
         schemaTag: 't',
         query: 'q',
         annotationIds: ['a2'],
       });
-      store.mergeAISearchRowsWithSameTagQuery('keep');
-      const merged = getSidebarPanelsState().aiSearch.rows[0];
+      store.mergeTagInventoryRowsWithSameTagQuery('keep');
+      const merged = getSidebarPanelsState().tagInventory.rows[0];
       assert.notProperty(merged, 'hidden');
     });
 
     it('merge keeps hidden when every duplicate is hidden', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'keep',
         schemaTag: 't',
         query: 'q',
         annotationIds: ['a1'],
         hidden: true,
       });
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'dup',
         schemaTag: 't',
         query: 'q',
         annotationIds: ['a2'],
         hidden: true,
       });
-      store.mergeAISearchRowsWithSameTagQuery('keep');
-      const merged = getSidebarPanelsState().aiSearch.rows[0];
+      store.mergeTagInventoryRowsWithSameTagQuery('keep');
+      const merged = getSidebarPanelsState().tagInventory.rows[0];
       assert.isTrue(merged.hidden);
     });
 
     it('sets annotation ids on a single row', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r1',
         schemaTag: 's',
         query: 'q',
         annotationIds: ['old'],
       });
-      store.setAISearchRowAnnotationIds('r1', ['n1', 'n2']);
+      store.setTagInventoryRowAnnotationIds('r1', ['n1', 'n2']);
       assert.deepEqual(
-        getSidebarPanelsState().aiSearch.rows[0].annotationIds,
+        getSidebarPanelsState().tagInventory.rows[0].annotationIds,
         ['n1', 'n2'],
       );
     });
 
     it('removes annotation ids from all rows', () => {
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r1',
         schemaTag: 'a',
         query: 'q1',
         annotationIds: ['x', 'y'],
       });
-      store.addAISearchRow({
+      store.addTagInventoryRow({
         id: 'r2',
         schemaTag: 'b',
         query: 'q2',
         annotationIds: ['y', 'z'],
       });
-      store.removeAnnotationIdsFromAISearchRows(['y']);
-      const rows = getSidebarPanelsState().aiSearch.rows;
+      store.removeAnnotationIdsFromTagInventoryRows(['y']);
+      const rows = getSidebarPanelsState().tagInventory.rows;
       assert.deepEqual(
         rows.find(r => r.id === 'r1').annotationIds,
         ['x'],
@@ -311,9 +311,9 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       );
     });
 
-    describe('#HYDRATE_AI_SEARCH', () => {
-      it('replaces the full aiSearch slice', () => {
-        store.addAISearchRow({
+    describe('#HYDRATE_TAG_INVENTORY', () => {
+      it('replaces the full tagInventory slice', () => {
+        store.addTagInventoryRow({
           id: 'r1',
           schemaTag: 'tag',
           query: 'q',
@@ -330,13 +330,13 @@ describe('sidebar/store/modules/sidebar-panels', () => {
           ],
           schemaTagColors: { a: 'rgba(1,1,1,0.38)' },
         };
-        store.hydrateAISearch(replacement);
-        assert.deepEqual(getSidebarPanelsState().aiSearch, replacement);
+        store.hydrateTagInventory(replacement);
+        assert.deepEqual(getSidebarPanelsState().tagInventory, replacement);
       });
 
       it('does not change activePanelName', () => {
         store.openSidebarPanel('aiSearchAnnotations');
-        store.hydrateAISearch({
+        store.hydrateTagInventory({
           rows: [],
           schemaTagColors: {},
         });
@@ -347,23 +347,23 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       });
     });
 
-    describe('#PRUNE_AI_SEARCH_ROWS_FOR_GROUP', () => {
+    describe('#PRUNE_TAG_INVENTORY_ROWS_FOR_GROUP', () => {
       it('removes in-group rows missing from descriptors but keeps other groups', () => {
-        store.addAISearchRow({
+        store.addTagInventoryRow({
           id: 'keep',
           groupId: 'group-a',
           schemaTag: 'methods',
           query: '',
           annotationIds: [],
         });
-        store.addAISearchRow({
+        store.addTagInventoryRow({
           id: 'drop',
           groupId: 'group-a',
           schemaTag: 'old',
           query: '',
           annotationIds: [],
         });
-        store.addAISearchRow({
+        store.addTagInventoryRow({
           id: 'other-group',
           groupId: 'group-b',
           schemaTag: 'old',
@@ -371,43 +371,43 @@ describe('sidebar/store/modules/sidebar-panels', () => {
           annotationIds: [],
         });
 
-        store.pruneAISearchRowsForGroup('group-a', [
+        store.pruneTagInventoryRowsForGroup('group-a', [
           { schemaTag: 'methods', query: '' },
         ]);
 
-        const ids = store.aiSearchRows().map(r => r.id);
+        const ids = store.tagInventoryRows().map(r => r.id);
         assert.sameMembers(ids, ['keep', 'other-group']);
       });
 
       it('keeps tag colors sticky after pruning', () => {
-        store.addAISearchRow({
+        store.addTagInventoryRow({
           id: 'drop',
           groupId: 'group-a',
           schemaTag: 'old',
           query: '',
           annotationIds: [],
         });
-        store.setAISearchSchemaTagColor('old', 'rgba(7, 7, 7, 0.38)');
+        store.setTagInventorySchemaTagColor('old', 'rgba(7, 7, 7, 0.38)');
 
-        store.pruneAISearchRowsForGroup('group-a', [
+        store.pruneTagInventoryRowsForGroup('group-a', [
           { schemaTag: 'methods', query: '' },
         ]);
 
         assert.equal(
-          getSidebarPanelsState().aiSearch.schemaTagColors.old,
+          getSidebarPanelsState().tagInventory.schemaTagColors.old,
           'rgba(7, 7, 7, 0.38)',
         );
       });
     });
 
-    describe('#SET_AI_SEARCH_PUBLIC_DOCUMENT_SCOPE', () => {
+    describe('#SET_TAG_INVENTORY_PUBLIC_DOCUMENT_SCOPE', () => {
       it('stores Public document visibility keys', () => {
-        store.setAISearchPublicDocumentScope({
+        store.setTagInventoryPublicDocumentScope({
           documentUri: 'http://example.com',
           visibleDescriptorKeys: [rowDescriptorKey('methods', '')],
         });
 
-        assert.deepEqual(store.aiSearchPublicDocumentScope(), {
+        assert.deepEqual(store.tagInventoryPublicDocumentScope(), {
           documentUri: 'http://example.com',
           visibleDescriptorKeys: [rowDescriptorKey('methods', '')],
         });
@@ -425,10 +425,10 @@ describe('sidebar/store/modules/sidebar-panels', () => {
         };
 
         assert.isTrue(
-          isAISearchRowVisibleInScope(row, { focusedGroupId: 'group-a' }),
+          isTagInventoryRowVisibleInScope(row, { focusedGroupId: 'group-a' }),
         );
         assert.isFalse(
-          isAISearchRowVisibleInScope(row, { focusedGroupId: 'group-b' }),
+          isTagInventoryRowVisibleInScope(row, { focusedGroupId: 'group-b' }),
         );
       });
 
@@ -443,13 +443,13 @@ describe('sidebar/store/modules/sidebar-panels', () => {
         const key = rowDescriptorKey('methods', '');
 
         assert.isTrue(
-          isAISearchRowVisibleInScope(row, {
+          isTagInventoryRowVisibleInScope(row, {
             focusedGroupId: PUBLIC_GROUP_ID,
             publicDocumentDescriptorKeys: new Set([key]),
           }),
         );
         assert.isFalse(
-          isAISearchRowVisibleInScope(row, {
+          isTagInventoryRowVisibleInScope(row, {
             focusedGroupId: PUBLIC_GROUP_ID,
             publicDocumentDescriptorKeys: new Set(),
           }),
@@ -471,16 +471,16 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       });
     });
 
-    describe('#aiSearchRows and #aiSearchSchemaTagColors', () => {
-      it('returns current aiSearch slice fields', () => {
-        store.addAISearchRow({
+    describe('#tagInventoryRows and #tagInventorySchemaTagColors', () => {
+      it('returns current tagInventory slice fields', () => {
+        store.addTagInventoryRow({
           id: 'id1',
           schemaTag: 's',
           query: 'qq',
           annotationIds: ['id'],
         });
-        assert.lengthOf(store.aiSearchRows(), 1);
-        assert.property(store.aiSearchSchemaTagColors(), 's');
+        assert.lengthOf(store.tagInventoryRows(), 1);
+        assert.property(store.tagInventorySchemaTagColors(), 's');
       });
     });
   });

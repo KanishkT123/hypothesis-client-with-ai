@@ -61,12 +61,13 @@ yarn install
 
 Re-run build steps 1 and 2, then refresh the extension in Chrome.
 
-## Experiment Log
+## Tag inventory and experiment log (localStorage)
 
-The HCI experiment log is stored in `localStorage` under **`hypothesis.aiSearch.experimentLog`**. The document is a single-participant, flat JSON object: `version` (currently `1`) and `events` (append-only array; each `search` event includes `quoteTexts` parallel to `annotationIdsCreated`).
+- **Tag inventory** (schema-tag rows and highlight colors for the AI Search panel) is stored under **`hypothesis.tagInventory.rows`**. Rows are synced across tabs via the `storage` event (no migration from the old `hypothesis.aiSearch.history` key).
+- **Experiment log:** The HCI experiment log is stored in `localStorage` under **`hypothesis.aiSearch.experimentLog`**. The document is a single-participant, flat JSON object: `version` (currently `1`) and `events` (append-only array; each `search` event includes `quoteTexts` parallel to `annotationIdsCreated`).
 
 - **Download:** Use **Download experiment log** in the sidebar top bar (after Help; not gated on login). This saves a JSON file (filename like `experiment-log-YYYY-MM-DD.json`).
-- **Clear:** Use **Clear experiment log** next to it; you must confirm before the log is wiped. Other tabs pick up the empty state via the same `storage` sync used for AI search history.
+- **Clear:** Use **Clear experiment log** next to it; you must confirm before the log is wiped. Other tabs pick up the empty state via the same `storage` sync used for tag inventory and the experiment log.
 
 To inspect a downloaded log (or merge several exports into one stream):
 

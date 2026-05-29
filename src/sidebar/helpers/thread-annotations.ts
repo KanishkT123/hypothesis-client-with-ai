@@ -2,8 +2,8 @@ import type { Annotation, SavedAnnotation } from '../../types/api';
 import type { TabName } from '../../types/sidebar';
 import { memoize } from '../util/memoize';
 import { isWaitingToAnchor } from './annotation-metadata';
-import type { HiddenAISearchRowMatch } from './claude-ai-search-user-message';
-import { annotationMatchesHiddenAISearchRow } from './claude-ai-search-user-message';
+import type { HiddenTagInventoryRowMatch } from './claude-ai-search-user-message';
+import { annotationMatchesHiddenTagInventoryRow } from './claude-ai-search-user-message';
 import { buildThread } from './build-thread';
 import type { Thread, BuildThreadOptions } from './build-thread';
 import { filterAnnotations } from './filter-annotations';
@@ -27,7 +27,7 @@ export type ThreadState = {
   };
 
   /** Hidden AI search rows visible in the focused group (thread-list filter). */
-  hiddenAISearchRows?: HiddenAISearchRowMatch[];
+  hiddenTagInventoryRows?: HiddenTagInventoryRowMatch[];
 
   /** Current document URI for hidden-row matching. */
   documentUri?: string | null;
@@ -101,13 +101,13 @@ function threadAnnotationsImpl(
     }
   }
 
-  const hiddenRows = threadState.hiddenAISearchRows ?? [];
+  const hiddenRows = threadState.hiddenTagInventoryRows ?? [];
   const documentUri = threadState.documentUri;
   if (hiddenRows.length > 0 && documentUri) {
     const priorFilterFn = options.filterFn;
     options.filterFn = ann => {
       if (
-        annotationMatchesHiddenAISearchRow(
+        annotationMatchesHiddenTagInventoryRow(
           ann as SavedAnnotation,
           documentUri,
           hiddenRows,

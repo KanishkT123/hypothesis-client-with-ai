@@ -8,7 +8,7 @@ import type { TagsService } from '../services/tags';
 import {
   canMarkTagAsNegativeExample,
   canRevertNegativeExampleTag,
-} from '../helpers/ai-search-group-history';
+} from '../helpers/tag-inventory-group';
 import AutocompleteList from './AutocompleteList';
 import TagList from './TagList';
 import TagListItem from './TagListItem';

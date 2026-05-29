@@ -168,11 +168,11 @@ describe('FrameSyncService', () => {
         },
 
         addAnnotations: sinon.stub(),
-        addAISearchRow: sinon.stub(),
+        addTagInventoryRow: sinon.stub(),
         aiSearchPanelAnnotateManually: sinon.stub().returns(false),
         aiSearchPanelQueryInput: sinon.stub().returns(null),
         aiSearchPanelSchemaTagInput: sinon.stub().returns(''),
-        aiSearchRows: sinon.stub().returns([]),
+        tagInventoryRows: sinon.stub().returns([]),
         findAnnotationByID: sinon.stub().returns(null),
         getDraft: sinon.stub().returns(null),
         findIDsForTags: sinon.stub().returns([]),
@@ -181,7 +181,7 @@ describe('FrameSyncService', () => {
         getFocusFilters: sinon.stub().returns({}),
         hoverAnnotations: sinon.stub(),
         isLoggedIn: sinon.stub().returns(false),
-        mergeAISearchRowsWithSameTagQuery: sinon.stub(),
+        mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
         openSidebarPanel: sinon.stub(),
         selectAnnotations: sinon.stub(),
         selectTab: sinon.stub(),
@@ -704,20 +704,20 @@ describe('FrameSyncService', () => {
         fakeStore.aiSearchPanelAnnotateManually.returns(true);
         fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
         fakeStore.aiSearchPanelQueryInput.returns('query');
-        fakeStore.aiSearchRows.returns([]);
+        fakeStore.tagInventoryRows.returns([]);
         const ann = { $tag: 't1', target: [], tags: [] };
 
         emitGuestEvent('createAnnotation', ann);
 
         assert.deepEqual(ann.tags, ['methods']);
-        assert.calledWith(fakeStore.addAISearchRow, {
+        assert.calledWith(fakeStore.addTagInventoryRow, {
           id: 'manual-t1',
           groupId: 'foobar',
           schemaTag: 'methods',
           query: 'query',
           annotationIds: [],
         });
-        assert.calledWith(fakeStore.mergeAISearchRowsWithSameTagQuery, 'manual-t1');
+        assert.calledWith(fakeStore.mergeTagInventoryRowsWithSameTagQuery, 'manual-t1');
       });
 
       it('reuses and merges existing matching history row instead of creating another', () => {
@@ -725,7 +725,7 @@ describe('FrameSyncService', () => {
         fakeStore.aiSearchPanelAnnotateManually.returns(true);
         fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
         fakeStore.aiSearchPanelQueryInput.returns('query');
-        fakeStore.aiSearchRows.returns([
+        fakeStore.tagInventoryRows.returns([
           {
             id: 'existing',
             groupId: 'foobar',
@@ -738,9 +738,9 @@ describe('FrameSyncService', () => {
 
         emitGuestEvent('createAnnotation', ann);
 
-        assert.notCalled(fakeStore.addAISearchRow);
+        assert.notCalled(fakeStore.addTagInventoryRow);
         assert.calledWith(
-          fakeStore.mergeAISearchRowsWithSameTagQuery,
+          fakeStore.mergeTagInventoryRowsWithSameTagQuery,
           'existing',
         );
       });

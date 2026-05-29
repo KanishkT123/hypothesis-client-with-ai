@@ -1,7 +1,7 @@
 import type { SidebarStore } from '../store';
 import type {
-  AISearchRow,
-  AISearchState,
+  TagInventoryRow,
+  TagInventoryState,
 } from '../store/modules/sidebar-panels';
 import { emptyExperimentLog } from '../store/modules/sidebar-panels';
 import { watch } from '../util/watch';
@@ -12,12 +12,12 @@ import {
 import type { LocalStorageService } from './local-storage';
 import type { ToastMessengerService } from './toast-messenger';
 
-/** `localStorage` key for persisted AI search rows and tag colors. */
-export const AI_SEARCH_STORAGE_KEY = 'hypothesis.aiSearch.history';
+/** `localStorage` key for persisted tag inventory rows and tag colors. */
+export const TAG_INVENTORY_STORAGE_KEY = 'hypothesis.tagInventory.rows';
 
 export { EXPERIMENT_LOG_STORAGE_KEY } from './experiment-log';
 
-const emptyAiSearch = (): AISearchState => ({
+const emptyTagInventory = (): TagInventoryState => ({
   rows: [],
   schemaTagColors: {},
 });
@@ -25,7 +25,7 @@ const emptyAiSearch = (): AISearchState => ({
 /**
  * Validate `rows` and `schemaTagColors` on a persisted object (no `revision`).
  */
-function parseAISearchStatePayload(v: Record<string, unknown>): AISearchState | null {
+function parseTagInventoryStatePayload(v: Record<string, unknown>): TagInventoryState | null {
   if (!Array.isArray(v.rows)) {
     return null;
   }
@@ -63,7 +63,7 @@ function parseAISearchStatePayload(v: Record<string, unknown>): AISearchState | 
     if ('groupId' in r && typeof r.groupId !== 'string') {
       return null;
     }
-    const parsed: AISearchRow = {
+    const parsed: TagInventoryRow = {
       id: r.id,
       schemaTag: r.schemaTag,
       query: r.query,
@@ -87,15 +87,15 @@ function parseAISearchStatePayload(v: Record<string, unknown>): AISearchState | 
   return { rows, schemaTagColors };
 }
 
-export type ParsedAISearchPersisted = {
+export type ParsedTagInventoryPersisted = {
   revision: number;
-  aiSearch: AISearchState;
+  tagInventory: TagInventoryState;
 };
 
 /**
- * Validate persisted AI search history JSON `{ revision, rows, schemaTagColors }`.
+ * Validate persisted tag inventory JSON `{ revision, rows, schemaTagColors }`.
  */
-export function parseAISearchPersisted(raw: unknown): ParsedAISearchPersisted | null {
+export function parseTagInventoryPersisted(raw: unknown): ParsedTagInventoryPersisted | null {
   if (!raw || typeof raw !== 'object') {
     return null;
   }
@@ -104,14 +104,14 @@ export function parseAISearchPersisted(raw: unknown): ParsedAISearchPersisted | 
   if (typeof rev !== 'number' || !Number.isInteger(rev) || rev < 0) {
     return null;
   }
-  const aiSearch = parseAISearchStatePayload(v);
-  if (!aiSearch) {
+  const tagInventory = parseTagInventoryStatePayload(v);
+  if (!tagInventory) {
     return null;
   }
-  return { revision: rev, aiSearch };
+  return { revision: rev, tagInventory };
 }
 
-function readAISearchRevisionFromStorageRaw(raw: unknown): number {
+function readTagInventoryRevisionFromStorageRaw(raw: unknown): number {
   if (!raw || typeof raw !== 'object') {
     return 0;
   }
@@ -131,19 +131,19 @@ type StorageSyncConfig<T> = {
 };
 
 /**
- * Persists `sidebarPanels.aiSearch` (and the experiment log) to `localStorage`,
+ * Persists `sidebarPanels.tagInventory` (and the experiment log) to `localStorage`,
  * restores on load, and applies updates from other browser tabs via the
  * `storage` event (see `AuthService` for the same pattern for OAuth tokens).
  *
  * @inject
  */
-export class PersistedAISearchService {
+export class PersistedTagInventoryService {
   private _storage: LocalStorageService;
   private _store: SidebarStore;
   private _window: Window;
   private _toastMessenger: ToastMessengerService;
-  /** Monotonic revision for `AI_SEARCH_STORAGE_KEY`; ignores stale sync reads. */
-  private _aiSearchRevision = 0;
+  /** Monotonic revision for `TAG_INVENTORY_STORAGE_KEY`; ignores stale sync reads. */
+  private _tagInventoryRevision = 0;
 
   constructor(
     localStorage: LocalStorageService,
@@ -200,8 +200,8 @@ export class PersistedAISearchService {
     hydrate(next);
   }
 
-  private _syncAISearchFromLocalStorage(e?: StorageEvent) {
-    const storageKey = AI_SEARCH_STORAGE_KEY;
+  private _syncTagInventoryFromLocalStorage(e?: StorageEvent) {
+    const storageKey = TAG_INVENTORY_STORAGE_KEY;
     let raw: unknown;
 
     if (e) {
@@ -223,48 +223,48 @@ export class PersistedAISearchService {
       raw = this._storage.getObject<unknown>(storageKey);
     }
 
-    const empty = emptyAiSearch();
-    const getCurrent = () => this._store.getState().sidebarPanels.aiSearch;
+    const empty = emptyTagInventory();
+    const getCurrent = () => this._store.getState().sidebarPanels.tagInventory;
 
     if (raw === null) {
-      this._aiSearchRevision = 0;
+      this._tagInventoryRevision = 0;
       if (JSON.stringify(empty) !== JSON.stringify(getCurrent())) {
-        this._store.hydrateAISearch(empty);
+        this._store.hydrateTagInventory(empty);
       }
       return;
     }
 
-    const parsed = parseAISearchPersisted(raw);
+    const parsed = parseTagInventoryPersisted(raw);
     if (!parsed) {
       return;
     }
 
-    const { revision: incomingRevision, aiSearch } = parsed;
+    const { revision: incomingRevision, tagInventory } = parsed;
 
-    if (incomingRevision < this._aiSearchRevision) {
+    if (incomingRevision < this._tagInventoryRevision) {
       return;
     }
 
-    if (JSON.stringify(aiSearch) === JSON.stringify(getCurrent())) {
-      this._aiSearchRevision = Math.max(
-        this._aiSearchRevision,
+    if (JSON.stringify(tagInventory) === JSON.stringify(getCurrent())) {
+      this._tagInventoryRevision = Math.max(
+        this._tagInventoryRevision,
         incomingRevision,
       );
       return;
     }
 
-    this._store.hydrateAISearch(aiSearch);
-    this._aiSearchRevision = incomingRevision;
+    this._store.hydrateTagInventory(tagInventory);
+    this._tagInventoryRevision = incomingRevision;
   }
 
   init() {
-    const persisted = this._storage.getObject<unknown>(AI_SEARCH_STORAGE_KEY);
-    const parsed = parseAISearchPersisted(persisted);
+    const persisted = this._storage.getObject<unknown>(TAG_INVENTORY_STORAGE_KEY);
+    const parsed = parseTagInventoryPersisted(persisted);
     if (parsed) {
-      this._store.hydrateAISearch(parsed.aiSearch);
-      this._aiSearchRevision = parsed.revision;
+      this._store.hydrateTagInventory(parsed.tagInventory);
+      this._tagInventoryRevision = parsed.revision;
     } else {
-      this._aiSearchRevision = 0;
+      this._tagInventoryRevision = 0;
     }
 
     const expRaw = this._storage.getObject<unknown>(EXPERIMENT_LOG_STORAGE_KEY);
@@ -275,13 +275,13 @@ export class PersistedAISearchService {
 
     watch(
       this._store.subscribe,
-      () => this._store.getState().sidebarPanels.aiSearch,
+      () => this._store.getState().sidebarPanels.tagInventory,
       current => {
-        const lsRaw = this._storage.getObject<unknown>(AI_SEARCH_STORAGE_KEY);
-        const readRev = readAISearchRevisionFromStorageRaw(lsRaw);
-        this._aiSearchRevision = Math.max(this._aiSearchRevision, readRev) + 1;
-        this._storage.setObject(AI_SEARCH_STORAGE_KEY, {
-          revision: this._aiSearchRevision,
+        const lsRaw = this._storage.getObject<unknown>(TAG_INVENTORY_STORAGE_KEY);
+        const readRev = readTagInventoryRevisionFromStorageRaw(lsRaw);
+        this._tagInventoryRevision = Math.max(this._tagInventoryRevision, readRev) + 1;
+        this._storage.setObject(TAG_INVENTORY_STORAGE_KEY, {
+          revision: this._tagInventoryRevision,
           ...current,
         });
       },
@@ -308,7 +308,7 @@ export class PersistedAISearchService {
       (a, b) => JSON.stringify(a) === JSON.stringify(b),
     );
 
-    const syncHistory = (e?: StorageEvent) => this._syncAISearchFromLocalStorage(e);
+    const syncHistory = (e?: StorageEvent) => this._syncTagInventoryFromLocalStorage(e);
 
     const syncExperimentLog = (e?: StorageEvent) =>
       this._syncFromLocalStorage(

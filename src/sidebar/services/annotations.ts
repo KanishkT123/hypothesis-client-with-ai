@@ -13,7 +13,7 @@ import {
   retagAllPositiveSchemaTagsAsNegative,
   retagOneNegativeSchemaTagAsPositive,
   retagOnePositiveSchemaTagAsNegative,
-} from '../helpers/ai-search-group-history';
+} from '../helpers/tag-inventory-group';
 import * as metadata from '../helpers/annotation-metadata';
 import type { UserItem } from '../helpers/mention-suggestions';
 import { wrapDisplayNameMentions, wrapMentions } from '../helpers/mentions';
@@ -25,7 +25,7 @@ import {
 } from '../helpers/permissions';
 import type { SidebarStore } from '../store';
 import type { AnnotationActivityService } from './annotation-activity';
-import type { AISearchGroupHistorySyncService } from './ai-search-group-history-sync';
+import type { TagInventoryGroupSyncService } from './tag-inventory-group-sync';
 import type { APIService } from './api';
 import type { ExperimentLogService } from './experiment-log';
 
@@ -49,7 +49,7 @@ export type MentionsOptions =
 // @inject
 export class AnnotationsService {
   private _activity: AnnotationActivityService;
-  private _aiSearchGroupHistorySync: AISearchGroupHistorySyncService;
+  private _tagInventoryGroupSync: TagInventoryGroupSyncService;
   private _api: APIService;
   private _experimentLog: ExperimentLogService;
   private _settings: SidebarSettings;
@@ -57,14 +57,14 @@ export class AnnotationsService {
 
   constructor(
     annotationActivity: AnnotationActivityService,
-    aiSearchGroupHistorySync: AISearchGroupHistorySyncService,
+    tagInventoryGroupSync: TagInventoryGroupSyncService,
     api: APIService,
     experimentLog: ExperimentLogService,
     settings: SidebarSettings,
     store: SidebarStore,
   ) {
     this._activity = annotationActivity;
-    this._aiSearchGroupHistorySync = aiSearchGroupHistorySync;
+    this._tagInventoryGroupSync = tagInventoryGroupSync;
     this._api = api;
     this._experimentLog = experimentLog;
     this._settings = settings;
@@ -257,7 +257,7 @@ export class AnnotationsService {
     await this._api.annotation.delete({ id: annotation.id });
     this._activity.reportActivity('delete', annotation);
     this._store.removeAnnotations([annotation]);
-    void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
+    void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
 
     if (!opts?.skipExperimentLog) {
       const tags = annotation.tags ?? [];
@@ -353,7 +353,7 @@ export class AnnotationsService {
 
     // Add (or, in effect, update) the annotation to the store's collection
     this._store.addAnnotations([savedAnnotation]);
-    void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
+    void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
     return savedAnnotation;
   }
 
@@ -394,7 +394,7 @@ export class AnnotationsService {
       }
 
       this._store.addAnnotations([savedAnnotation]);
-      void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
+      void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
 
       this._experimentLog.logAccept({
         annotationId: savedAnnotation.id!,
@@ -410,7 +410,7 @@ export class AnnotationsService {
     if (isAiPending && newStatus === 'DENIED') {
       const id = annotation.id;
       if (id) {
-        this._store.removeAnnotationIdsFromAISearchRows([id]);
+        this._store.removeAnnotationIdsFromTagInventoryRows([id]);
       }
 
       this._experimentLog.logReject({
@@ -445,7 +445,7 @@ export class AnnotationsService {
 
     // Add (or, in effect, update) the annotation to the store's collection
     this._store.addAnnotations([savedAnnotation]);
-    void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
+    void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
 
     return savedAnnotation;
   }
@@ -470,7 +470,7 @@ export class AnnotationsService {
     }
 
     this._store.addAnnotations([savedAnnotation]);
-    void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
+    void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
 
     return savedAnnotation;
   }
