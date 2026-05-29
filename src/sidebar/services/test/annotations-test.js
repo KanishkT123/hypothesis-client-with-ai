@@ -84,7 +84,6 @@ describe('AnnotationsService', () => {
       profile: sinon.stub().returns({}),
       removeAnnotations: sinon.stub(),
       removeAnnotationIdsFromAISearchRows: sinon.stub(),
-      addAISearchNegativeExample: sinon.stub(),
       addAISearchRow: sinon.stub(),
       aiSearchRows: sinon.stub().returns([]),
       mergeAISearchRowsWithSameTagQuery: sinon.stub(),
@@ -790,59 +789,54 @@ describe('AnnotationsService', () => {
       assert.equal(result.moderation_status, 'APPROVED');
     });
 
-    it('deletes annotation when ai-pending and DENIED', async () => {
-      fakeMetadata.quote.returns(null);
+    it('retags ai-pending to a neg-example and keeps it on the server when DENIED', async () => {
+      fakeMetadata.quote.returns('the quote');
       const annotation = {
         ...fixtures.defaultAnnotation(),
-        tags: ['ai-pending'],
+        tags: ['ai-pending', 'methods'],
+        text: 'search query',
+        uri: 'http://example.com/doc.pdf',
       };
+      const updated = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['methods-neg-example'],
+      };
+      fakeApi.annotation.update.resolves(updated);
 
       const result = await svc.moderate(annotation, 'DENIED');
 
       assert.notCalled(fakeApi.annotation.moderate);
+      assert.notCalled(fakeApi.annotation.delete);
+      assert.notCalled(fakeStore.removeAnnotations);
+      assert.calledWith(fakeStore.removeAnnotationIdsFromAISearchRows, [
+        annotation.id,
+      ]);
       assert.calledWith(
-        fakeStore.removeAnnotationIdsFromAISearchRows,
-        [annotation.id],
+        fakeApi.annotation.update,
+        { id: annotation.id },
+        { tags: ['methods-neg-example'] },
       );
-      assert.notCalled(fakeStore.addAISearchNegativeExample);
-      assert.calledWith(fakeApi.annotation.delete, { id: annotation.id });
-      assert.calledWith(fakeStore.removeAnnotations, [annotation]);
+      assert.calledWith(fakeStore.addAnnotations, [
+        sinon.match({ tags: ['methods-neg-example'] }),
+      ]);
       assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
         mode: 'document',
       });
-      assert.equal(result, annotation);
+      assert.equal(result, updated);
     });
 
-    it('stores negative example when ai-pending DENIED and quote exists', async () => {
-      sinon.stub(crypto, 'randomUUID').returns('neg-id-1');
-      fakeMetadata.quote.returns('the quote');
+    it('strips system tags and converts positive schema tags on DENY', async () => {
       const annotation = {
         ...fixtures.defaultAnnotation(),
-        tags: ['ai-pending', 'mytag'],
-        text: 'search query',
-        uri: 'http://example.com/doc.pdf',
-        target: [
-          {
-            source: 'http://example.com/doc.pdf',
-            selector: [{ type: 'TextQuoteSelector', exact: 'the quote' }],
-          },
-        ],
+        tags: ['ai-pending', 'ai-user-approved', 'methods'],
       };
+      const updated = { ...fixtures.defaultAnnotation() };
+      fakeApi.annotation.update.resolves(updated);
 
       await svc.moderate(annotation, 'DENIED');
 
-      assert.calledWith(
-        fakeStore.removeAnnotationIdsFromAISearchRows,
-        [annotation.id],
-      );
-      assert.calledWith(fakeStore.addAISearchNegativeExample, {
-        id: 'neg-id-1',
-        schemaTag: 'mytag',
-        query: 'search query',
-        quote: 'the quote',
-        documentUri: 'http://example.com/doc.pdf',
-      });
-      crypto.randomUUID.restore();
+      const sentTags = fakeApi.annotation.update.lastCall.args[1].tags;
+      assert.sameMembers(sentTags, ['methods-neg-example']);
     });
   });
 

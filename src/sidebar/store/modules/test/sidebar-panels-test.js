@@ -26,13 +26,6 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       assert.deepEqual(ai.schemaTagColors, {});
     });
 
-    it('sets initial `aiSearchNegativeExamples` empty', () => {
-      assert.deepEqual(
-        getSidebarPanelsState().aiSearchNegativeExamples,
-        [],
-      );
-    });
-
     it('sets initial `experimentLog` to empty version-1 state', () => {
       const log = getSidebarPanelsState().experimentLog;
       assert.deepEqual(log, {
@@ -462,57 +455,6 @@ describe('sidebar/store/modules/sidebar-panels', () => {
           }),
         );
       });
-    });
-  });
-
-  describe('aiSearchNegativeExamples reducers', () => {
-    it('adds a negative example', () => {
-      store.addAISearchNegativeExample({
-        id: 'n1',
-        schemaTag: 't',
-        query: 'q',
-        quote: 'qt',
-        documentUri: 'http://x',
-      });
-      assert.lengthOf(store.aiSearchNegativeExamples(), 1);
-      assert.equal(store.aiSearchNegativeExamples()[0].id, 'n1');
-    });
-
-    it('dedupes identical documentUri+tag+query+quote', () => {
-      const ex = {
-        id: 'n1',
-        schemaTag: 't',
-        query: 'q',
-        quote: 'qt',
-        documentUri: 'http://x',
-      };
-      store.addAISearchNegativeExample(ex);
-      store.addAISearchNegativeExample({ ...ex, id: 'n2' });
-      assert.lengthOf(store.aiSearchNegativeExamples(), 1);
-    });
-
-    it('removes by id', () => {
-      store.addAISearchNegativeExample({
-        id: 'n1',
-        schemaTag: 't',
-        query: 'q',
-        quote: 'qt',
-        documentUri: 'http://x',
-      });
-      store.removeAISearchNegativeExample('n1');
-      assert.lengthOf(store.aiSearchNegativeExamples(), 0);
-    });
-
-    it('hydrate replaces the list', () => {
-      store.addAISearchNegativeExample({
-        id: 'n1',
-        schemaTag: 't',
-        query: 'q',
-        quote: 'qt',
-        documentUri: 'http://x',
-      });
-      store.hydrateAISearchNegativeExamples([]);
-      assert.lengthOf(store.aiSearchNegativeExamples(), 0);
     });
   });
 

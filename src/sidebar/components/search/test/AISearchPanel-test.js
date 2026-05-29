@@ -17,7 +17,6 @@ describe('AISearchPanel', () => {
       savedAnnotations: sinon.stub().returns([]),
       aiSearchSchemaTagColors: sinon.stub().returns({}),
       searchUris: sinon.stub().returns([]),
-      aiSearchNegativeExamples: sinon.stub().returns([]),
       focusedGroupId: sinon.stub().returns('group-1'),
       aiSearchPublicDocumentScope: sinon.stub().returns(null),
       closeSidebarPanel: sinon.stub(),

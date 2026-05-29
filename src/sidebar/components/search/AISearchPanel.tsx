@@ -6,8 +6,6 @@ import {
   confirm,
   HideIcon,
   Input,
-  MenuCollapseIcon,
-  MenuExpandIcon,
   RedoIcon,
   ShowIcon,
   TrashIcon,
@@ -23,6 +21,7 @@ import {
 } from '../../../shared/tag-color-from-string';
 import {
   buildClaudeAISearchUserMessage,
+  collectNegativeExamplesFromAnnotations,
   collectPositiveExamplesFromAnnotations,
   countAiSearchQuotesSkippedAsDuplicates,
   countAISearchRowPendingAnnotations,
@@ -57,10 +56,7 @@ import type {
 } from '../../services/claude';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
-import type {
-  AISearchNegativeExample,
-  AISearchRow,
-} from '../../store/modules/sidebar-panels';
+import type { AISearchRow } from '../../store/modules/sidebar-panels';
 import SidebarPanel from '../SidebarPanel';
 import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
 import SearchField from './SearchField';
@@ -132,7 +128,6 @@ function AISearchPanel({
   const annotateManually = store.aiSearchPanelAnnotateManually();
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
   const [rerunningRowId, setRerunningRowId] = useState<string | null>(null);
-  const [userDeniedSectionOpen, setUserDeniedSectionOpen] = useState(false);
   const rerunLockRef = useRef(false);
   /** Wall time when the current Claude API request started; drives panel timer + Stop. */
   const [claudeRunStartedAt, setClaudeRunStartedAt] = useState<number | null>(
@@ -150,11 +145,6 @@ function AISearchPanel({
   const savedAnnotations = store.savedAnnotations();
   const schemaTagColors = store.aiSearchSchemaTagColors();
   const documentURL = claude.firstPDFURI(store.searchUris());
-  const negativeExamplesForDoc: AISearchNegativeExample[] = documentURL
-    ? store
-        .aiSearchNegativeExamples()
-        .filter(ex => ex.documentUri === documentURL)
-    : [];
 
   const globalRowLock =
     runAISearchInFlight ||
@@ -271,11 +261,12 @@ function AISearchPanel({
         documentURL,
         annotationsService,
       );
-      const negativeExamples = negativeExamplesForDoc.map(ex => ({
-        tag: ex.schemaTag.trim(),
-        query: ex.query.trim(),
-        quote: ex.quote.trim(),
-      }));
+      // Negatives come from `{schemaTag}-neg-example` annotations on the
+      // current document (document-scoped until commit 5 widens to the group).
+      const negativeExamples = collectNegativeExamplesFromAnnotations(
+        store.savedAnnotations(),
+        documentURL,
+      );
       const tagTrim = schemaTagForRow.trim();
       const fullUserMessage = buildClaudeAISearchUserMessage({
         positiveExamples,
@@ -1068,86 +1059,6 @@ function AISearchPanel({
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
-            {negativeExamplesForDoc.length > 0 && (
-              <div className="flex flex-col border border-grey-3 rounded-md overflow-hidden">
-                <button
-                  type="button"
-                  className="w-full flex items-center justify-between gap-2 py-2 px-2 text-left text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring"
-                  onClick={() => setUserDeniedSectionOpen(v => !v)}
-                  aria-expanded={userDeniedSectionOpen}
-                >
-                  <span className="font-medium text-xs">
-                    User-denied AI annotations
-                  </span>
-                  {userDeniedSectionOpen ? (
-                    <MenuCollapseIcon className="w-em h-em shrink-0" />
-                  ) : (
-                    <MenuExpandIcon className="w-em h-em shrink-0" />
-                  )}
-                </button>
-                {userDeniedSectionOpen && (
-                  <div className="px-2 pb-2">
-                    <table className="w-full border-collapse text-left text-xs text-color-text">
-                      <thead>
-                        <tr className="border-b border-grey-3 text-color-text-light">
-                          <th className="py-1 pr-2 font-normal" scope="col">
-                            Tag
-                          </th>
-                          <th className="py-1 pr-2 font-normal" scope="col">
-                            Query
-                          </th>
-                          <th className="py-1 pr-2 font-normal" scope="col">
-                            Quote
-                          </th>
-                          <th className="py-1 w-10" scope="col">
-                            <span className="sr-only">Remove</span>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {negativeExamplesForDoc.map(ex => (
-                          <tr
-                            key={ex.id}
-                            className="border-b border-grey-2 last:border-0"
-                          >
-                            <td className="py-1 pr-2 align-middle break-words min-w-[10rem] max-w-[14rem]">
-                              {ex.schemaTag || (
-                                <span className="text-color-text-light">—</span>
-                              )}
-                            </td>
-                            <td className="py-1 pr-2 align-middle break-words max-w-[10rem]">
-                              {ex.query}
-                            </td>
-                            <td className="py-1 pr-2 align-middle break-words max-w-[12rem]">
-                              {ex.quote}
-                            </td>
-                            <td className="py-1 align-middle">
-                              <button
-                                type="button"
-                                className={classnames(
-                                  'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2',
-                                  'transition-colors duration-200 focus-visible-ring',
-                                )}
-                                title="Remove stored negative example"
-                                aria-label="Remove stored negative example"
-                                onClick={() =>
-                                  store.removeAISearchNegativeExample(ex.id)
-                                }
-                              >
-                                <CancelIcon
-                                  className="w-em h-em"
-                                  title="Remove"
-                                />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
               </div>
             )}
           </div>

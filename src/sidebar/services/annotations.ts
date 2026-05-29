@@ -9,6 +9,10 @@ import type {
 } from '../../types/api';
 import type { AnnotationEventType, SidebarSettings } from '../../types/config';
 import { parseAccountID } from '../helpers/account-id';
+import {
+  negativeSchemaTagForPositiveTag,
+  positiveSchemaTags,
+} from '../helpers/ai-search-group-history';
 import * as metadata from '../helpers/annotation-metadata';
 import type { UserItem } from '../helpers/mention-suggestions';
 import { wrapDisplayNameMentions, wrapMentions } from '../helpers/mentions';
@@ -406,17 +410,6 @@ export class AnnotationsService {
       const id = annotation.id;
       if (id) {
         this._store.removeAnnotationIdsFromAISearchRows([id]);
-        const quoteText = metadata.quote(annotation);
-        if (quoteText !== null && quoteText !== undefined && quoteText.trim()) {
-          const schemaTag = tags.filter(t => t !== 'ai-pending').join(', ');
-          this._store.addAISearchNegativeExample({
-            id: crypto.randomUUID(),
-            schemaTag,
-            query: (annotation.text ?? '').trim(),
-            quote: quoteText.trim(),
-            documentUri: annotation.uri,
-          });
-        }
       }
 
       this._experimentLog.logReject({
@@ -427,8 +420,35 @@ export class AnnotationsService {
         documentUri: annotation.uri,
       });
 
-      await this.delete(annotation, { skipExperimentLog: true });
-      return annotation;
+      // Keep the annotation on the server as a negative example instead of
+      // deleting it: drop `ai-pending` and the positive schema tag(s), add the
+      // `{schemaTag}-neg-example` variant(s). The quote and query (text) stay.
+      const positiveTags = positiveSchemaTags(tags);
+      const negativeTags = positiveTags.map(negativeSchemaTagForPositiveTag);
+      const retainedTags = tags.filter(
+        t =>
+          t !== 'ai-pending' &&
+          t !== 'ai-user-approved' &&
+          !positiveTags.includes(t),
+      );
+      const newTags = [...new Set([...retainedTags, ...negativeTags])];
+
+      const savedAnnotation = await this._api.annotation.update(
+        { id: annotation.id },
+        { tags: newTags },
+      );
+
+      for (const [key, value] of Object.entries(annotation)) {
+        if (key.startsWith('$')) {
+          const fields: Record<string, unknown> = savedAnnotation;
+          fields[key] = value;
+        }
+      }
+
+      this._store.addAnnotations([savedAnnotation]);
+      void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
+
+      return savedAnnotation;
     }
 
     const savedAnnotation = await this._api.annotation.moderate(
