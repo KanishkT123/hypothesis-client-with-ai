@@ -10,8 +10,9 @@ import type {
 import type { AnnotationEventType, SidebarSettings } from '../../types/config';
 import { parseAccountID } from '../helpers/account-id';
 import {
-  negativeSchemaTagForPositiveTag,
-  positiveSchemaTags,
+  retagAllPositiveSchemaTagsAsNegative,
+  retagOneNegativeSchemaTagAsPositive,
+  retagOnePositiveSchemaTagAsNegative,
 } from '../helpers/ai-search-group-history';
 import * as metadata from '../helpers/annotation-metadata';
 import type { UserItem } from '../helpers/mention-suggestions';
@@ -423,30 +424,12 @@ export class AnnotationsService {
       // Keep the annotation on the server as a negative example instead of
       // deleting it: drop `ai-pending` and the positive schema tag(s), add the
       // `{schemaTag}-neg-example` variant(s). The quote and query (text) stay.
-      const positiveTags = positiveSchemaTags(tags);
-      const negativeTags = positiveTags.map(negativeSchemaTagForPositiveTag);
-      const retainedTags = tags.filter(
-        t =>
-          t !== 'ai-pending' &&
-          t !== 'ai-user-approved' &&
-          !positiveTags.includes(t),
+      const newTags = retagAllPositiveSchemaTagsAsNegative(tags);
+
+      const savedAnnotation = await this._updateAnnotationTags(
+        annotation,
+        newTags,
       );
-      const newTags = [...new Set([...retainedTags, ...negativeTags])];
-
-      const savedAnnotation = await this._api.annotation.update(
-        { id: annotation.id },
-        { tags: newTags },
-      );
-
-      for (const [key, value] of Object.entries(annotation)) {
-        if (key.startsWith('$')) {
-          const fields: Record<string, unknown> = savedAnnotation;
-          fields[key] = value;
-        }
-      }
-
-      this._store.addAnnotations([savedAnnotation]);
-      void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
 
       return savedAnnotation;
     }
@@ -465,6 +448,82 @@ export class AnnotationsService {
     void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
 
     return savedAnnotation;
+  }
+
+  /**
+   * Persist a new tag list for a saved annotation and refresh local state.
+   */
+  private async _updateAnnotationTags(
+    annotation: SavedAnnotation,
+    newTags: string[],
+  ): Promise<Annotation> {
+    let savedAnnotation = await this._api.annotation.update(
+      { id: annotation.id },
+      { tags: newTags },
+    );
+
+    for (const [key, value] of Object.entries(annotation)) {
+      if (key.startsWith('$')) {
+        const fields: Record<string, unknown> = savedAnnotation;
+        fields[key] = value;
+      }
+    }
+
+    this._store.addAnnotations([savedAnnotation]);
+    void this._aiSearchGroupHistorySync.syncGroupHistory({ mode: 'document' });
+
+    return savedAnnotation;
+  }
+
+  /**
+   * Remove a single tag from a saved annotation and persist immediately.
+   */
+  async removeTagFromAnnotation(
+    annotation: SavedAnnotation,
+    tag: string,
+  ): Promise<Annotation> {
+    const tags = annotation.tags ?? [];
+    if (!tags.includes(tag)) {
+      throw new Error(`Tag not found: ${tag}`);
+    }
+    return this._updateAnnotationTags(
+      annotation,
+      tags.filter(t => t !== tag),
+    );
+  }
+
+  /**
+   * Convert one positive content tag to its `-neg-example` variant.
+   */
+  async markTagAsNegativeExample(
+    annotation: SavedAnnotation,
+    positiveTag: string,
+  ): Promise<Annotation> {
+    const newTags = retagOnePositiveSchemaTagAsNegative(
+      annotation.tags ?? [],
+      positiveTag,
+    );
+    if (!newTags) {
+      throw new Error(`Cannot mark tag as negative example: ${positiveTag}`);
+    }
+    return this._updateAnnotationTags(annotation, newTags);
+  }
+
+  /**
+   * Revert one `-neg-example` tag back to its positive schema tag name.
+   */
+  async revertNegativeExampleTag(
+    annotation: SavedAnnotation,
+    negativeTag: string,
+  ): Promise<Annotation> {
+    const newTags = retagOneNegativeSchemaTagAsPositive(
+      annotation.tags ?? [],
+      negativeTag,
+    );
+    if (!newTags) {
+      throw new Error(`Cannot revert negative example tag: ${negativeTag}`);
+    }
+    return this._updateAnnotationTags(annotation, newTags);
   }
 
   /**

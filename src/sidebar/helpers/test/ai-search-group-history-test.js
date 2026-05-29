@@ -1,13 +1,19 @@
 import * as fixtures from '../../test/annotation-fixtures';
 
 import {
+  canMarkTagAsNegativeExample,
+  canRevertNegativeExampleTag,
   deriveAISearchHistoryRowDescriptors,
   isAISearchRowVisibleInScope,
+  isConvertiblePositiveContentTag,
   isNegativeSchemaTag,
   negativeSchemaTagForPositiveTag,
   negativeSchemaTags,
+  positiveSchemaTagForNegativeTag,
   positiveSchemaTags,
   pruneAISearchRowsToDescriptors,
+  retagOneNegativeSchemaTagAsPositive,
+  retagOnePositiveSchemaTagAsNegative,
   rowDescriptorKey,
   sortAISearchRows,
 } from '../ai-search-group-history';
@@ -77,6 +83,85 @@ describe('sidebar/helpers/ai-search-group-history', () => {
       assert.deepEqual(
         negativeSchemaTags(['methods', 'methods-neg-example']),
         ['methods-neg-example'],
+      );
+    });
+  });
+
+  describe('tag pill retag helpers', () => {
+    it('isConvertiblePositiveContentTag excludes system and negative tags', () => {
+      assert.isTrue(isConvertiblePositiveContentTag('methods'));
+      assert.isFalse(isConvertiblePositiveContentTag('methods-neg-example'));
+      assert.isFalse(isConvertiblePositiveContentTag('ai-pending'));
+    });
+
+    it('positiveSchemaTagForNegativeTag strips suffix', () => {
+      assert.equal(
+        positiveSchemaTagForNegativeTag('methods-neg-example'),
+        'methods',
+      );
+      assert.isNull(positiveSchemaTagForNegativeTag('methods'));
+    });
+
+    it('retagOnePositiveSchemaTagAsNegative converts one positive tag', () => {
+      assert.deepEqual(
+        retagOnePositiveSchemaTagAsNegative(['methods'], 'methods'),
+        ['methods-neg-example'],
+      );
+      assert.deepEqual(
+        retagOnePositiveSchemaTagAsNegative(
+          ['methods', 'ai-user-approved'],
+          'methods',
+        ),
+        ['methods-neg-example'],
+      );
+      assert.deepEqual(
+        retagOnePositiveSchemaTagAsNegative(['methods', 'other'], 'methods'),
+        ['other', 'methods-neg-example'],
+      );
+      assert.isNull(
+        retagOnePositiveSchemaTagAsNegative(['methods-neg-example'], 'methods'),
+      );
+    });
+
+    it('retagOneNegativeSchemaTagAsPositive reverts one negative tag', () => {
+      assert.deepEqual(
+        retagOneNegativeSchemaTagAsPositive(
+          ['methods-neg-example'],
+          'methods-neg-example',
+        ),
+        ['methods'],
+      );
+      assert.deepEqual(
+        retagOneNegativeSchemaTagAsPositive(
+          ['methods-neg-example', 'other'],
+          'methods-neg-example',
+        ),
+        ['methods', 'other'],
+      );
+      assert.isNull(
+        retagOneNegativeSchemaTagAsPositive(['methods'], 'methods-neg-example'),
+      );
+    });
+
+    it('canMarkTagAsNegativeExample requires no ai-pending', () => {
+      assert.isTrue(canMarkTagAsNegativeExample(['methods'], 'methods'));
+      assert.isFalse(
+        canMarkTagAsNegativeExample(['ai-pending', 'methods'], 'methods'),
+      );
+    });
+
+    it('canRevertNegativeExampleTag requires negative tag and no ai-pending', () => {
+      assert.isTrue(
+        canRevertNegativeExampleTag(
+          ['methods-neg-example'],
+          'methods-neg-example',
+        ),
+      );
+      assert.isFalse(
+        canRevertNegativeExampleTag(
+          ['ai-pending', 'methods-neg-example'],
+          'methods-neg-example',
+        ),
       );
     });
   });

@@ -6,6 +6,10 @@ import { useMemo, useState } from 'preact/hooks';
 import type { Annotation } from '../../../types/api';
 import type { SidebarSettings } from '../../../types/config';
 import { isThirdPartyUser } from '../../helpers/account-id';
+import {
+  canMarkTagAsNegativeExample,
+  canRevertNegativeExampleTag,
+} from '../../helpers/ai-search-group-history';
 import type { MentionMode } from '../../helpers/mentions';
 import { applyTheme } from '../../helpers/theme';
 import { withServices } from '../../service-context';
@@ -49,6 +53,12 @@ function ToggleExcerptButton({
 
 export type AnnotationBodyProps = {
   annotation: Annotation;
+  /** When true, tag pills show remove and mark/revert actions. */
+  canEditTags?: boolean;
+  tagActionsDisabled?: boolean;
+  onMarkNegativeExample?: (tag: string) => void;
+  onRemoveTag?: (tag: string) => void;
+  onRevertNegativeExample?: (tag: string) => void;
 
   // injected
   settings: SidebarSettings;
@@ -57,7 +67,15 @@ export type AnnotationBodyProps = {
 /**
  * Display the rendered content of an annotation.
  */
-function AnnotationBody({ annotation, settings }: AnnotationBodyProps) {
+function AnnotationBody({
+  annotation,
+  canEditTags = false,
+  onMarkNegativeExample,
+  onRemoveTag,
+  onRevertNegativeExample,
+  settings,
+  tagActionsDisabled = false,
+}: AnnotationBodyProps) {
   // Should the text content of `Excerpt` be rendered in a collapsed state,
   // assuming it is collapsible (exceeds allotted collapsed space)?
   const [collapsed, setCollapsed] = useState(true);
@@ -121,9 +139,25 @@ function AnnotationBody({ annotation, settings }: AnnotationBodyProps) {
                     <TagListItem
                       key={tag}
                       tag={tag}
+                      disabled={tagActionsDisabled}
                       href={
                         !authorIsThirdParty
                           ? createTagSearchURL(tag)
+                          : undefined
+                      }
+                      onRemoveTag={canEditTags ? onRemoveTag : undefined}
+                      onMarkNegativeExample={
+                        canEditTags &&
+                        onMarkNegativeExample &&
+                        canMarkTagAsNegativeExample(tags, tag)
+                          ? onMarkNegativeExample
+                          : undefined
+                      }
+                      onRevertNegativeExample={
+                        canEditTags &&
+                        onRevertNegativeExample &&
+                        canRevertNegativeExampleTag(tags, tag)
+                          ? onRevertNegativeExample
                           : undefined
                       }
                     />

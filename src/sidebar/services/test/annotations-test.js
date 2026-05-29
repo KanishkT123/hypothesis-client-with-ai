@@ -840,6 +840,78 @@ describe('AnnotationsService', () => {
     });
   });
 
+  describe('tag pill updates', () => {
+    it('removeTagFromAnnotation updates tags on the server and store', async () => {
+      const annotation = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['methods', 'other'],
+      };
+      const updated = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['other'],
+      };
+      fakeApi.annotation.update.resolves(updated);
+
+      const result = await svc.removeTagFromAnnotation(annotation, 'methods');
+
+      assert.calledWith(
+        fakeApi.annotation.update,
+        { id: annotation.id },
+        { tags: ['other'] },
+      );
+      assert.calledWith(fakeStore.addAnnotations, [updated]);
+      assert.calledWith(fakeAiSearchGroupHistorySync.syncGroupHistory, {
+        mode: 'document',
+      });
+      assert.equal(result, updated);
+    });
+
+    it('markTagAsNegativeExample retags one positive schema tag', async () => {
+      const annotation = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['methods', 'other'],
+      };
+      const updated = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['other', 'methods-neg-example'],
+      };
+      fakeApi.annotation.update.resolves(updated);
+
+      const result = await svc.markTagAsNegativeExample(annotation, 'methods');
+
+      assert.calledWith(
+        fakeApi.annotation.update,
+        { id: annotation.id },
+        { tags: ['other', 'methods-neg-example'] },
+      );
+      assert.equal(result, updated);
+    });
+
+    it('revertNegativeExampleTag restores positive schema tag', async () => {
+      const annotation = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['methods-neg-example', 'other'],
+      };
+      const updated = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['methods', 'other'],
+      };
+      fakeApi.annotation.update.resolves(updated);
+
+      const result = await svc.revertNegativeExampleTag(
+        annotation,
+        'methods-neg-example',
+      );
+
+      assert.calledWith(
+        fakeApi.annotation.update,
+        { id: annotation.id },
+        { tags: ['methods', 'other'] },
+      );
+      assert.equal(result, updated);
+    });
+  });
+
   describe('loadAnnotation', () => {
     it('calls the `read` API service', async () => {
       const annotation = fixtures.defaultAnnotation();

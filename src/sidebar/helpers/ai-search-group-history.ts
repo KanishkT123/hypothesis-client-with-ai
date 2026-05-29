@@ -45,6 +45,95 @@ function isAiSearchSystemTag(tag: string): boolean {
 }
 
 /**
+ * True when `tag` is a positive content tag that can be converted to
+ * `{tag}-neg-example` (not a system tag, not already negative).
+ */
+export function isConvertiblePositiveContentTag(tag: string): boolean {
+  return !isAiSearchSystemTag(tag) && !isNegativeSchemaTag(tag);
+}
+
+/** Positive schema tag name for a negative schema tag, or null if not negative. */
+export function positiveSchemaTagForNegativeTag(
+  negativeTag: string,
+): string | null {
+  if (!isNegativeSchemaTag(negativeTag)) {
+    return null;
+  }
+  return negativeTag.slice(0, -NEG_EXAMPLE_SCHEMA_TAG_SUFFIX.length);
+}
+
+/**
+ * Replace one positive content tag with its `-neg-example` variant; strip
+ * AI search system tags. Returns null if the tag cannot be converted.
+ */
+export function retagOnePositiveSchemaTagAsNegative(
+  tags: string[],
+  positiveTag: string,
+): string[] | null {
+  if (!isConvertiblePositiveContentTag(positiveTag) || !tags.includes(positiveTag)) {
+    return null;
+  }
+  const withoutClickedAndSystem = tags.filter(
+    t => t !== positiveTag && !isAiSearchSystemTag(t),
+  );
+  return [
+    ...withoutClickedAndSystem,
+    negativeSchemaTagForPositiveTag(positiveTag),
+  ];
+}
+
+/**
+ * Replace one negative schema tag with its positive form. Returns null if the
+ * tag is not a negative schema tag or is absent from `tags`.
+ */
+export function retagOneNegativeSchemaTagAsPositive(
+  tags: string[],
+  negativeTag: string,
+): string[] | null {
+  const positiveTag = positiveSchemaTagForNegativeTag(negativeTag);
+  if (!positiveTag || !tags.includes(negativeTag)) {
+    return null;
+  }
+  return tags.map(t => (t === negativeTag ? positiveTag : t));
+}
+
+/** Whether a pill may offer "mark as negative example" for `tag`. */
+export function canMarkTagAsNegativeExample(
+  annotationTags: string[],
+  tag: string,
+): boolean {
+  return (
+    !annotationTags.includes(AI_PENDING) &&
+    isConvertiblePositiveContentTag(tag)
+  );
+}
+
+/** Whether a pill may offer "revert to positive example" for `tag`. */
+export function canRevertNegativeExampleTag(
+  annotationTags: string[],
+  tag: string,
+): boolean {
+  return (
+    !annotationTags.includes(AI_PENDING) && isNegativeSchemaTag(tag)
+  );
+}
+
+/**
+ * Convert all positive schema tags to `-neg-example` variants; strip system
+ * tags and positive schema tags from the retained set.
+ */
+export function retagAllPositiveSchemaTagsAsNegative(tags: string[]): string[] {
+  const positives = positiveSchemaTags(tags);
+  const negativeTags = positives.map(negativeSchemaTagForPositiveTag);
+  const retainedTags = tags.filter(
+    t =>
+      !isAiSearchSystemTag(t) &&
+      !positives.includes(t),
+  );
+  return [...new Set([...retainedTags, ...negativeTags])];
+}
+
+/**
  * True when `tag` is a negative schema tag (`{name}-neg-example`).
  */
 export function isNegativeSchemaTag(tag: string): boolean {
