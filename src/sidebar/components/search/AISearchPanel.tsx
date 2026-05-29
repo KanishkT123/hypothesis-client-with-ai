@@ -36,9 +36,15 @@ import {
 } from '../../helpers/claude-ai-search-user-message';
 import { quote as annotationQuote } from '../../helpers/annotation-metadata';
 import { mergeVisibleAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
+import {
+  isAISearchRowVisibleInScope,
+  sortAISearchRows,
+} from '../../helpers/ai-search-group-history';
+import { PUBLIC_GROUP_ID } from '../../helpers/groups';
 import { formatSidebarTagFilter } from '../../helpers/filter-query-for-tag';
 import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
+import type { AISearchGroupHistorySyncService } from '../../services/ai-search-group-history-sync';
 import type { ExperimentLogService } from '../../services/experiment-log';
 import type { SavedAnnotation } from '../../../types/api';
 import type { AnnotationsService } from '../../services/annotations';
@@ -102,6 +108,7 @@ type AISearchPanelProps = {
   claude: ClaudeService;
   api: APIService;
   toastMessenger: ToastMessengerService;
+  aiSearchGroupHistorySync: AISearchGroupHistorySyncService;
 };
 
 function AISearchPanel({
@@ -112,6 +119,7 @@ function AISearchPanel({
   claude,
   api,
   toastMessenger,
+  aiSearchGroupHistorySync,
 }: AISearchPanelProps) {
   const store = useSidebarStore();
   /** AI prompt text only; not the global sidebar filter query (see setFilterQuery). */
@@ -133,8 +141,12 @@ function AISearchPanel({
   const [claudeTimerTick, setClaudeTimerTick] = useState(0);
   /** When true, rows marked `hidden` are included in the history table. */
   const [showHiddenRows, setShowHiddenRows] = useState(true);
+  /** True while a user-triggered "Refresh group tags" sync is in flight. */
+  const [refreshingGroupTags, setRefreshingGroupTags] = useState(false);
 
   const aiRows = store.aiSearchRows();
+  const focusedGroupId = store.focusedGroupId();
+  const publicDocumentScope = store.aiSearchPublicDocumentScope();
   const savedAnnotations = store.savedAnnotations();
   const schemaTagColors = store.aiSearchSchemaTagColors();
   const documentURL = claude.firstPDFURI(store.searchUris());
@@ -150,15 +162,49 @@ function AISearchPanel({
     deletingRowId !== null;
   const canAnnotateManually = schemaTag.trim().length > 0;
 
+  const publicDocumentDescriptorKeys = useMemo(
+    () =>
+      publicDocumentScope
+        ? new Set(publicDocumentScope.visibleDescriptorKeys)
+        : null,
+    [publicDocumentScope],
+  );
+  /** Rows visible in the focused group (before the hidden-row toggle). */
+  const scopedRows = useMemo(() => {
+    if (!focusedGroupId) {
+      return [];
+    }
+    return aiRows.filter(row =>
+      isAISearchRowVisibleInScope(row, {
+        focusedGroupId,
+        publicDocumentDescriptorKeys,
+      }),
+    );
+  }, [aiRows, focusedGroupId, publicDocumentDescriptorKeys]);
   const displayRows = useMemo(
     () =>
-      showHiddenRows ? aiRows : aiRows.filter(r => !r.hidden),
-    [aiRows, showHiddenRows],
+      sortAISearchRows(
+        showHiddenRows ? scopedRows : scopedRows.filter(r => !r.hidden),
+      ),
+    [scopedRows, showHiddenRows],
   );
   const hasAnyHiddenRows = useMemo(
-    () => aiRows.some(r => r.hidden === true),
-    [aiRows],
+    () => scopedRows.some(r => r.hidden === true),
+    [scopedRows],
   );
+  const isPublicGroup = focusedGroupId === PUBLIC_GROUP_ID;
+  /** Private groups can always refresh, even before any rows exist. */
+  const canRefreshGroupTags = !isPublicGroup && !!focusedGroupId;
+  /**
+   * Show the history section when there are rows to display or when the user
+   * can refresh group tags (so the Refresh control is reachable for an
+   * as-yet-empty private group).
+   */
+  const showHistorySection = scopedRows.length > 0 || canRefreshGroupTags;
+  const emptyHistoryMessage =
+    scopedRows.length === 0
+      ? 'No AI search tags found in this group yet.'
+      : 'All rows are hidden.';
   const hiddenRowsToggleDisabled = !hasAnyHiddenRows;
   const hiddenRowsToggleTitle = hiddenRowsToggleDisabled
     ? 'No un-rendered rows'
@@ -187,6 +233,22 @@ function AISearchPanel({
   };
   const clearQueryInput = () => {
     store.setAISearchPanelQueryInput(null);
+  };
+
+  /**
+   * Re-fetch all annotations in the focused (private) group and re-derive
+   * history rows. Disabled for Public (document-scoped) and while in flight.
+   */
+  const onRefreshGroupTags = async () => {
+    if (isPublicGroup || refreshingGroupTags) {
+      return;
+    }
+    setRefreshingGroupTags(true);
+    try {
+      await aiSearchGroupHistorySync.syncGroupHistory({ mode: 'auto' });
+    } finally {
+      setRefreshingGroupTags(false);
+    }
   };
 
   async function runAISearch(
@@ -686,8 +748,13 @@ function AISearchPanel({
                 }
               }}
             />
-            {aiRows.length > 0 && (
+            {showHistorySection && (
               <div className="flex flex-col gap-y-1">
+                {displayRows.length === 0 ? (
+                  <p className="text-color-text-light text-xs leading-snug m-0 py-1">
+                    {emptyHistoryMessage}
+                  </p>
+                ) : (
                 <table className="w-full table-auto border-collapse text-left text-sm text-color-text">
                   <colgroup>
                     <col className="w-min" />
@@ -945,33 +1012,61 @@ function AISearchPanel({
                     })}
                   </tbody>
                 </table>
+                )}
                 <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                   <p className="text-color-text-light text-xs leading-snug m-0 grow min-w-[12rem]">
                     Highlight color is per tag (rows sharing a tag share the
                     color).
                   </p>
-                  <button
-                    type="button"
-                    disabled={hiddenRowsToggleDisabled}
-                    title={hiddenRowsToggleTitle}
-                    aria-label={hiddenRowsToggleTitle}
-                    className={classnames(
-                      'shrink-0 text-xs rounded px-2 py-1 border border-grey-3',
-                      'text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring',
-                      hiddenRowsToggleDisabled &&
-                        'opacity-50 cursor-not-allowed',
-                    )}
-                    onClick={() => {
-                      if (hiddenRowsToggleDisabled) {
-                        return;
+                  <div className="flex shrink-0 items-center gap-x-2">
+                    <button
+                      type="button"
+                      data-testid="ai-search-refresh-group-tags"
+                      disabled={isPublicGroup || refreshingGroupTags}
+                      aria-disabled={isPublicGroup || refreshingGroupTags}
+                      title={
+                        isPublicGroup
+                          ? 'Group tag refresh is unavailable in the public group'
+                          : 'Re-fetch tags from all annotations in this group'
                       }
-                      setShowHiddenRows(v => !v);
-                    }}
-                  >
-                    {showHiddenRows
-                      ? 'Hide un-rendered rows'
-                      : 'Show un-rendered rows'}
-                  </button>
+                      aria-label="Refresh group tags"
+                      className={classnames(
+                        'shrink-0 text-xs rounded px-2 py-1 border border-grey-3',
+                        'text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring',
+                        (isPublicGroup || refreshingGroupTags) &&
+                          'opacity-50 cursor-not-allowed',
+                      )}
+                      onClick={() => {
+                        void onRefreshGroupTags();
+                      }}
+                    >
+                      {refreshingGroupTags
+                        ? 'Refreshing group tags…'
+                        : 'Refresh group tags'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={hiddenRowsToggleDisabled}
+                      title={hiddenRowsToggleTitle}
+                      aria-label={hiddenRowsToggleTitle}
+                      className={classnames(
+                        'shrink-0 text-xs rounded px-2 py-1 border border-grey-3',
+                        'text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring',
+                        hiddenRowsToggleDisabled &&
+                          'opacity-50 cursor-not-allowed',
+                      )}
+                      onClick={() => {
+                        if (hiddenRowsToggleDisabled) {
+                          return;
+                        }
+                        setShowHiddenRows(v => !v);
+                      }}
+                    >
+                      {showHiddenRows
+                        ? 'Hide un-rendered rows'
+                        : 'Show un-rendered rows'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -1070,4 +1165,5 @@ export default withServices(AISearchPanel, [
   'claude',
   'api',
   'toastMessenger',
+  'aiSearchGroupHistorySync',
 ]);

@@ -4,12 +4,18 @@ import { fakeReduxStore } from '../../test/fake-redux-store';
 import { setupAISearchTagPaletteSync } from '../ai-search-tag-palette-sync';
 
 describe('setupAISearchTagPaletteSync', () => {
-  function createStore(aiSearch) {
-    return fakeReduxStore({
-      sidebarPanels: {
-        aiSearch,
+  function createStore(aiSearch, { focusedGroupId = 'group-1', publicScope = null } = {}) {
+    return fakeReduxStore(
+      {
+        sidebarPanels: {
+          aiSearch,
+        },
       },
-    });
+      {
+        focusedGroupId: () => focusedGroupId,
+        aiSearchPublicDocumentScope: () => publicScope,
+      },
+    );
   }
 
   it('pushes palette using visible rows only on setup', () => {
@@ -17,7 +23,15 @@ describe('setupAISearchTagPaletteSync', () => {
       setTagHighlightPalette: sinon.stub(),
     };
     const store = createStore({
-      rows: [{ id: 'r1', schemaTag: 'topic', query: '', annotationIds: [] }],
+      rows: [
+        {
+          id: 'r1',
+          groupId: 'group-1',
+          schemaTag: 'topic',
+          query: '',
+          annotationIds: [],
+        },
+      ],
       schemaTagColors: { topic: 'rgba(1, 2, 3, 0.38)' },
     });
 
@@ -36,7 +50,15 @@ describe('setupAISearchTagPaletteSync', () => {
       setTagHighlightPalette: sinon.stub(),
     };
     const store = createStore({
-      rows: [{ id: 'r1', schemaTag: 'topic', query: '', annotationIds: [] }],
+      rows: [
+        {
+          id: 'r1',
+          groupId: 'group-1',
+          schemaTag: 'topic',
+          query: '',
+          annotationIds: [],
+        },
+      ],
       schemaTagColors: { topic: 'rgba(1, 2, 3, 0.38)' },
     });
 
@@ -48,6 +70,7 @@ describe('setupAISearchTagPaletteSync', () => {
           rows: [
             {
               id: 'r1',
+              groupId: 'group-1',
               schemaTag: 'topic',
               query: '',
               annotationIds: [],
@@ -61,7 +84,15 @@ describe('setupAISearchTagPaletteSync', () => {
     store.setState({
       sidebarPanels: {
         aiSearch: {
-          rows: [{ id: 'r1', schemaTag: 'topic', query: '', annotationIds: [] }],
+          rows: [
+            {
+              id: 'r1',
+              groupId: 'group-1',
+              schemaTag: 'topic',
+              query: '',
+              annotationIds: [],
+            },
+          ],
           schemaTagColors: { topic: 'rgba(1, 2, 3, 0.38)' },
         },
       },
