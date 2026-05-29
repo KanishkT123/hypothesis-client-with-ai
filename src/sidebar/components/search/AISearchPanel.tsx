@@ -93,7 +93,7 @@ function formatClaudeWaitElapsed(anchorMs: number, nowMs: number): string {
 }
 
 const aiSearchHistoryActionButtonClass =
-  'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring';
+  'p-0.5 rounded text-grey-6 hover:text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring';
 
 /** Native title / aria-label for the history-table rerun (redo) control */
 const aiSearchRerunButtonHelpText =
@@ -781,17 +781,17 @@ function AISearchPanel({
                   </colgroup>
                   <thead>
                     <tr className="border-b border-grey-3 text-color-text-light">
-                      <th className="py-1 pr-2 text-sm font-normal" scope="col">
+                      <th className="py-0.5 pr-2 text-sm font-normal" scope="col">
                         <span className="sr-only">Color</span>
                       </th>
-                      <th className="py-1 pr-2 text-sm font-normal" scope="col">
+                      <th className="py-0.5 pr-2 text-sm font-normal" scope="col">
                         Tag
                       </th>
-                      <th className="py-1 pr-2 text-sm font-normal" scope="col">
+                      <th className="py-0.5 pr-2 text-sm font-normal" scope="col">
                         Query
                       </th>
                       <th
-                        className="py-1 pr-2 text-right text-sm font-normal tabular-nums"
+                        className="py-0.5 pr-2 text-right text-sm font-normal tabular-nums"
                         scope="col"
                       >
                         <span className="sr-only">
@@ -800,7 +800,7 @@ function AISearchPanel({
                         </span>
                       </th>
                       <th
-                        className="py-1 text-center text-sm font-normal"
+                        className="py-0.5 text-center text-sm font-normal"
                         scope="col"
                       >
                         <span className="sr-only">
@@ -846,31 +846,8 @@ function AISearchPanel({
                             row.hidden && 'opacity-70',
                           )}
                         >
-                          <td className="py-1 pr-2 align-middle whitespace-nowrap w-min">
-                            <div className="flex flex-col items-center gap-0.5">
-                              <input
-                                aria-label={`Highlight color for tag ${tagKey || '(empty)'}`}
-                                className="h-8 w-10 cursor-pointer rounded border border-grey-3 bg-transparent p-0"
-                                disabled={!tagKey}
-                                title={
-                                  tagKey
-                                    ? undefined
-                                    : 'Set a schema tag to customize color'
-                                }
-                                type="color"
-                                value={hex}
-                                onInput={(e: Event) => {
-                                  if (!tagKey) {
-                                    return;
-                                  }
-                                  const v = (e.target as HTMLInputElement)
-                                    .value;
-                                  store.setAISearchSchemaTagColor(
-                                    tagKey,
-                                    hexColorInputToRgba(v, TAG_HIGHLIGHT_ALPHA),
-                                  );
-                                }}
-                              />
+                          <td className="py-0.5 pr-2 align-middle whitespace-nowrap w-min">
+                            <div className="flex flex-row items-center gap-1">
                               <button
                                 type="button"
                                 className={classnames(
@@ -900,9 +877,32 @@ function AISearchPanel({
                                   <HideIcon className="w-em h-em" />
                                 )}
                               </button>
+                              <input
+                                aria-label={`Highlight color for tag ${tagKey || '(empty)'}`}
+                                className="h-6 w-8 cursor-pointer rounded border border-grey-3 bg-transparent p-0"
+                                disabled={!tagKey}
+                                title={
+                                  tagKey
+                                    ? undefined
+                                    : 'Set a schema tag to customize color'
+                                }
+                                type="color"
+                                value={hex}
+                                onInput={(e: Event) => {
+                                  if (!tagKey) {
+                                    return;
+                                  }
+                                  const v = (e.target as HTMLInputElement)
+                                    .value;
+                                  store.setAISearchSchemaTagColor(
+                                    tagKey,
+                                    hexColorInputToRgba(v, TAG_HIGHLIGHT_ALPHA),
+                                  );
+                                }}
+                              />
                             </div>
                           </td>
-                          <td className="py-1 pr-2 align-middle break-words text-xs leading-snug">
+                          <td className="py-0.5 pr-2 align-middle break-words text-xs leading-snug">
                             {tagKey ? (
                               <button
                                 type="button"
@@ -927,7 +927,7 @@ function AISearchPanel({
                               <span className="text-color-text-light">—</span>
                             )}
                           </td>
-                          <td className="py-1 pr-2 align-middle break-words text-xs leading-snug">
+                          <td className="py-0.5 pr-2 align-middle break-words text-xs leading-snug">
                             {row.query.trim() ? (
                               row.query
                             ) : (
@@ -936,7 +936,7 @@ function AISearchPanel({
                               </span>
                             )}
                           </td>
-                          <td className="w-min py-1 pr-2 text-right align-middle tabular-nums whitespace-nowrap">
+                          <td className="w-min py-0.5 pr-2 text-right align-middle tabular-nums whitespace-nowrap">
                             <span
                               title="Strict AI-pending annotations for this tag and query on this document"
                               className="cursor-help tabular-nums"
@@ -956,8 +956,8 @@ function AISearchPanel({
                               {totalCount}
                             </span>
                           </td>
-                          <td className="w-min py-1 align-middle whitespace-nowrap">
-                            <div className="flex w-min flex-col items-center gap-0.5">
+                          <td className="w-min py-0.5 align-middle whitespace-nowrap">
+                            <div className="flex w-min flex-row items-center gap-0.5">
                               <button
                                 type="button"
                                 aria-disabled={rerunDisabled}
