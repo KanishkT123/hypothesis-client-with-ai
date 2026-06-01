@@ -176,6 +176,32 @@ describe('TagInventoryGroupSyncService', () => {
     assert.isNull(svc.cachedGroupAnnotations('private-group'));
   });
 
+  it('init watch ignores unrelated store updates (uses shallowEqual)', async () => {
+    let subscribeCallback;
+    fakeStore.subscribe = cb => {
+      subscribeCallback = cb;
+      return () => {};
+    };
+    fakeStore.hasFetchedProfile.returns(true);
+    fakeStore.focusedGroupId.returns('private-group');
+
+    svc.init();
+
+    subscribeCallback();
+    await Promise.resolve();
+    await svc.waitForSyncIfInFlight();
+
+    assert.calledOnce(groupAnnotationsRead);
+    groupAnnotationsRead.resetHistory();
+
+    // Simulate an unrelated store update (e.g. apiRequestStarted) while the
+    // focused group and profile state are unchanged.
+    subscribeCallback();
+    await Promise.resolve();
+
+    assert.notCalled(groupAnnotationsRead);
+  });
+
   it('paginates with page[after] until a short page is returned', async () => {
     const fullPage = Array.from({ length: 100 }, (_, i) => ({
       id: `a${i}`,

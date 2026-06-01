@@ -9,6 +9,16 @@ import { watch } from '../util/watch';
 import type { APIService } from './api';
 import { applyDerivedTagInventoryRows } from './tag-inventory-reconcile';
 
+type FocusedGroupWatchValue = readonly [boolean, string | null];
+
+/** Compare profile + group watch values without relying on array reference equality. */
+function focusedGroupWatchValuesEqual(
+  current: FocusedGroupWatchValue,
+  previous: FocusedGroupWatchValue,
+): boolean {
+  return current[0] === previous[0] && current[1] === previous[1];
+}
+
 /** Max page size accepted by `GET /api/groups/{id}/annotations`. */
 const GROUP_ANNOTATIONS_PAGE_SIZE = 100;
 
@@ -132,6 +142,10 @@ export class TagInventoryGroupSyncService {
   private _groupAnnotationCache = new Map<string, SavedAnnotation[]>();
   private _groupAnnotationCacheLoaded = new Set<string>();
   private _activeSync: Promise<void> | null = null;
+  /** True while a sync pass is on the stack (guards re-entrant calls). */
+  private _syncOnStack = false;
+  /** Run one more sync after the current pass if re-entry was attempted. */
+  private _resyncAfterCurrent = false;
 
   constructor(api: APIService, store: SidebarStore) {
     this._api = api;
@@ -159,8 +173,13 @@ export class TagInventoryGroupSyncService {
           this._abortSync();
           this._clearGroupAnnotationCache();
         }
-        void this.syncGroupInventory({ mode: 'auto' });
+        // Never start sync synchronously inside a store subscriber — API
+        // requests dispatch apiRequestStarted/finished and would re-enter.
+        queueMicrotask(() => {
+          void this.syncGroupInventory({ mode: 'auto' });
+        });
       },
+      focusedGroupWatchValuesEqual,
     );
   }
 
@@ -242,6 +261,11 @@ export class TagInventoryGroupSyncService {
   }
 
   async syncGroupInventory(options: SyncGroupInventoryOptions = {}) {
+    if (this._syncOnStack) {
+      this._resyncAfterCurrent = true;
+      return this._activeSync ?? Promise.resolve();
+    }
+
     const groupId = this._store.focusedGroupId();
     if (!groupId) {
       return;
@@ -255,6 +279,7 @@ export class TagInventoryGroupSyncService {
     this._syncController = new AbortController();
     const { signal } = this._syncController;
     this._syncing = true;
+    this._syncOnStack = true;
 
     const syncWork = (async () => {
       try {
@@ -309,8 +334,13 @@ export class TagInventoryGroupSyncService {
     try {
       await syncWork;
     } finally {
+      this._syncOnStack = false;
       if (this._activeSync === syncWork) {
         this._activeSync = null;
+      }
+      if (this._resyncAfterCurrent) {
+        this._resyncAfterCurrent = false;
+        void this.syncGroupInventory(options);
       }
     }
   }
