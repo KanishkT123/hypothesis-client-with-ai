@@ -23,6 +23,7 @@ import ToastMessages from './ToastMessages';
 import TopBar from './TopBar';
 import SearchPanel from './search/SearchPanel';
 import AISearchPanel from './search/AISearchPanel';
+import EmptyPanel from './search/EmptyPanel';
 
 export type HypothesisAppProps = {
   auth: AuthService;
@@ -184,6 +185,7 @@ function HypothesisApp({
         <HelpPanel />
         <SearchPanel />
         <AISearchPanel />
+        <EmptyPanel />
         <SharePanel shareTab={!isThirdParty} />
 
         {route && (

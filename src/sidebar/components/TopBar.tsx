@@ -13,6 +13,7 @@ import SortMenu from './SortMenu';
 import TopBarToggleButton from './TopBarToggleButton';
 import UserMenu from './UserMenu';
 import AISearchIconButton from './search/AISearchIconButton';
+import EmptyPanelIconButton from './search/EmptyPanelIconButton';
 import SearchIconButton from './search/SearchIconButton';
 import StreamSearchInput from './search/StreamSearchInput';
 
@@ -113,6 +114,7 @@ function TopBar({
           {isSidebar && (
             <>
               <AISearchIconButton />
+              <EmptyPanelIconButton />
               <SearchIconButton />
               <SortMenu />
               {controlEnabled(settings, 'share') && (

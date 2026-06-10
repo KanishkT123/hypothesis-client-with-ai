@@ -124,10 +124,15 @@ function SidebarTabs({
     store.selectTab(tabId);
   };
 
+  const isAIOrEmptyPanelOpen =
+    store.isSidebarPanelOpen('aiSearchAnnotations') ||
+    store.isSidebarPanelOpen('emptyPanel');
+
   const showAnnotationsUnavailableMessage =
     selectedTab === 'annotation' &&
     annotationCount === 0 &&
-    !isWaitingToAnchorAnnotations;
+    !isWaitingToAnchorAnnotations &&
+    !isAIOrEmptyPanelOpen;
 
   const showNotesUnavailableMessage = selectedTab === 'note' && noteCount === 0;
 
@@ -156,7 +161,7 @@ function SidebarTabs({
       <div aria-live="polite" role="status" className="sr-only">
         {tabCountsSummary}
       </div>
-      <div
+      {!isAIOrEmptyPanelOpen && <div
         className={classnames(
           // 9px balances out the space above the tabs
           'space-y-3 pb-[9px]',
@@ -247,7 +252,7 @@ function SidebarTabs({
           )}
           <ThreadList threads={rootThread.children} />
         </div>
-      </div>
+      </div>}
     </>
   );
 }
