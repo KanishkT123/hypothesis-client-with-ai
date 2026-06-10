@@ -257,7 +257,7 @@ export class AnnotationsService {
     await this._api.annotation.delete({ id: annotation.id });
     this._activity.reportActivity('delete', annotation);
     this._store.removeAnnotations([annotation]);
-    void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
+    void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
 
     if (!opts?.skipExperimentLog) {
       const tags = annotation.tags ?? [];
@@ -353,7 +353,7 @@ export class AnnotationsService {
 
     // Add (or, in effect, update) the annotation to the store's collection
     this._store.addAnnotations([savedAnnotation]);
-    void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
+    void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
     return savedAnnotation;
   }
 
@@ -394,7 +394,7 @@ export class AnnotationsService {
       }
 
       this._store.addAnnotations([savedAnnotation]);
-      void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
+      void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
 
       this._experimentLog.logAccept({
         annotationId: savedAnnotation.id!,
@@ -445,7 +445,7 @@ export class AnnotationsService {
 
     // Add (or, in effect, update) the annotation to the store's collection
     this._store.addAnnotations([savedAnnotation]);
-    void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
+    void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
 
     return savedAnnotation;
   }
@@ -470,7 +470,7 @@ export class AnnotationsService {
     }
 
     this._store.addAnnotations([savedAnnotation]);
-    void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
+    void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
 
     return savedAnnotation;
   }

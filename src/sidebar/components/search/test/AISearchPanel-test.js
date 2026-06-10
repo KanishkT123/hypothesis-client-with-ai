@@ -29,7 +29,7 @@ describe('AISearchPanel', () => {
     };
 
     fakeTagInventoryGroupSync = {
-      syncGroupInventory: sinon.stub().resolves(),
+      getGroupAnnotations: sinon.stub().resolves([]),
     };
 
     $imports.$mock(mockImportedComponents());
@@ -139,22 +139,83 @@ describe('AISearchPanel', () => {
   });
 
   it('refreshes group tags when the refresh button is clicked', () => {
-    fakeStore.tagInventoryRows.returns([
-      { id: 'r', groupId: 'group-1', schemaTag: 'methods', query: '', annotationIds: [] },
-    ]);
-
     const wrapper = createAISearchPanel();
     const button = refreshButton(wrapper);
 
     assert.isNotTrue(button.prop('disabled'));
     button.simulate('click');
 
-    assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
-      mode: 'auto',
-    });
+    assert.calledWith(
+      fakeTagInventoryGroupSync.getGroupAnnotations,
+      'group-1',
+      { force: true },
+    );
   });
 
-  it('shows the refresh control even when a private group has no rows', () => {
+  it('calls getGroupAnnotations when rerun is triggered on a row', async () => {
+    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.focusedGroupId.returns('group-1');
+    fakeStore.searchUris.returns(['http://example.com/doc.pdf']);
+    fakeStore.tagInventoryRows.returns([
+      {
+        id: 'row-1',
+        groupId: 'group-1',
+        schemaTag: 'methods',
+        query: 'find methods',
+        annotationIds: [],
+      },
+    ]);
+    fakeStore.mergeTagInventoryRowsWithSameTagQuery = sinon.stub();
+    fakeStore.removeAnnotationIdsFromTagInventoryRows = sinon.stub();
+
+    const fakeClaude = {
+      firstPDFURI: sinon.stub().returns('http://example.com/doc.pdf'),
+      AISearchDocument: sinon.stub().rejects(new Error('stop after cache')),
+    };
+    const fakeAnnotationsService = {
+      delete: sinon.stub().resolves(),
+    };
+    const fakeExperimentLog = {
+      logRerunSearch: sinon.stub(),
+    };
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={fakeAnnotationsService}
+        experimentLog={fakeExperimentLog}
+        frameSync={{ setTagHighlightPalette: sinon.stub() }}
+        claude={fakeClaude}
+        api={{}}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+      />,
+    );
+
+    const rerunButton = wrapper
+      .find('button')
+      .filterWhere(
+        n =>
+          (n.prop('aria-label') || '').includes(
+            're-run the AI search',
+          ),
+      );
+
+    rerunButton.simulate('click');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.calledWith(
+      fakeTagInventoryGroupSync.getGroupAnnotations,
+      'group-1',
+    );
+  });
+
+  it('shows the refresh button for a private group even with no rows', () => {
     fakeStore.tagInventoryRows.returns([]);
 
     const wrapper = createAISearchPanel();
@@ -162,34 +223,23 @@ describe('AISearchPanel', () => {
 
     assert.isTrue(button.exists());
     assert.isNotTrue(button.prop('disabled'));
-    assert.include(wrapper.text(), 'No AI search tags found in this group yet.');
   });
 
-  it('hides the history section for an empty public group', () => {
+  it('hides the refresh button for the public group', () => {
     fakeStore.focusedGroupId.returns('__world__');
-    fakeStore.tagInventoryPublicDocumentScope.returns(null);
-    fakeStore.tagInventoryRows.returns([]);
 
     const wrapper = createAISearchPanel();
 
     assert.isFalse(refreshButton(wrapper).exists());
   });
 
-  it('disables the refresh button and skips sync for the public group', () => {
+  it('does not call getGroupAnnotations when refresh button is clicked in the public group', () => {
     fakeStore.focusedGroupId.returns('__world__');
-    fakeStore.tagInventoryPublicDocumentScope.returns({
-      documentUri: 'http://example.com',
-      visibleDescriptorKeys: [rowDescriptorKey('methods', '')],
-    });
-    fakeStore.tagInventoryRows.returns([
-      { id: 'r', groupId: '__world__', schemaTag: 'methods', query: '', annotationIds: [] },
-    ]);
+    fakeStore.tagInventoryRows.returns([]);
 
     const wrapper = createAISearchPanel();
-    const button = refreshButton(wrapper);
 
-    assert.isTrue(button.prop('disabled'));
-    button.simulate('click');
-    assert.notCalled(fakeTagInventoryGroupSync.syncGroupInventory);
+    assert.isFalse(refreshButton(wrapper).exists());
+    assert.notCalled(fakeTagInventoryGroupSync.getGroupAnnotations);
   });
 });

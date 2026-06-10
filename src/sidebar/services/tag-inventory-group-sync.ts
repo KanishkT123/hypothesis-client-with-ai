@@ -25,18 +25,8 @@ const GROUP_ANNOTATIONS_PAGE_SIZE = 100;
 /** Hard cap on pages to guard against a non-advancing cursor. */
 const MAX_GROUP_ANNOTATION_PAGES = 1000;
 
-/**
- * - `auto`: choose by group type — Public re-derives from the current document;
- *   private groups do a full paginated group fetch (used for group switch, doc
- *   load, and the Refresh-group-tags button).
- * - `document`: cheap, no-network re-derive from already-loaded `savedAnnotations()`
- *   (used for local annotation CRUD and realtime updates on the current page).
- */
-export type SyncGroupInventoryMode = 'auto' | 'document';
-
 export type SyncGroupInventoryOptions = {
   documentUris?: string[];
-  mode?: SyncGroupInventoryMode;
 };
 
 function filterAnnotationsForDocumentScope(
@@ -63,17 +53,6 @@ export function savedAnnotationsForCurrentDocument(
   );
 }
 
-function resolveEffectiveMode(
-  groupId: string,
-  mode: SyncGroupInventoryMode,
-): 'document' | 'fullGroup' {
-  if (mode === 'document') {
-    return 'document';
-  }
-  // `auto`: Public stays document-scoped; private groups do a full fetch.
-  return groupId === PUBLIC_GROUP_ID ? 'document' : 'fullGroup';
-}
-
 /**
  * Fetch every annotation in a group via `GET /api/groups/{id}/annotations`.
  *
@@ -94,8 +73,8 @@ async function fetchAllGroupAnnotations(
       break;
     }
 
-    const params: { id: string } & Record<string, string | number> = {
-      id: groupId,
+    const params: { pubid: string } & Record<string, string | number> = {
+      pubid: groupId,
       'page[size]': GROUP_ANNOTATIONS_PAGE_SIZE,
     };
     if (pageAfter) {
@@ -114,8 +93,6 @@ async function fetchAllGroupAnnotations(
       break;
     }
 
-    // `page[after]` is a date cursor; results are newest-first, so the next
-    // (older) page starts after the oldest annotation's creation date.
     const nextCursor = data[data.length - 1]?.created;
     if (!nextCursor || nextCursor === pageAfter) {
       break;
@@ -127,25 +104,22 @@ async function fetchAllGroupAnnotations(
 }
 
 /**
- * Sync tag inventory rows with annotations in the focused group.
- *
- * Private groups fetch all group annotations; Public uses the current document only.
+ * Keeps tag inventory rows in sync and loads all group annotations for
+ * private-group AI few-shot examples.
  */
 // @inject
 export class TagInventoryGroupSyncService {
   private _api: APIService;
   private _store: SidebarStore;
-  private _syncController: AbortController | null = null;
   private _syncing = false;
   private _initDone = false;
-  /** Full group fetch results keyed by `groupId`; `undefined` = not loaded yet. */
   private _groupAnnotationCache = new Map<string, SavedAnnotation[]>();
   private _groupAnnotationCacheLoaded = new Set<string>();
   private _activeSync: Promise<void> | null = null;
-  /** True while a sync pass is on the stack (guards re-entrant calls). */
   private _syncOnStack = false;
-  /** Run one more sync after the current pass if re-entry was attempted. */
   private _resyncAfterCurrent = false;
+  private _groupFetchPromises = new Map<string, Promise<SavedAnnotation[]>>();
+  private _groupFetchControllers = new Map<string, AbortController>();
 
   constructor(api: APIService, store: SidebarStore) {
     this._api = api;
@@ -170,21 +144,23 @@ export class TagInventoryGroupSyncService {
           return;
         }
         if (prevGroupId && prevGroupId !== groupId) {
-          this._abortSync();
           this._clearGroupAnnotationCache();
         }
-        // Never start sync synchronously inside a store subscriber — API
-        // requests dispatch apiRequestStarted/finished and would re-enter.
         queueMicrotask(() => {
-          void this.syncGroupInventory({ mode: 'auto' });
+          if (groupId === PUBLIC_GROUP_ID) {
+            void this.applyStoreAnnotationsToInventory();
+          } else {
+            void this.getGroupAnnotations(groupId).catch(err => {
+              console.warn(
+                '[TagInventoryGroupSync] group annotations load failed',
+                err,
+              );
+            });
+          }
         });
       },
       focusedGroupWatchValuesEqual,
     );
-  }
-
-  isSyncingGroupInventory(): boolean {
-    return this._syncing;
   }
 
   /**
@@ -198,16 +174,116 @@ export class TagInventoryGroupSyncService {
     return this._groupAnnotationCache.get(groupId) ?? [];
   }
 
-  /** Await the in-flight sync, if any (used before private-group AI search). */
-  async waitForSyncIfInFlight(): Promise<void> {
-    if (this._activeSync) {
-      await this._activeSync;
+  /**
+   * Load all annotations in a private group (cached; one in-flight fetch per
+   * `groupId`). Updates inventory rows from the full group set.
+   */
+  async getGroupAnnotations(
+    groupId: string,
+    { force = false }: { force?: boolean } = {},
+  ): Promise<SavedAnnotation[]> {
+    if (groupId === PUBLIC_GROUP_ID) {
+      return savedAnnotationsForCurrentDocument(
+        this._store.savedAnnotations(),
+        groupId,
+        this._store.searchUris(),
+      );
+    }
+
+    const inFlight = this._groupFetchPromises.get(groupId);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    if (!force) {
+      const cached = this.cachedGroupAnnotations(groupId);
+      if (cached !== null) {
+        return cached;
+      }
+    }
+
+    const controller = new AbortController();
+    this._groupFetchControllers.set(groupId, controller);
+
+    const work = (async () => {
+      try {
+        const annotations = await fetchAllGroupAnnotations(
+          this._api,
+          groupId,
+          controller.signal,
+        );
+        if (controller.signal.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+
+        this._setGroupAnnotationCache(groupId, annotations);
+        this._applyFullGroupInventory(groupId, annotations);
+        return annotations;
+      } finally {
+        this._groupFetchPromises.delete(groupId);
+        this._groupFetchControllers.delete(groupId);
+      }
+    })();
+
+    this._groupFetchPromises.set(groupId, work);
+    return work;
+  }
+
+  /**
+   * Reconcile tag inventory rows from annotations already loaded for the
+   * current document. No network requests.
+   */
+  async applyStoreAnnotationsToInventory(options: SyncGroupInventoryOptions = {}) {
+    if (this._syncOnStack) {
+      this._resyncAfterCurrent = true;
+      return this._activeSync ?? Promise.resolve();
+    }
+
+    const groupId = this._store.focusedGroupId();
+    if (!groupId) {
+      return;
+    }
+
+    const documentUris = options.documentUris ?? this._store.searchUris();
+    this._syncing = true;
+    this._syncOnStack = true;
+
+    const syncWork = (async () => {
+      try {
+        const annotations = filterAnnotationsForDocumentScope(
+          this._store.savedAnnotations(),
+          groupId,
+          documentUris,
+        );
+        this._applyDocumentInventory(groupId, annotations, {
+          updatePublicScope: groupId === PUBLIC_GROUP_ID,
+          documentUri: documentUris[0] ?? this._store.mainFrame()?.uri ?? '',
+        });
+      } catch (err) {
+        console.warn('[TagInventoryGroupSync] document sync failed', err);
+      } finally {
+        this._syncing = false;
+      }
+    })();
+
+    this._activeSync = syncWork;
+    try {
+      await syncWork;
+    } finally {
+      this._syncOnStack = false;
+      if (this._activeSync === syncWork) {
+        this._activeSync = null;
+      }
+      if (this._resyncAfterCurrent) {
+        this._resyncAfterCurrent = false;
+        void this.applyStoreAnnotationsToInventory(options);
+      }
     }
   }
 
   /**
    * Upsert realtime updates into the private-group cache and drop deletions.
-   * No-op when the cache has not been populated yet (Public groups included).
+   * No-op when the cache has not been populated yet.
    */
   mergePendingUpdatesIntoCache(
     updates: Annotation[],
@@ -241,7 +317,41 @@ export class TagInventoryGroupSyncService {
     this._setGroupAnnotationCache(groupId, cached);
   }
 
+  private _applyDocumentInventory(
+    groupId: string,
+    annotations: SavedAnnotation[],
+    options?: { updatePublicScope?: boolean; documentUri?: string },
+  ) {
+    applyDerivedTagInventoryRows(this._store, {
+      groupId,
+      annotations,
+      updatePublicScope:
+        options?.updatePublicScope ?? groupId === PUBLIC_GROUP_ID,
+      documentUri:
+        options?.documentUri ??
+        this._store.searchUris()[0] ??
+        this._store.mainFrame()?.uri ??
+        '',
+    });
+  }
+
+  private _applyFullGroupInventory(
+    groupId: string,
+    annotations: SavedAnnotation[],
+  ) {
+    this._applyDocumentInventory(groupId, annotations);
+    if (groupId !== PUBLIC_GROUP_ID) {
+      const descriptors = deriveTagInventoryRowDescriptors(annotations);
+      this._store.pruneTagInventoryRowsForGroup(groupId, descriptors);
+    }
+  }
+
   private _clearGroupAnnotationCache() {
+    for (const controller of this._groupFetchControllers.values()) {
+      controller.abort();
+    }
+    this._groupFetchControllers.clear();
+    this._groupFetchPromises.clear();
     this._groupAnnotationCache.clear();
     this._groupAnnotationCacheLoaded.clear();
   }
@@ -252,96 +362,5 @@ export class TagInventoryGroupSyncService {
   ) {
     this._groupAnnotationCache.set(groupId, annotations);
     this._groupAnnotationCacheLoaded.add(groupId);
-  }
-
-  private _abortSync() {
-    this._syncController?.abort();
-    this._syncController = null;
-    this._syncing = false;
-  }
-
-  async syncGroupInventory(options: SyncGroupInventoryOptions = {}) {
-    if (this._syncOnStack) {
-      this._resyncAfterCurrent = true;
-      return this._activeSync ?? Promise.resolve();
-    }
-
-    const groupId = this._store.focusedGroupId();
-    if (!groupId) {
-      return;
-    }
-
-    const mode = options.mode ?? 'auto';
-    const effectiveMode = resolveEffectiveMode(groupId, mode);
-    const documentUris = options.documentUris ?? this._store.searchUris();
-
-    this._abortSync();
-    this._syncController = new AbortController();
-    const { signal } = this._syncController;
-    this._syncing = true;
-    this._syncOnStack = true;
-
-    const syncWork = (async () => {
-      try {
-        let annotations: SavedAnnotation[];
-
-        if (effectiveMode === 'document') {
-          annotations = filterAnnotationsForDocumentScope(
-            this._store.savedAnnotations(),
-            groupId,
-            documentUris,
-          );
-        } else {
-          annotations = await fetchAllGroupAnnotations(
-            this._api,
-            groupId,
-            signal,
-          );
-          if (signal.aborted) {
-            return;
-          }
-          this._setGroupAnnotationCache(groupId, annotations);
-        }
-
-        applyDerivedTagInventoryRows(this._store, {
-          groupId,
-          annotations,
-          updatePublicScope: groupId === PUBLIC_GROUP_ID,
-          documentUri: documentUris[0] ?? this._store.mainFrame()?.uri ?? '',
-        });
-
-        if (
-          effectiveMode === 'fullGroup' &&
-          groupId !== PUBLIC_GROUP_ID &&
-          !signal.aborted
-        ) {
-          const descriptors = deriveTagInventoryRowDescriptors(annotations);
-          this._store.pruneTagInventoryRowsForGroup(groupId, descriptors);
-        }
-      } catch (err) {
-        if (!signal.aborted) {
-          console.warn('[TagInventoryGroupSync] sync failed', err);
-        }
-      } finally {
-        if (!signal.aborted) {
-          this._syncing = false;
-          this._syncController = null;
-        }
-      }
-    })();
-
-    this._activeSync = syncWork;
-    try {
-      await syncWork;
-    } finally {
-      this._syncOnStack = false;
-      if (this._activeSync === syncWork) {
-        this._activeSync = null;
-      }
-      if (this._resyncAfterCurrent) {
-        this._resyncAfterCurrent = false;
-        void this.syncGroupInventory(options);
-      }
-    }
   }
 }

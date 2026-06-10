@@ -98,7 +98,8 @@ describe('LoadAnnotationsService', () => {
 
     fakeUris = ['http://example.com'];
     fakeTagInventoryGroupSync = {
-      syncGroupInventory: sinon.stub().returns(Promise.resolve()),
+      applyStoreAnnotationsToInventory: sinon.stub().returns(Promise.resolve()),
+      getGroupAnnotations: sinon.stub().returns(Promise.resolve([])),
     };
     $imports.$mock({
       '../search-client': {
@@ -338,16 +339,29 @@ describe('LoadAnnotationsService', () => {
       assert.calledOnce(fakeStore.annotationFetchFinished);
     });
 
-    it('syncs group history after document loads', async () => {
+    it('loads group annotations for private groups after document loads', async () => {
       const svc = createService();
 
       svc.load({ groupId: fakeGroupId, uris: fakeUris });
 
-      assert.calledOnce(fakeTagInventoryGroupSync.syncGroupInventory);
-      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
-        mode: 'auto',
+      assert.notCalled(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
+      assert.calledOnce(fakeTagInventoryGroupSync.getGroupAnnotations);
+      assert.calledWith(
+        fakeTagInventoryGroupSync.getGroupAnnotations,
+        fakeGroupId,
+      );
+    });
+
+    it('syncs document inventory for public groups after document loads', async () => {
+      const svc = createService();
+
+      svc.load({ groupId: '__world__', uris: fakeUris });
+
+      assert.calledOnce(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
+      assert.calledWith(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory, {
         documentUris: fakeUris,
       });
+      assert.notCalled(fakeTagInventoryGroupSync.getGroupAnnotations);
     });
 
     it('does not sync group history for group-wide loads without uris', () => {
@@ -355,7 +369,7 @@ describe('LoadAnnotationsService', () => {
 
       svc.load({ groupId: fakeGroupId });
 
-      assert.notCalled(fakeTagInventoryGroupSync.syncGroupInventory);
+      assert.notCalled(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
     });
 
     it('logs an error by default to the console if the search client emits an error', () => {

@@ -129,7 +129,7 @@ export class StreamerService {
         updates,
         deletions.map(d => d.id),
       );
-      void this._tagInventoryGroupSync.syncGroupInventory({ mode: 'document' });
+      void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
     }
   }
 

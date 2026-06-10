@@ -3,6 +3,7 @@ import { isReply } from '../helpers/annotation-metadata';
 import { SearchClient } from '../search-client';
 import type { SortBy, SortOrder } from '../search-client';
 import type { SidebarStore } from '../store';
+import { PUBLIC_GROUP_ID } from '../helpers/groups';
 import type { TagInventoryGroupSyncService } from './tag-inventory-group-sync';
 import type { APIService } from './api';
 import type { StreamFilter } from './stream-filter';
@@ -164,10 +165,20 @@ export class LoadAnnotationsService {
       this._searchClient = null;
 
       if (uris && uris.length > 0) {
-        void this._tagInventoryGroupSync.syncGroupInventory({
-          mode: 'auto',
-          documentUris: uris,
-        });
+        if (groupId === PUBLIC_GROUP_ID) {
+          void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory({
+            documentUris: uris,
+          });
+        } else {
+          void this._tagInventoryGroupSync
+            .getGroupAnnotations(groupId)
+            .catch(err => {
+              console.warn(
+                '[TagInventoryGroupSync] group annotations load failed',
+                err,
+              );
+            });
+        }
       }
 
       if (uris && uris.length > 0) {

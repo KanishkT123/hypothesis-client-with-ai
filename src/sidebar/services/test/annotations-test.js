@@ -64,7 +64,7 @@ describe('AnnotationsService', () => {
 
     fakeIsPrivate = sinon.stub();
     fakeTagInventoryGroupSync = {
-      syncGroupInventory: sinon.stub().returns(Promise.resolve()),
+      applyStoreAnnotationsToInventory: sinon.stub().returns(Promise.resolve()),
     };
 
     fakeSettings = {};
@@ -671,9 +671,7 @@ describe('AnnotationsService', () => {
 
         await svc.save(annotation);
 
-        assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
-          mode: 'document',
-        });
+        assert.calledOnce(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
       });
     });
 
@@ -719,7 +717,7 @@ describe('AnnotationsService', () => {
         });
 
         return svc.save(annotation).catch(() => {
-          assert.notCalled(fakeTagInventoryGroupSync.syncGroupInventory);
+          assert.notCalled(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
         });
       });
     });
@@ -751,9 +749,7 @@ describe('AnnotationsService', () => {
       const savedAnnotation =
         await fakeApi.annotation.moderate.lastCall.returnValue;
       assert.calledWith(fakeStore.addAnnotations, [savedAnnotation]);
-      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
-        mode: 'document',
-      });
+      assert.calledOnce(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
     });
 
     it('swaps ai-pending tags via update when approving', async () => {
@@ -783,9 +779,7 @@ describe('AnnotationsService', () => {
           }),
         ],
       );
-      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
-        mode: 'document',
-      });
+      assert.calledOnce(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
       assert.equal(result.moderation_status, 'APPROVED');
     });
 
@@ -819,9 +813,7 @@ describe('AnnotationsService', () => {
       assert.calledWith(fakeStore.addAnnotations, [
         sinon.match({ tags: ['methods-neg-example'] }),
       ]);
-      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
-        mode: 'document',
-      });
+      assert.calledOnce(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
       assert.equal(result, updated);
     });
 
@@ -860,9 +852,7 @@ describe('AnnotationsService', () => {
         { tags: ['other'] },
       );
       assert.calledWith(fakeStore.addAnnotations, [updated]);
-      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
-        mode: 'document',
-      });
+      assert.calledOnce(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
       assert.equal(result, updated);
     });
 

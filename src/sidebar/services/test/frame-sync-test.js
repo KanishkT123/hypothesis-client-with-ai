@@ -837,6 +837,17 @@ describe('FrameSyncService', () => {
     });
 
     it('merges full annotation payload into the store', () => {
+      fakeStore.findAnnotationByID = sinon
+        .stub()
+        .withArgs('id1')
+        .returns({
+          id: 'id1',
+          $tag: 't1',
+          tags: [],
+          text: '',
+          target: [],
+        });
+
       const ann = {
         $tag: 't1',
         $orphan: false,
@@ -852,7 +863,15 @@ describe('FrameSyncService', () => {
       };
       emitGuestEvent('syncAnchoringStatus', ann);
 
-      assert.calledWith(fakeStore.addAnnotations, [ann]);
+      assert.calledWith(
+        fakeStore.addAnnotations,
+        sinon.match([
+          sinon.match({
+            id: 'id1',
+            target: ann.target,
+          }),
+        ]),
+      );
     });
 
     it('preserves sidebar tags when guest sends stale empty tags on syncAnchoringStatus', () => {

@@ -71,7 +71,7 @@ describe('TagInventoryGroupSyncService', () => {
       },
     ]);
 
-    await svc.syncGroupInventory({ mode: 'document' });
+    await svc.applyStoreAnnotationsToInventory();
 
     assert.notCalled(groupAnnotationsRead);
     assert.calledWith(fakeStore.addTagInventoryRow, {
@@ -87,8 +87,8 @@ describe('TagInventoryGroupSyncService', () => {
     });
   });
 
-  it('fetches all group annotations for private groups via the group annotations endpoint', async () => {
-    await svc.syncGroupInventory({ mode: 'auto' });
+  it('fetches all group annotations via getGroupAnnotations', async () => {
+    await svc.getGroupAnnotations('private-group');
 
     assert.calledOnce(groupAnnotationsRead);
     assert.calledWith(
@@ -110,15 +110,15 @@ describe('TagInventoryGroupSyncService', () => {
     assert.isNull(svc.cachedGroupAnnotations('private-group'));
   });
 
-  it('caches annotations after a private full-group sync', async () => {
-    await svc.syncGroupInventory({ mode: 'auto' });
+  it('caches annotations after getGroupAnnotations', async () => {
+    await svc.getGroupAnnotations('private-group');
 
     const cached = svc.cachedGroupAnnotations('private-group');
     assert.lengthOf(cached, 1);
     assert.equal(cached[0].id, 'a1');
   });
 
-  it('does not populate cache for document-scoped private sync', async () => {
+  it('does not populate cache for document-scoped sync', async () => {
     fakeStore.savedAnnotations.returns([
       {
         id: 'doc-a1',
@@ -128,9 +128,10 @@ describe('TagInventoryGroupSyncService', () => {
       },
     ]);
 
-    await svc.syncGroupInventory({ mode: 'document' });
+    await svc.applyStoreAnnotationsToInventory();
 
     assert.isNull(svc.cachedGroupAnnotations('private-group'));
+    assert.notCalled(groupAnnotationsRead);
   });
 
   it('savedAnnotationsForCurrentDocument filters by group and URIs', () => {
@@ -148,7 +149,7 @@ describe('TagInventoryGroupSyncService', () => {
   });
 
   it('mergePendingUpdatesIntoCache upserts updates and removes deletions', async () => {
-    await svc.syncGroupInventory({ mode: 'auto' });
+    await svc.getGroupAnnotations('private-group');
 
     svc.mergePendingUpdatesIntoCache(
       [
@@ -176,27 +177,31 @@ describe('TagInventoryGroupSyncService', () => {
     assert.isNull(svc.cachedGroupAnnotations('private-group'));
   });
 
-  it('init watch ignores unrelated store updates (uses shallowEqual)', async () => {
-    let subscribeCallback;
+  it('init watch loads group annotations when profile and group become available', async () => {
+    const subscribeCallbacks = [];
     fakeStore.subscribe = cb => {
-      subscribeCallback = cb;
+      subscribeCallbacks.push(cb);
       return () => {};
     };
-    fakeStore.hasFetchedProfile.returns(true);
-    fakeStore.focusedGroupId.returns('private-group');
+    fakeStore.hasFetchedProfile.returns(false);
+    fakeStore.focusedGroupId.returns(null);
 
     svc.init();
 
-    subscribeCallback();
+    fakeStore.hasFetchedProfile.returns(true);
+    fakeStore.focusedGroupId.returns('private-group');
+    for (const cb of subscribeCallbacks) {
+      cb();
+    }
     await Promise.resolve();
-    await svc.waitForSyncIfInFlight();
+    await Promise.resolve();
 
-    assert.calledOnce(groupAnnotationsRead);
+    assert.called(groupAnnotationsRead);
     groupAnnotationsRead.resetHistory();
 
-    // Simulate an unrelated store update (e.g. apiRequestStarted) while the
-    // focused group and profile state are unchanged.
-    subscribeCallback();
+    for (const cb of subscribeCallbacks) {
+      cb();
+    }
     await Promise.resolve();
 
     assert.notCalled(groupAnnotationsRead);
@@ -227,7 +232,7 @@ describe('TagInventoryGroupSyncService', () => {
       ],
     });
 
-    await svc.syncGroupInventory({ mode: 'auto' });
+    await svc.getGroupAnnotations('private-group');
 
     assert.calledTwice(groupAnnotationsRead);
     assert.calledWith(
@@ -238,5 +243,84 @@ describe('TagInventoryGroupSyncService', () => {
         'page[after]': fullPage[99].created,
       }),
     );
+  });
+
+  describe('getGroupAnnotations', () => {
+    it('returns cached annotations without calling the API again', async () => {
+      await svc.getGroupAnnotations('private-group');
+      groupAnnotationsRead.resetHistory();
+
+      const result = await svc.getGroupAnnotations('private-group');
+
+      assert.notCalled(groupAnnotationsRead);
+      assert.lengthOf(result, 1);
+      assert.equal(result[0].id, 'a1');
+    });
+
+    it('deduplicates concurrent fetches for the same group', async () => {
+      let resolveFetch;
+      groupAnnotationsRead.returns(
+        new Promise(resolve => {
+          resolveFetch = resolve;
+        }),
+      );
+
+      const first = svc.getGroupAnnotations('private-group');
+      const second = svc.getGroupAnnotations('private-group');
+
+      resolveFetch({
+        meta: {},
+        data: [
+          {
+            id: 'a1',
+            group: 'private-group',
+            uri: 'http://other.com',
+            tags: ['methods'],
+            created: '2024-01-01T00:00:00Z',
+          },
+        ],
+      });
+
+      await Promise.all([first, second]);
+
+      assert.calledOnce(groupAnnotationsRead);
+    });
+
+    it('propagates API errors', async () => {
+      const err = new Error('group annotations unavailable');
+      groupAnnotationsRead.rejects(err);
+
+      await assert.rejects(
+        svc.getGroupAnnotations('private-group'),
+        'group annotations unavailable',
+      );
+      assert.isNull(svc.cachedGroupAnnotations('private-group'));
+    });
+
+    it('re-fetches from the API when force is true and no fetch is in flight', async () => {
+      await svc.getGroupAnnotations('private-group');
+      groupAnnotationsRead.resetHistory();
+
+      await svc.getGroupAnnotations('private-group', { force: true });
+
+      assert.calledOnce(groupAnnotationsRead);
+    });
+
+    it('joins an in-flight fetch rather than restarting when force is true', async () => {
+      let resolveFetch;
+      groupAnnotationsRead.returns(
+        new Promise(resolve => {
+          resolveFetch = resolve;
+        }),
+      );
+
+      const first = svc.getGroupAnnotations('private-group');
+      const forced = svc.getGroupAnnotations('private-group', { force: true });
+
+      resolveFetch({ meta: {}, data: [] });
+      await Promise.all([first, forced]);
+
+      assert.calledOnce(groupAnnotationsRead);
+    });
   });
 });

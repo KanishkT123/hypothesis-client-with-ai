@@ -147,7 +147,7 @@ describe('StreamerService', () => {
     };
 
     fakeTagInventoryGroupSync = {
-      syncGroupInventory: sinon.stub().returns(Promise.resolve()),
+      applyStoreAnnotationsToInventory: sinon.stub().returns(Promise.resolve()),
       mergePendingUpdatesIntoCache: sinon.stub(),
     };
 
@@ -560,7 +560,7 @@ describe('StreamerService', () => {
       assert.notCalled(fakeStore.removeAnnotations);
       assert.called(fakeStore.clearPendingUpdates);
       assert.notCalled(fakeTagInventoryGroupSync.mergePendingUpdatesIntoCache);
-      assert.notCalled(fakeTagInventoryGroupSync.syncGroupInventory);
+      assert.notCalled(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
     });
 
     it('merges pending updates into the group cache and syncs AI search history', () => {
@@ -575,9 +575,7 @@ describe('StreamerService', () => {
         [update],
         ['gone-id'],
       );
-      assert.calledWith(fakeTagInventoryGroupSync.syncGroupInventory, {
-        mode: 'document',
-      });
+      assert.calledOnce(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
     });
   });
 

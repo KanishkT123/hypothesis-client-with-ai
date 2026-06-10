@@ -188,12 +188,7 @@ function AISearchPanel({
   const isPublicGroup = focusedGroupId === PUBLIC_GROUP_ID;
   /** Private groups can always refresh, even before any rows exist. */
   const canRefreshGroupTags = !isPublicGroup && !!focusedGroupId;
-  /**
-   * Show the history section when there are rows to display or when the user
-   * can refresh group tags (so the Refresh control is reachable for an
-   * as-yet-empty private group).
-   */
-  const showHistorySection = scopedRows.length > 0 || canRefreshGroupTags;
+  const showHistorySection = scopedRows.length > 0;
   const emptyHistoryMessage =
     scopedRows.length === 0
       ? 'No AI search tags found in this group yet.'
@@ -236,9 +231,20 @@ function AISearchPanel({
     if (isPublicGroup || refreshingGroupTags) {
       return;
     }
+    const groupId = store.focusedGroupId();
+    if (!groupId) {
+      return;
+    }
     setRefreshingGroupTags(true);
     try {
-      await tagInventoryGroupSync.syncGroupInventory({ mode: 'auto' });
+      await tagInventoryGroupSync.getGroupAnnotations(groupId, { force: true });
+    } catch (error) {
+      console.error('Failed to refresh group tags:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to refresh group tags.';
+      toastMessenger.error(message);
     } finally {
       setRefreshingGroupTags(false);
     }
@@ -267,22 +273,18 @@ function AISearchPanel({
           store.searchUris(),
         );
       } else {
-        let cached = tagInventoryGroupSync.cachedGroupAnnotations(groupId);
-        if (cached === null && tagInventoryGroupSync.isSyncingGroupInventory()) {
-          await tagInventoryGroupSync.waitForSyncIfInFlight();
-          cached = tagInventoryGroupSync.cachedGroupAnnotations(groupId);
-        }
-        if (cached === null) {
-          await tagInventoryGroupSync.syncGroupInventory({ mode: 'auto' });
-          cached = tagInventoryGroupSync.cachedGroupAnnotations(groupId);
-        }
-        if (cached === null) {
+        try {
+          fewShotAnnotations =
+            await tagInventoryGroupSync.getGroupAnnotations(groupId);
+        } catch (error) {
+          console.error('Failed to load group annotations for AI search:', error);
+          const detail =
+            error instanceof Error ? error.message : 'Unknown error';
           toastMessenger.error(
-            'Could not load group annotations for AI search. Try Refresh group tags.',
+            `Could not load group annotations for AI search: ${detail}`,
           );
           return;
         }
-        fewShotAnnotations = cached;
       }
 
       const positiveExamples = await collectPositiveExamplesFromAnnotations(
@@ -763,6 +765,28 @@ function AISearchPanel({
                 }
               }}
             />
+            {canRefreshGroupTags && (
+              <button
+                type="button"
+                data-testid="ai-search-refresh-group-tags"
+                disabled={refreshingGroupTags}
+                aria-disabled={refreshingGroupTags}
+                title="Re-fetch tags and examples from all annotations in this group"
+                aria-label="Refresh group tags &amp; examples"
+                className={classnames(
+                  'shrink-0 self-start text-xs rounded px-2 py-1 border border-grey-3',
+                  'text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring',
+                  refreshingGroupTags && 'opacity-50 cursor-not-allowed',
+                )}
+                onClick={() => {
+                  void onRefreshGroupTags();
+                }}
+              >
+                {refreshingGroupTags
+                  ? 'Refreshing group tags & examples…'
+                  : 'Refresh group tags & examples'}
+              </button>
+            )}
             {showHistorySection && (
               <div className="flex flex-col gap-y-1">
                 {displayRows.length === 0 ? (
@@ -1034,31 +1058,6 @@ function AISearchPanel({
                     color).
                   </p>
                   <div className="flex shrink-0 items-center gap-x-2">
-                    <button
-                      type="button"
-                      data-testid="ai-search-refresh-group-tags"
-                      disabled={isPublicGroup || refreshingGroupTags}
-                      aria-disabled={isPublicGroup || refreshingGroupTags}
-                      title={
-                        isPublicGroup
-                          ? 'Group tag refresh is unavailable in the public group'
-                          : 'Re-fetch tags from all annotations in this group'
-                      }
-                      aria-label="Refresh group tags"
-                      className={classnames(
-                        'shrink-0 text-xs rounded px-2 py-1 border border-grey-3',
-                        'text-color-text hover:bg-grey-2 transition-colors duration-200 focus-visible-ring',
-                        (isPublicGroup || refreshingGroupTags) &&
-                          'opacity-50 cursor-not-allowed',
-                      )}
-                      onClick={() => {
-                        void onRefreshGroupTags();
-                      }}
-                    >
-                      {refreshingGroupTags
-                        ? 'Refreshing group tags…'
-                        : 'Refresh group tags'}
-                    </button>
                     <button
                       type="button"
                       disabled={hiddenRowsToggleDisabled}
