@@ -627,6 +627,9 @@ export class FrameSyncService {
     this._hostRPC.on('sidebarClosed', () => {
       this._sidebarIsOpen = false;
     });
+    this._hostRPC.on('setSidebarFullWidth', (fullWidth: boolean) => {
+      this._store.setSidebarFullWidth(fullWidth);
+    });
 
     // When user toggles the highlight visibility control in the sidebar container,
     // update the visibility in all the guest frames.

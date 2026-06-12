@@ -4,6 +4,7 @@ import {
   Card,
   CardContent,
   LinkButton,
+  ListIcon,
   PlusIcon,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
@@ -18,6 +19,7 @@ import { withServices } from '../service-context';
 import type { AnnotationsService } from '../services/annotations';
 import type { FrameSyncService } from '../services/frame-sync';
 import { useSidebarStore } from '../store';
+import GroupAnnotationsTab from './GroupAnnotationsTab';
 import ThreadList from './ThreadList';
 import { useRootThread } from './hooks/use-root-thread';
 
@@ -124,9 +126,9 @@ function SidebarTabs({
     store.selectTab(tabId);
   };
 
-  const isAIOrEmptyPanelOpen =
-    store.isSidebarPanelOpen('aiSearchAnnotations') ||
-    store.isSidebarPanelOpen('emptyPanel');
+  const isAISearchOpen = store.isSidebarPanelOpen('aiSearchAnnotations');
+  const isGroupTabOpen = store.isSidebarPanelOpen('emptyPanel');
+  const isAIOrEmptyPanelOpen = isAISearchOpen || isGroupTabOpen;
 
   const showAnnotationsUnavailableMessage =
     selectedTab === 'annotation' &&
@@ -161,98 +163,139 @@ function SidebarTabs({
       <div aria-live="polite" role="status" className="sr-only">
         {tabCountsSummary}
       </div>
-      {!isAIOrEmptyPanelOpen && <div
-        className={classnames(
-          // 9px balances out the space above the tabs
-          'space-y-3 pb-[9px]',
-        )}
-      >
-        <div className="flex gap-x-6 theme-clean:ml-[15px] mt-1" role="tablist">
-          {!settings.commentsMode && (
-            <Tab
-              count={annotationCount}
-              isWaitingToAnchor={isWaitingToAnchorAnnotations}
-              isSelected={selectedTab === 'annotation'}
-              label="Annotations"
-              name="annotation"
-              onSelect={() => selectTab('annotation')}
-            >
-              Annotations
-            </Tab>
-          )}
-          <Tab
-            count={noteCount}
-            isWaitingToAnchor={isWaitingToAnchorAnnotations}
-            isSelected={selectedTab === 'note'}
-            label={settings.commentsMode ? 'Comments' : 'Page notes'}
-            name="note"
-            onSelect={() => selectTab('note')}
-          >
-            {settings.commentsMode ? 'Comments' : 'Page Notes'}
-          </Tab>
-          {orphanCount > 0 && (
-            <Tab
-              count={orphanCount}
-              isWaitingToAnchor={isWaitingToAnchorAnnotations}
-              isSelected={selectedTab === 'orphan'}
-              label="Unanchored"
-              name="orphan"
-              onSelect={() => selectTab('orphan')}
-            >
-              Unanchored
-            </Tab>
-          )}
-        </div>
+      {!isAISearchOpen && (
         <div
-          className="space-y-3"
-          role="tabpanel"
-          id={idForPanel(selectedTab)}
-          aria-labelledby={idForTab(selectedTab)}
+          className={classnames(
+            // 9px balances out the space above the tabs
+            'space-y-3 pb-[9px]',
+          )}
         >
-          {selectedTab === 'note' &&
-            settings.enableExperimentalNewNoteButton && (
-              <div className="flex justify-end">
-                <Button
-                  data-testid="new-note-button"
-                  onClick={createPageNoteWithDocumentMeta}
-                  variant="primary"
-                  style={applyTheme(['ctaBackgroundColor'], settings)}
-                >
-                  <PlusIcon />
-                  {settings.commentsMode ? 'Add comment' : 'New note'}
-                </Button>
-              </div>
-            )}
-          {!isLoading && showNotesUnavailableMessage && (
-            <Card data-testid="notes-unavailable-message" variant="flat">
-              <CardContent classes="text-center">
-                There are no {settings.commentsMode ? 'comments' : 'page notes'}{' '}
-                in this group.
-              </CardContent>
-            </Card>
-          )}
-          {!isLoading && showAnnotationsUnavailableMessage && (
-            <Card data-testid="annotations-unavailable-message" variant="flat">
-              <CardContent
-                // TODO: Remove !important spacing class after
-                // https://github.com/hypothesis/frontend-shared/issues/676 is addressed
-                classes="text-center !space-y-1"
+          {!isGroupTabOpen && <div className="flex gap-x-6 theme-clean:ml-[15px] mt-1" role="tablist">
+            {!settings.commentsMode && (
+              <Tab
+                count={annotationCount}
+                isWaitingToAnchor={isWaitingToAnchorAnnotations}
+                isSelected={!isGroupTabOpen && selectedTab === 'annotation'}
+                label="Annotations"
+                name="annotation"
+                onSelect={() => {
+                  store.closeSidebarPanel('emptyPanel');
+                  selectTab('annotation');
+                }}
               >
-                <p>There are no annotations in this group.</p>
-                <p>
-                  Create one by selecting some text and clicking the{' '}
-                  <AnnotateIcon
-                    className="w-em h-em inline m-0.5 -mt-0.5"
-                    title="Annotate"
-                  />{' '}
-                  button.
-                </p>
-              </CardContent>
-            </Card>
+                Annotations
+              </Tab>
+            )}
+            <Tab
+              count={noteCount}
+              isWaitingToAnchor={isWaitingToAnchorAnnotations}
+              isSelected={!isGroupTabOpen && selectedTab === 'note'}
+              label={settings.commentsMode ? 'Comments' : 'Page notes'}
+              name="note"
+              onSelect={() => {
+                store.closeSidebarPanel('emptyPanel');
+                selectTab('note');
+              }}
+            >
+              {settings.commentsMode ? 'Comments' : 'Page Notes'}
+            </Tab>
+            {orphanCount > 0 && (
+              <Tab
+                count={orphanCount}
+                isWaitingToAnchor={isWaitingToAnchorAnnotations}
+                isSelected={!isGroupTabOpen && selectedTab === 'orphan'}
+                label="Unanchored"
+                name="orphan"
+                onSelect={() => {
+                  store.closeSidebarPanel('emptyPanel');
+                  selectTab('orphan');
+                }}
+              >
+                Unanchored
+              </Tab>
+            )}
+            <LinkButton
+              classes={classnames('bg-transparent min-w-[5.25rem]', {
+                'font-bold': isGroupTabOpen,
+              })}
+              variant="text"
+              onClick={() => store.toggleSidebarPanel('emptyPanel')}
+              onMouseDown={() => store.toggleSidebarPanel('emptyPanel')}
+              pressed={isGroupTabOpen}
+              role="tab"
+              tabIndex={0}
+              title="All group annotations"
+              underline="none"
+            >
+              <ListIcon className="w-em h-em inline mr-1" />
+              Group
+            </LinkButton>
+          </div>}
+          {isGroupTabOpen ? (
+            <div
+              className="space-y-3 overflow-y-auto"
+              role="tabpanel"
+              aria-label="Group annotations"
+            >
+              <GroupAnnotationsTab />
+            </div>
+          ) : (
+            <div
+              className="space-y-3"
+              role="tabpanel"
+              id={idForPanel(selectedTab)}
+              aria-labelledby={idForTab(selectedTab)}
+            >
+              {selectedTab === 'note' &&
+                settings.enableExperimentalNewNoteButton && (
+                  <div className="flex justify-end">
+                    <Button
+                      data-testid="new-note-button"
+                      onClick={createPageNoteWithDocumentMeta}
+                      variant="primary"
+                      style={applyTheme(['ctaBackgroundColor'], settings)}
+                    >
+                      <PlusIcon />
+                      {settings.commentsMode ? 'Add comment' : 'New note'}
+                    </Button>
+                  </div>
+                )}
+              {!isLoading && showNotesUnavailableMessage && (
+                <Card data-testid="notes-unavailable-message" variant="flat">
+                  <CardContent classes="text-center">
+                    There are no{' '}
+                    {settings.commentsMode ? 'comments' : 'page notes'} in this
+                    group.
+                  </CardContent>
+                </Card>
+              )}
+              {!isLoading && showAnnotationsUnavailableMessage && (
+                <Card
+                  data-testid="annotations-unavailable-message"
+                  variant="flat"
+                >
+                  <CardContent
+                    // TODO: Remove !important spacing class after
+                    // https://github.com/hypothesis/frontend-shared/issues/676 is addressed
+                    classes="text-center !space-y-1"
+                  >
+                    <p>There are no annotations in this group.</p>
+                    <p>
+                      Create one by selecting some text and clicking the{' '}
+                      <AnnotateIcon
+                        className="w-em h-em inline m-0.5 -mt-0.5"
+                        title="Annotate"
+                      />{' '}
+                      button.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+              <ThreadList threads={rootThread.children} />
+            </div>
           )}
-          <ThreadList threads={rootThread.children} />
         </div>
-      </div>}
+      )}
     </>
   );
 }
