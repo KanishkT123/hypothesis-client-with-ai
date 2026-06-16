@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { SavedAnnotation } from '../../types/api';
 import { quote as annotationQuote } from '../helpers/annotation-metadata';
@@ -9,7 +9,7 @@ import {
   type TagInventoryGroupSyncService,
 } from '../services/tag-inventory-group-sync';
 import { useSidebarStore } from '../store';
-import HighlightedSentence, { type LabeledSpan } from './HighlightedSentence';
+import HighlightedSentence, { type LabeledSpan, type RenderMode } from './HighlightedSentence';
 
 type GroupAnnotationsTabProps = {
   tagInventoryGroupSync: TagInventoryGroupSyncService;
@@ -27,10 +27,35 @@ type CategoryRow = {
   description: string;
 };
 
+const CATEGORY_ROWS_KEY = 'hypothesis-category-rows';
+const highlightCacheKey = (groupId: string) => `hypothesis-highlights-${groupId}`;
+
+const DEFAULT_CATEGORY_ROWS: CategoryRow[] = [
+  { name: 'Status Quo/Context (the particular context or existing work)', description: '' },
+  { name: "Challenge/Problem/Obstacle (often starts with 'however', gaps in prior work)", description: '' },
+  { name: 'Contribution (what the authors did)', description: '' },
+  { name: 'Purpose/Goal/Focus (why the work was done)', description: '' },
+  { name: 'Methodology (how the work was done)', description: '' },
+  { name: 'Participants (who were involved)', description: '' },
+  { name: 'System Description (of a system the authors developed or proposed)', description: '' },
+  { name: 'Findings', description: '' },
+  { name: 'Example', description: '' },
+];
+
 // Hex colors assigned to labels in order of first appearance.
 const LABEL_HEX_COLORS = [
   '#4F46E5', '#059669', '#F59E0B', '#DC2626', '#0EA5E9', '#EC4899', '#8B5CF6', '#D97706',
 ];
+
+// Measure the rendered pixel width of a string as it would appear in the
+// blockquote (text-xs italic). Used to compute alignment padding.
+const _measureCanvas = document.createElement('canvas');
+function measureTextWidth(text: string): number {
+  const ctx = _measureCanvas.getContext('2d');
+  if (!ctx) return 0;
+  ctx.font = 'italic 12px ui-sans-serif, system-ui, -apple-system, sans-serif';
+  return ctx.measureText(text).width;
+}
 
 async function fetchSpansBatch(
   sentences: string[],
@@ -96,6 +121,37 @@ function toLabeled(spans: ApiSpan[]): LabeledSpan[] {
   }));
 }
 
+// Split text and spans at a character offset for the two-column alignment layout.
+function splitAtOffset(
+  original: string,
+  spans: LabeledSpan[],
+  offset: number,
+): {
+  left: { text: string; spans: LabeledSpan[] };
+  right: { text: string; spans: LabeledSpan[] };
+} {
+  const leftText = original.slice(0, offset);
+  const rightText = original.slice(offset);
+
+  const leftSpans = spans
+    .filter(s => s.start < offset)
+    .map(s => ({ ...s, end: Math.min(s.end, offset) }));
+
+  const rightSpans = spans
+    .filter(s => s.end > offset)
+    .map(s => ({
+      ...s,
+      start: Math.max(s.start, offset) - offset,
+      end: s.end - offset,
+      text: original.slice(Math.max(s.start, offset), s.end),
+    }));
+
+  return {
+    left: { text: leftText, spans: leftSpans },
+    right: { text: rightText, spans: rightSpans },
+  };
+}
+
 function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps) {
   const store = useSidebarStore();
   const focusedGroupId = store.focusedGroupId();
@@ -104,18 +160,20 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Category editor state — persists across group changes.
-  const [categoryRows, setCategoryRows] = useState<CategoryRow[]>([
-    { name: 'Status Quo/Context (the particular context or existing work)', description: '' },
-    { name: 'Challenge/Problem/Obstacle (often starts with \'however\', gaps in prior work)', description: '' },
-    { name: 'Contribution (what the authors did)', description: '' },
-    { name: 'Purpose/Goal/Focus (why the work was done)', description: '' },
-    { name: 'Methodology (how the work was done)', description: '' },
-    { name: 'Participants (who were involved)', description: '' },
-    { name: 'System Description (of a system the authors developed or proposed)', description: '' },
-    { name: 'Findings', description: '' },
-    { name: 'Example', description: '' },
-  ]);
+  // Category editor state — loaded from localStorage, saved on every change.
+  const [categoryRows, setCategoryRows] = useState<CategoryRow[]>(() => {
+    try {
+      const stored = localStorage.getItem(CATEGORY_ROWS_KEY);
+      if (stored) return JSON.parse(stored) as CategoryRow[];
+    } catch {}
+    return DEFAULT_CATEGORY_ROWS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CATEGORY_ROWS_KEY, JSON.stringify(categoryRows));
+    } catch {}
+  }, [categoryRows]);
 
   // Per-annotation API spans (string labels from the server)
   const [rawSpanMap, setRawSpanMap] = useState<Map<string, ApiSpan[]>>(new Map());
@@ -126,6 +184,36 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
   });
   const [isHighlighting, setIsHighlighting] = useState(false);
   const [highlightError, setHighlightError] = useState<string | null>(null);
+  const [renderMode, setRenderMode] = useState<RenderMode>('highlight');
+  const [activeLabels, setActiveLabels] = useState<Set<number> | undefined>(undefined);
+  const [alignCategory, setAlignCategory] = useState<number | null>(null);
+  const [alignDropdownOpen, setAlignDropdownOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const alignedScrollRef = useRef<HTMLDivElement>(null);
+
+  // After the aligned grid renders, scroll so the column boundary is centered.
+  useEffect(() => {
+    if (alignCategory === null || !isFullWidth) return;
+    const container = alignedScrollRef.current;
+    if (!container) return;
+    requestAnimationFrame(() => {
+      const grid = container.firstElementChild as HTMLElement;
+      if (!grid || grid.children.length < 2) return;
+      // children[0] is the first tag header (spans both columns);
+      // children[1] is the first left-column cell — its width equals the left column width.
+      const leftCell = grid.children[1] as HTMLElement;
+      const leftColWidth = leftCell.getBoundingClientRect().width;
+      container.scrollLeft = leftColWidth - container.clientWidth / 2;
+    });
+  }, [alignCategory, isFullWidth, rawSpanMap]);
+
+  // Close align dropdown when clicking outside.
+  useEffect(() => {
+    if (!alignDropdownOpen) return;
+    const close = () => setAlignDropdownOpen(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [alignDropdownOpen]);
 
   useEffect(() => {
     if (!focusedGroupId) {
@@ -147,8 +235,27 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
           anns = await tagInventoryGroupSync.getGroupAnnotations(focusedGroupId);
         }
         setAnnotations(anns);
+
+        // Restore cached highlights for this group if available.
+        try {
+          const cached = localStorage.getItem(highlightCacheKey(focusedGroupId));
+          if (cached) {
+            const { rawSpans, categories: cats } = JSON.parse(cached) as {
+              rawSpans: Record<string, ApiSpan[]>;
+              categories: string[] | undefined;
+            };
+            const restoredMap = new Map<string, ApiSpan[]>(Object.entries(rawSpans));
+            const index = buildLabelIndex([...restoredMap.values()], cats);
+            setRawSpanMap(restoredMap);
+            setLabelIndex(index);
+            setActiveLabels(new Set(Object.keys(index.labelColors).map(Number)));
+            return;
+          }
+        } catch {}
+
         setRawSpanMap(new Map());
         setLabelIndex({ labelColors: {}, labelNames: {} });
+        setActiveLabels(undefined);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to load annotations',
@@ -175,6 +282,37 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
 
   const removeCategory = (i: number) => {
     setCategoryRows(rows => rows.filter((_, idx) => idx !== i));
+  };
+
+  // Per-annotation left-padding (px) so the first span of alignCategory
+  // starts at the horizontal center of the content area.
+  const alignPaddings = useMemo<Map<string, number> | null>(() => {
+    if (alignCategory === null || rawSpanMap.size === 0) return null;
+    const containerWidth = contentRef.current?.offsetWidth ?? 300;
+    const targetX = containerWidth / 2;
+    const paddings = new Map<string, number>();
+    for (const ann of annotations) {
+      const original = (annotationQuote(ann) ?? '').trim();
+      const spans = rawSpanMap.get(ann.id) ?? [];
+      const firstSpan = spans.find(s => s.label === alignCategory);
+      // No matching span → treat as if category is at position 0 (all text is "after").
+      const prefixText = firstSpan ? original.slice(0, firstSpan.start) : '';
+      const prefixWidth = measureTextWidth(prefixText);
+      paddings.set(ann.id, Math.max(0, targetX - prefixWidth));
+    }
+    return paddings;
+  }, [alignCategory, annotations, rawSpanMap]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleLabel = (labelId: number) => {
+    setActiveLabels(prev => {
+      const next = new Set(prev ?? Object.keys(labelIndex.labelColors).map(Number));
+      if (next.has(labelId)) {
+        next.delete(labelId);
+      } else {
+        next.add(labelId);
+      }
+      return next;
+    });
   };
 
   const handleHighlight = async () => {
@@ -207,6 +345,20 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
       const index = buildLabelIndex([...newRawSpanMap.values()], categories);
       setRawSpanMap(newRawSpanMap);
       setLabelIndex(index);
+      setActiveLabels(new Set(Object.keys(index.labelColors).map(Number)));
+
+      // Persist so highlights survive page reloads.
+      try {
+        if (focusedGroupId) {
+          localStorage.setItem(
+            highlightCacheKey(focusedGroupId),
+            JSON.stringify({
+              rawSpans: Object.fromEntries(newRawSpanMap),
+              categories,
+            }),
+          );
+        }
+      } catch {}
     } catch (err) {
       setHighlightError(
         err instanceof Error ? err.message : 'Highlighting failed',
@@ -256,7 +408,7 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
     .sort((a, b) => Number(a[0]) - Number(b[0]));
 
   return (
-    <div className="flex flex-col gap-y-3">
+    <div className="flex flex-col gap-y-3" ref={contentRef}>
       {/* Category editor */}
       <div className="flex flex-col gap-y-1 px-2 pt-2">
         <p className="text-xs font-semibold text-color-text-light uppercase tracking-wide mb-1">
@@ -304,74 +456,206 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
         >
           {isHighlighting ? 'Highlighting…' : 'Highlight'}
         </button>
+        <div className="inline-flex rounded border border-grey-3 bg-white p-0.5 text-xs">
+          <button
+            onClick={() => setRenderMode('underline')}
+            className={`px-2 py-0.5 rounded-sm ${
+              renderMode === 'underline'
+                ? 'bg-indigo-100 text-indigo-700 font-medium'
+                : 'text-color-text-light hover:text-color-text'
+            }`}
+          >
+            Underline
+          </button>
+          <button
+            onClick={() => setRenderMode('highlight')}
+            className={`px-2 py-0.5 rounded-sm ${
+              renderMode === 'highlight'
+                ? 'bg-indigo-100 text-indigo-700 font-medium'
+                : 'text-color-text-light hover:text-color-text'
+            }`}
+          >
+            Highlight
+          </button>
+        </div>
+        {isFullWidth && hasHighlights && (
+          <div className="relative">
+            <button
+              className="text-xs px-2 py-1 rounded border border-grey-3 bg-white hover:bg-grey-1 flex items-center gap-x-1"
+              onClick={e => { e.stopPropagation(); setAlignDropdownOpen(o => !o); }}
+            >
+              {alignCategory !== null
+                ? (labelIndex.labelNames[alignCategory] ?? `Label ${alignCategory}`)
+                : 'Align'}
+              <span style={{ fontSize: '9px' }}>▾</span>
+            </button>
+            {alignDropdownOpen && (
+              <div
+                className="absolute left-0 top-full mt-1 bg-white border border-grey-3 rounded shadow-lg z-10 min-w-max"
+                onClick={e => e.stopPropagation()}
+              >
+                <button
+                  className="block w-full text-left text-xs px-3 py-1.5 hover:bg-grey-1 text-color-text-light italic"
+                  onClick={() => { setAlignCategory(null); setAlignDropdownOpen(false); }}
+                >
+                  None
+                </button>
+                {legendEntries.map(([id]) => {
+                  const labelId = Number(id);
+                  return (
+                    <button
+                      key={id}
+                      className={`block w-full text-left text-xs px-3 py-1.5 hover:bg-grey-1 ${alignCategory === labelId ? 'font-medium text-color-text' : 'text-color-text-light'}`}
+                      onClick={() => { setAlignCategory(labelId); setAlignDropdownOpen(false); }}
+                    >
+                      {labelIndex.labelNames[labelId]}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         {highlightError && (
           <span className="text-xs" style={{ color: '#dc2626' }}>{highlightError}</span>
         )}
       </div>
 
       {/* Legend — shown in full-width mode when highlights are present */}
-      {isFullWidth && hasHighlights && legendEntries.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 px-2">
-          {legendEntries.map(([id, color]) => (
-            <span key={id} className="flex items-center gap-x-1 text-xs">
-              <span
+      {hasHighlights && legendEntries.length > 0 && (
+        <div className="flex flex-wrap gap-x-2 gap-y-1 px-2">
+          {legendEntries.map(([id, color]) => {
+            const labelId = Number(id);
+            const isActive = activeLabels?.has(labelId) ?? true;
+            return (
+              <button
+                key={id}
+                onClick={() => toggleLabel(labelId)}
+                className="text-xs px-2 py-0.5 rounded border-2 font-medium transition-colors"
                 style={{
-                  display: 'inline-block',
-                  width: '10px',
-                  height: '10px',
-                  borderRadius: '2px',
-                  backgroundColor: color,
+                  borderColor: color,
+                  backgroundColor: isActive ? color : 'transparent',
+                  color: isActive ? 'white' : '#374151',
                 }}
-              />
-              {labelIndex.labelNames[Number(id)]}
-            </span>
-          ))}
+              >
+                {labelIndex.labelNames[labelId]}
+              </button>
+            );
+          })}
         </div>
       )}
 
       {/* Tag sections */}
-      {sortedTags.map(tag => (
-        <section key={tag || '__untagged__'}>
-          <h3 className="text-sm font-bold text-color-text px-2 py-1 bg-grey-1 border-b border-grey-3 sticky top-0">
-            {tag || 'Untagged'}
-          </h3>
-          <ul className="flex flex-col gap-y-2 mt-2">
-            {tagMap.get(tag)!.map(ann => {
-              const excerptText = annotationQuote(ann);
-              const rawSpans = rawSpanMap.get(ann.id);
-              const labeledSpans = rawSpans ? toLabeled(rawSpans) : [];
-              return (
-                <li
-                  key={ann.id}
-                  className="border border-grey-3 rounded p-2 text-sm bg-white mx-2"
+      {alignCategory !== null && isFullWidth ? (
+        // Aligned mode: single scrollable container with one shared grid so all rows scroll together.
+        <div ref={alignedScrollRef} style={{ overflowX: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto auto' }}>
+            {sortedTags.flatMap(tag => {
+              const sortedAnns = [...tagMap.get(tag)!].sort((a, b) => {
+                const aHas = rawSpanMap.get(a.id)?.some(s => s.label === alignCategory) ? 0 : 1;
+                const bHas = rawSpanMap.get(b.id)?.some(s => s.label === alignCategory) ? 0 : 1;
+                return aHas - bHas;
+              });
+              return [
+                <div
+                  key={`header-${tag || '__untagged__'}`}
+                  style={{ gridColumn: '1 / -1' }}
+                  className="text-sm font-bold text-color-text px-2 py-1 bg-grey-1 border-b border-grey-3 sticky top-0"
                 >
-                  <p className="text-xs text-color-text-light truncate mb-1">
-                    {ann.document?.title || ann.uri}
-                  </p>
-                  {excerptText && (
-                    <blockquote className="border-l-2 border-grey-4 pl-2 italic text-color-text-light text-xs mb-1">
-                      {isFullWidth && labeledSpans.length > 0 ? (
+                  {tag || 'Untagged'}
+                </div>,
+                ...sortedAnns.flatMap(ann => {
+                  const excerptText = annotationQuote(ann);
+                  if (!excerptText) return [];
+                  const rawSpans = rawSpanMap.get(ann.id);
+                  const labeledSpans = rawSpans ? toLabeled(rawSpans) : [];
+                  const firstAlignSpan = rawSpans?.find(s => s.label === alignCategory);
+                  const splitOffset = firstAlignSpan?.start ?? 0;
+                  const { left, right } = splitAtOffset(excerptText, labeledSpans, splitOffset);
+                  return [
+                    <div
+                      key={`${ann.id}-l`}
+                      className="italic text-color-text-light text-xs py-0.5"
+                      style={{ paddingRight: '2px', whiteSpace: 'nowrap', textAlign: 'right' }}
+                    >
+                      {left.spans.length > 0 ? (
                         <HighlightedSentence
-                          original={excerptText}
-                          spans={labeledSpans}
+                          original={left.text}
+                          spans={left.spans}
                           labelColors={labelIndex.labelColors}
                           labelNames={labelIndex.labelNames}
-                          mode="highlight"
+                          activeLabels={activeLabels}
+                          mode={renderMode}
                         />
-                      ) : (
-                        excerptText
-                      )}
-                    </blockquote>
-                  )}
-                  {ann.text && (
-                    <p className="text-color-text text-sm">{ann.text}</p>
-                  )}
-                </li>
-              );
+                      ) : left.text}
+                    </div>,
+                    <div
+                      key={`${ann.id}-r`}
+                      className="italic text-color-text-light text-xs py-0.5"
+                      style={{ paddingLeft: '2px', whiteSpace: 'nowrap' }}
+                    >
+                      {right.spans.length > 0 ? (
+                        <HighlightedSentence
+                          original={right.text}
+                          spans={right.spans}
+                          labelColors={labelIndex.labelColors}
+                          labelNames={labelIndex.labelNames}
+                          activeLabels={activeLabels}
+                          mode={renderMode}
+                        />
+                      ) : right.text}
+                    </div>,
+                  ];
+                }),
+              ];
             })}
-          </ul>
-        </section>
-      ))}
+          </div>
+        </div>
+      ) : (
+        sortedTags.map(tag => (
+          <section key={tag || '__untagged__'}>
+            <h3 className="text-sm font-bold text-color-text px-2 py-1 bg-grey-1 border-b border-grey-3 sticky top-0">
+              {tag || 'Untagged'}
+            </h3>
+            <ul className="flex flex-col mt-2">
+              {tagMap.get(tag)!.map(ann => {
+                const excerptText = annotationQuote(ann);
+                const rawSpans = rawSpanMap.get(ann.id);
+                const labeledSpans = rawSpans ? toLabeled(rawSpans) : [];
+                return (
+                  <li
+                    key={ann.id}
+                    className="border border-grey-3 rounded p-2 text-sm bg-white mx-2"
+                  >
+                    <p className="text-xs text-color-text-light truncate mb-1">
+                      {ann.document?.title || ann.uri}
+                    </p>
+                    {excerptText && (
+                      <blockquote className="border-l-2 border-grey-4 pl-2 italic text-color-text-light text-xs mb-1">
+                        {labeledSpans.length > 0 ? (
+                          <HighlightedSentence
+                            original={excerptText}
+                            spans={labeledSpans}
+                            labelColors={labelIndex.labelColors}
+                            labelNames={labelIndex.labelNames}
+                            activeLabels={activeLabels}
+                            mode={renderMode}
+                          />
+                        ) : (
+                          excerptText
+                        )}
+                      </blockquote>
+                    )}
+                    {ann.text && (
+                      <p className="text-color-text text-sm">{ann.text}</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))
+      )}
     </div>
   );
 }
