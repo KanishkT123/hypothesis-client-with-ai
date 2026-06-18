@@ -222,7 +222,17 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
   const store = useSidebarStore();
   const focusedGroupId = store.focusedGroupId();
   const isFullWidth = store.isSidebarFullWidth();
-  const [annotations, setAnnotations] = useState<SavedAnnotation[]>([]);
+
+  // For the public group, derive annotations from the store directly so the list
+  // stays reactive: any new annotation created in this session appears immediately.
+  // For private groups the API fetch is used (see the useEffect below).
+  const storeAnnotations = store.savedAnnotations();
+  const searchUris = store.searchUris();
+  const [fetchedAnnotations, setFetchedAnnotations] = useState<SavedAnnotation[]>([]);
+  const annotations: SavedAnnotation[] = focusedGroupId === PUBLIC_GROUP_ID
+    ? (savedAnnotationsForCurrentDocument(storeAnnotations, focusedGroupId, searchUris) as SavedAnnotation[])
+    : fetchedAnnotations;
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -254,6 +264,10 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
   const [activeLabels, setActiveLabels] = useState<Set<number> | undefined>(undefined);
   const [searchText, setSearchText] = useState('');
   const [searchCategoryIds, setSearchCategoryIds] = useState<number[]>([]);
+  // Category names/descriptions that were active during the last highlight run.
+  // undefined = no highlight has been run yet this session.
+  const [highlightedCategories, setHighlightedCategories] = useState<string[] | undefined>(undefined);
+  const [highlightedDescriptions, setHighlightedDescriptions] = useState<string[] | undefined>(undefined);
 
   // Any dropped categories → aligned view; zero → normal view.
   const alignCategory = searchCategoryIds.length >= 1 ? searchCategoryIds[0] : null;
@@ -279,45 +293,48 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
     if (!focusedGroupId) {
       return;
     }
+
+    const restoreCache = () => {
+      try {
+        const cached = localStorage.getItem(highlightCacheKey(focusedGroupId));
+        if (cached) {
+          const { rawSpans, categories: cats, categoryDescriptions: descs } = JSON.parse(cached) as {
+            rawSpans: Record<string, ApiSpan[]>;
+            categories: string[] | undefined;
+            categoryDescriptions: string[] | undefined;
+          };
+          const restoredMap = new Map<string, ApiSpan[]>(
+            Object.entries(rawSpans).map(([id, spans]) => [id, mergeAdjacentSpans(spans)]),
+          );
+          const index = buildLabelIndex([...restoredMap.values()], cats);
+          setRawSpanMap(restoredMap);
+          setLabelIndex(index);
+          setActiveLabels(new Set(Object.keys(index.labelColors).map(Number)));
+          setHighlightedCategories(cats ?? []);
+          setHighlightedDescriptions(descs ?? []);
+          return;
+        }
+      } catch {}
+      setRawSpanMap(new Map());
+      setLabelIndex({ labelColors: {}, labelNames: {} });
+      setActiveLabels(undefined);
+    };
+
+    if (focusedGroupId === PUBLIC_GROUP_ID) {
+      // Annotations are derived from the store reactively above — no fetch needed.
+      restoreCache();
+      return;
+    }
+
+    // Private group: fetch annotation list from the API.
     setIsLoading(true);
     setError(null);
 
     const fetchAnnotations = async () => {
       try {
-        let anns: SavedAnnotation[];
-        if (focusedGroupId === PUBLIC_GROUP_ID) {
-          anns = savedAnnotationsForCurrentDocument(
-            store.savedAnnotations(),
-            focusedGroupId,
-            store.searchUris(),
-          ) as SavedAnnotation[];
-        } else {
-          anns = await tagInventoryGroupSync.getGroupAnnotations(focusedGroupId);
-        }
-        setAnnotations(anns);
-
-        // Restore cached highlights for this group if available.
-        try {
-          const cached = localStorage.getItem(highlightCacheKey(focusedGroupId));
-          if (cached) {
-            const { rawSpans, categories: cats } = JSON.parse(cached) as {
-              rawSpans: Record<string, ApiSpan[]>;
-              categories: string[] | undefined;
-            };
-            const restoredMap = new Map<string, ApiSpan[]>(
-              Object.entries(rawSpans).map(([id, spans]) => [id, mergeAdjacentSpans(spans)]),
-            );
-            const index = buildLabelIndex([...restoredMap.values()], cats);
-            setRawSpanMap(restoredMap);
-            setLabelIndex(index);
-            setActiveLabels(new Set(Object.keys(index.labelColors).map(Number)));
-            return;
-          }
-        } catch {}
-
-        setRawSpanMap(new Map());
-        setLabelIndex({ labelColors: {}, labelNames: {} });
-        setActiveLabels(undefined);
+        const anns = await tagInventoryGroupSync.getGroupAnnotations(focusedGroupId);
+        setFetchedAnnotations(anns);
+        restoreCache();
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to load annotations',
@@ -382,12 +399,6 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
     setHighlightError(null);
 
     try {
-      const toProcess = annotations
-        .map(ann => ({ ann, sentence: (annotationQuote(ann) ?? '').trim() }))
-        .filter(({ sentence }) => sentence.length > 0);
-
-      console.log(`Highlighting ${toProcess.length} annotation(s) in one batch call`);
-
       const validRows = categoryRows.filter(r => r.name.trim().length > 0);
       const categories = validRows.length > 0
         ? validRows.map(r => r.name.trim())
@@ -396,10 +407,34 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
         ? validRows.map(r => r.description.trim())
         : undefined;
 
+      // Full re-highlight when categories changed or no existing spans.
+      const currentCats = categories ?? [];
+      const currentDescs = categoryDescriptions ?? [];
+      const catsDiffer = highlightedCategories === undefined ||
+        highlightedCategories.length !== currentCats.length ||
+        highlightedCategories.some((c, i) => c !== currentCats[i]) ||
+        (highlightedDescriptions ?? []).length !== currentDescs.length ||
+        (highlightedDescriptions ?? []).some((d, i) => d !== currentDescs[i]);
+      const isFullRun = catsDiffer || rawSpanMap.size === 0;
+
+      const allCandidates = annotations
+        .map(ann => ({ ann, sentence: (annotationQuote(ann) ?? '').trim() }))
+        .filter(({ sentence }) => sentence.length > 0);
+
+      // Incremental: skip annotations that already have spans.
+      const toProcess = isFullRun
+        ? allCandidates
+        : allCandidates.filter(({ ann }) => !rawSpanMap.has(ann.id));
+
+      if (toProcess.length === 0) return;
+
+      console.log(`Highlighting ${toProcess.length} annotation(s) (${isFullRun ? 'full' : 'incremental'})`);
+
       const sentences = toProcess.map(({ sentence }) => sentence);
       const batchSpans = await fetchSpansBatch(sentences, categories, categoryDescriptions);
 
-      const newRawSpanMap = new Map<string, ApiSpan[]>();
+      // Start from existing map for incremental runs; fresh map for full runs.
+      const newRawSpanMap = new Map<string, ApiSpan[]>(isFullRun ? [] : rawSpanMap);
       for (let i = 0; i < toProcess.length; i++) {
         newRawSpanMap.set(toProcess[i].ann.id, batchSpans[i] ?? []);
       }
@@ -408,6 +443,8 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
       setRawSpanMap(newRawSpanMap);
       setLabelIndex(index);
       setActiveLabels(new Set(Object.keys(index.labelColors).map(Number)));
+      setHighlightedCategories(currentCats);
+      setHighlightedDescriptions(currentDescs);
 
       // Persist so highlights survive page reloads.
       try {
@@ -417,6 +454,7 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
             JSON.stringify({
               rawSpans: Object.fromEntries(newRawSpanMap),
               categories,
+              categoryDescriptions,
             }),
           );
         }
@@ -474,6 +512,14 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
   if (tagMap.has('')) sortedTags.push('');
 
   const hasHighlights = rawSpanMap.size > 0;
+  const validCategories = categoryRows.filter(r => r.name.trim().length > 0).map(r => r.name.trim());
+  const validDescriptions = categoryRows.filter(r => r.name.trim().length > 0).map(r => r.description.trim());
+  const categoriesDiffer = hasHighlights &&
+    highlightedCategories !== undefined &&
+    (highlightedCategories.length !== validCategories.length ||
+     highlightedCategories.some((c, i) => c !== validCategories[i]) ||
+     (highlightedDescriptions ?? []).length !== validDescriptions.length ||
+     (highlightedDescriptions ?? []).some((d, i) => d !== validDescriptions[i]));
   const legendEntries = Object.entries(labelIndex.labelColors)
     .sort((a, b) => Number(a[0]) - Number(b[0]));
   const allLabelsActive =
@@ -523,11 +569,16 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
       {/* Highlight toolbar */}
       <div className="flex items-center gap-x-2 px-2">
         <button
-          className="text-xs px-2 py-1 rounded border border-grey-3 bg-white hover:bg-grey-1 disabled:opacity-50"
+          className={`text-xs px-2 py-1 rounded border disabled:opacity-50 ${
+            categoriesDiffer
+              ? 'border-yellow-400 bg-yellow-50 text-yellow-800 hover:bg-yellow-100'
+              : 'border-grey-3 bg-white hover:bg-grey-1'
+          }`}
           onClick={handleHighlight}
           disabled={isHighlighting}
+          title={categoriesDiffer ? 'Categories changed — clicking will re-highlight all annotations' : undefined}
         >
-          {isHighlighting ? 'Highlighting…' : 'Highlight'}
+          {isHighlighting ? 'Highlighting…' : categoriesDiffer ? '⚠ Highlight' : 'Highlight'}
         </button>
         <div className="inline-flex rounded border border-grey-3 bg-white p-0.5 text-xs">
           <button

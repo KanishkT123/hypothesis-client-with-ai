@@ -503,9 +503,15 @@ export class FrameSyncService {
       }
 
       // Open the sidebar so that the user can immediately edit the draft
-      // annotation.
+      // annotation. For highlights, also navigate to the AI Search Panel so
+      // the user can search the document — unless they're already there.
       if (!annot.$highlight) {
         this._hostRPC.call('openSidebar');
+      } else {
+        this._hostRPC.call('openSidebar');
+        if (!this._store.isSidebarPanelOpen('aiSearchAnnotations')) {
+          this._store.openSidebarPanel('aiSearchAnnotations');
+        }
       }
 
       // Ensure that the highlight for the newly-created annotation is visible.
