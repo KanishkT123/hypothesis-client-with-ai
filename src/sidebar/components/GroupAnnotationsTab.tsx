@@ -191,18 +191,17 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
   const contentRef = useRef<HTMLDivElement>(null);
   const alignedScrollRef = useRef<HTMLDivElement>(null);
 
-  // After the aligned grid renders, scroll so the column boundary is centered.
+  // After the aligned table renders, scroll so the column boundary is centered.
   useEffect(() => {
     if (alignCategory === null || !isFullWidth) return;
     const container = alignedScrollRef.current;
     if (!container) return;
     requestAnimationFrame(() => {
-      const grid = container.firstElementChild as HTMLElement;
-      if (!grid || grid.children.length < 2) return;
-      // children[0] is the first tag header (spans both columns);
-      // children[1] is the first left-column cell — its width equals the left column width.
-      const leftCell = grid.children[1] as HTMLElement;
-      const leftColWidth = leftCell.getBoundingClientRect().width;
+      // First <td> in the table is always a header cell in column 1.
+      // Table layout guarantees all column-1 cells share the same width.
+      const firstTd = container.querySelector('td') as HTMLElement | null;
+      if (!firstTd) return;
+      const leftColWidth = firstTd.getBoundingClientRect().width;
       container.scrollLeft = leftColWidth - container.clientWidth / 2;
     });
   }, [alignCategory, isFullWidth, rawSpanMap]);
@@ -547,69 +546,76 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
 
       {/* Tag sections */}
       {alignCategory !== null && isFullWidth ? (
-        // Aligned mode: single scrollable container with one shared grid so all rows scroll together.
+        // Aligned mode: HTML table so all rows share the same column widths automatically.
+        // Headers use position:sticky left:0 on a single-column <td> — the standard
+        // "frozen first column" pattern. The <tr> background fills the full row width,
+        // so headers appear static while annotation rows scroll horizontally.
         <div ref={alignedScrollRef} style={{ overflowX: 'auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'auto auto' }}>
-            {sortedTags.flatMap(tag => {
-              const sortedAnns = [...tagMap.get(tag)!].sort((a, b) => {
-                const aHas = rawSpanMap.get(a.id)?.some(s => s.label === alignCategory) ? 0 : 1;
-                const bHas = rawSpanMap.get(b.id)?.some(s => s.label === alignCategory) ? 0 : 1;
-                return aHas - bHas;
-              });
-              return [
-                <div
-                  key={`header-${tag || '__untagged__'}`}
-                  style={{ gridColumn: '1 / -1' }}
-                  className="text-sm font-bold text-color-text px-2 py-1 bg-grey-1 border-b border-grey-3 sticky top-0"
-                >
-                  {tag || 'Untagged'}
-                </div>,
-                ...sortedAnns.flatMap(ann => {
-                  const excerptText = annotationQuote(ann);
-                  if (!excerptText) return [];
-                  const rawSpans = rawSpanMap.get(ann.id);
-                  const labeledSpans = rawSpans ? toLabeled(rawSpans) : [];
-                  const firstAlignSpan = rawSpans?.find(s => s.label === alignCategory);
-                  const splitOffset = firstAlignSpan?.start ?? 0;
-                  const { left, right } = splitAtOffset(excerptText, labeledSpans, splitOffset);
-                  return [
-                    <div
-                      key={`${ann.id}-l`}
-                      className="italic text-color-text-light text-xs py-0.5"
-                      style={{ paddingRight: '2px', whiteSpace: 'nowrap', textAlign: 'right' }}
+          <table style={{ tableLayout: 'auto', borderCollapse: 'separate', borderSpacing: 0 }}>
+            <tbody>
+              {sortedTags.flatMap(tag => {
+                const sortedAnns = [...tagMap.get(tag)!].sort((a, b) => {
+                  const aHas = rawSpanMap.get(a.id)?.some(s => s.label === alignCategory) ? 0 : 1;
+                  const bHas = rawSpanMap.get(b.id)?.some(s => s.label === alignCategory) ? 0 : 1;
+                  return aHas - bHas;
+                });
+                return [
+                  <tr key={`header-${tag || '__untagged__'}`}>
+                    <td
+                      style={{ position: 'sticky', left: 0, zIndex: 1 }}
+                      className="text-sm font-bold text-color-text px-2 py-1 bg-grey-1 border-b border-grey-3"
                     >
-                      {left.spans.length > 0 ? (
-                        <HighlightedSentence
-                          original={left.text}
-                          spans={left.spans}
-                          labelColors={labelIndex.labelColors}
-                          labelNames={labelIndex.labelNames}
-                          activeLabels={activeLabels}
-                          mode={renderMode}
-                        />
-                      ) : left.text}
-                    </div>,
-                    <div
-                      key={`${ann.id}-r`}
-                      className="italic text-color-text-light text-xs py-0.5"
-                      style={{ paddingLeft: '2px', whiteSpace: 'nowrap' }}
-                    >
-                      {right.spans.length > 0 ? (
-                        <HighlightedSentence
-                          original={right.text}
-                          spans={right.spans}
-                          labelColors={labelIndex.labelColors}
-                          labelNames={labelIndex.labelNames}
-                          activeLabels={activeLabels}
-                          mode={renderMode}
-                        />
-                      ) : right.text}
-                    </div>,
-                  ];
-                }),
-              ];
-            })}
-          </div>
+                      {tag || 'Untagged'}
+                    </td>
+                    <td className="bg-grey-1 border-b border-grey-3" />
+                  </tr>,
+                  ...sortedAnns.flatMap(ann => {
+                    const excerptText = annotationQuote(ann);
+                    if (!excerptText) return [];
+                    const rawSpans = rawSpanMap.get(ann.id);
+                    const labeledSpans = rawSpans ? toLabeled(rawSpans) : [];
+                    const firstAlignSpan = rawSpans?.find(s => s.label === alignCategory);
+                    const splitOffset = firstAlignSpan?.start ?? 0;
+                    const { left, right } = splitAtOffset(excerptText, labeledSpans, splitOffset);
+                    return [
+                      <tr key={ann.id}>
+                        <td
+                          className="italic text-color-text-light text-xs py-0.5"
+                          style={{ paddingRight: '2px', whiteSpace: 'nowrap', textAlign: 'right' }}
+                        >
+                          {left.spans.length > 0 ? (
+                            <HighlightedSentence
+                              original={left.text}
+                              spans={left.spans}
+                              labelColors={labelIndex.labelColors}
+                              labelNames={labelIndex.labelNames}
+                              activeLabels={activeLabels}
+                              mode={renderMode}
+                            />
+                          ) : left.text}
+                        </td>
+                        <td
+                          className="italic text-color-text-light text-xs py-0.5"
+                          style={{ paddingLeft: '2px', whiteSpace: 'nowrap' }}
+                        >
+                          {right.spans.length > 0 ? (
+                            <HighlightedSentence
+                              original={right.text}
+                              spans={right.spans}
+                              labelColors={labelIndex.labelColors}
+                              labelNames={labelIndex.labelNames}
+                              activeLabels={activeLabels}
+                              mode={renderMode}
+                            />
+                          ) : right.text}
+                        </td>
+                      </tr>,
+                    ];
+                  }),
+                ];
+              })}
+            </tbody>
+          </table>
         </div>
       ) : (
         sortedTags.map(tag => (
