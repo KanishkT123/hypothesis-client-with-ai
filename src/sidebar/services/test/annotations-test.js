@@ -86,7 +86,6 @@ describe('AnnotationsService', () => {
       removeAnnotationIdsFromTagInventoryRows: sinon.stub(),
       addTagInventoryRow: sinon.stub(),
       tagInventoryRows: sinon.stub().returns([]),
-      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
       removeDraft: sinon.stub(),
       selectTab: sinon.stub(),
       setExpanded: sinon.stub(),

@@ -74,7 +74,6 @@ describe('LoadAnnotationsService', () => {
       tagInventoryRows: sinon.stub().returns([]),
       clearAnnotations: sinon.stub(),
       frames: sinon.stub(),
-      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
       removeAnnotations: sinon.stub(),
       savedAnnotations: sinon.stub(),
       setAnnotationResultCount: sinon.stub(),
