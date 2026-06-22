@@ -256,8 +256,18 @@ function AISearchPanel({
       const userid = store.profile().userid;
       const groupId = store.focusedGroupId();
 
-      if (!userid || !groupId || !documentURL) {
-        toastMessenger.error('Missing user, group, or PDF URL');
+      if (!userid) {
+        toastMessenger.error('Not signed in — please sign in to use AI search.');
+        return;
+      }
+      if (!groupId) {
+        toastMessenger.error('No group selected.');
+        return;
+      }
+      if (!documentURL) {
+        toastMessenger.error(
+          'No document URL — Hypothesis may not be connected to this page.',
+        );
         return;
       }
 
@@ -305,7 +315,7 @@ function AISearchPanel({
         // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
         claudeResult = await claude.AISearchDocument({
           query: fullUserMessage,
-          candidateURIs: store.searchUris(),
+          documentUrl: documentURL ?? '',
           apiKey: claudeAPIKey,
           signal,
         });

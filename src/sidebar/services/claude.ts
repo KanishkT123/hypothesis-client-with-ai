@@ -34,7 +34,7 @@ function isNetworkTransportError(error: unknown): boolean {
 }
 
 export type ClaudeSearchRequest = {
-  candidateURIs: string[];
+  documentUrl: string;
   query: string;
   apiKey: string;
   /** When aborted, the request should be cancelled; callers must skip post-Claude work. */
@@ -47,36 +47,16 @@ export type ClaudeSearchResult = {
 };
 
 export class ClaudeService {
-  firstPDFURI(candidateURIs: string[]): string | null {
-    for (const uri of candidateURIs) {
-      if (uri.toLowerCase().endsWith('.pdf')) {
-        return uri;
-      }
-    }
-    const hasPDFFingerprint = candidateURIs.some(u =>
-      u.startsWith('urn:x-pdf:'),
-    );
-    if (hasPDFFingerprint) {
-      for (const uri of candidateURIs) {
-        if (/^https?:\/\//i.test(uri)) {
-          return uri;
-        }
-      }
-    }
-    return null;
-  }
-
   /**
-   * Search a document with a free-text query using Claude's native PDF support.
+   * Search a document with a free-text query using Claude's native document support.
    * Returns data in the same shape as ReductoService so callers don't need to change.
    */
   async AISearchDocument(
     request: ClaudeSearchRequest,
   ): Promise<ClaudeSearchResult> {
-    const {query, candidateURIs, apiKey, signal} = request;
-    const documentURL = this.firstPDFURI(candidateURIs);
-    if (!documentURL) {
-      throw new Error('No PDF URL found in candidateURIs');
+    const {query, documentUrl, apiKey, signal} = request;
+    if (!documentUrl) {
+      throw new Error('No document URL provided');
     }
 
     const client = new Anthropic({
@@ -84,7 +64,7 @@ export class ClaudeService {
       dangerouslyAllowBrowser: true,
     });
 
-    console.log('[ClaudeService] start call', {documentURL, query});
+    console.log('[ClaudeService] start call', {documentUrl, query});
     const startedAt = Date.now();
     try {
       const message = await client.messages.parse(
@@ -99,7 +79,7 @@ export class ClaudeService {
               content: [
                 {
                   type: 'document',
-                  source: {type: 'url', url: documentURL},
+                  source: {type: 'url', url: documentUrl},
                   cache_control: {type: 'ephemeral'},
                 } as any,
                 {

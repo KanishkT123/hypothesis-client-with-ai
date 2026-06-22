@@ -152,6 +152,76 @@ describe('AISearchPanel', () => {
     );
   });
 
+  it('shows a sign-in error when AI search is submitted while logged out', async () => {
+    fakeStore.profile = sinon.stub().returns({});
+    fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+    const fakeClaude = {
+      AISearchDocument: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={{}}
+        experimentLog={{}}
+        frameSync={{ setTagHighlightPalette: sinon.stub() }}
+        claude={fakeClaude}
+        api={{}}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+      />,
+    );
+
+    await wrapper.find('SearchField').props().onSearch('find methods');
+
+    assert.calledWith(
+      fakeToastMessenger.error,
+      'Not signed in — please sign in to use AI search.',
+    );
+    assert.notCalled(fakeClaude.AISearchDocument);
+  });
+
+  it('passes the resolved document URL to Claude when search is submitted', async () => {
+    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.mainFrame = sinon.stub().returns({
+      uri: 'http://example.com/paper.pdf',
+    });
+    fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+    const fakeClaude = {
+      AISearchDocument: sinon.stub().rejects(new Error('stop after claude')),
+    };
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={{}}
+        experimentLog={{}}
+        frameSync={{ setTagHighlightPalette: sinon.stub() }}
+        claude={fakeClaude}
+        api={{}}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+      />,
+    );
+
+    wrapper.find('SearchField').props().onSearch('find methods');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.calledWith(
+      fakeClaude.AISearchDocument,
+      sinon.match({ documentUrl: 'http://example.com/paper.pdf' }),
+    );
+  });
+
   it('calls getGroupAnnotations when rerun is triggered on a row', async () => {
     fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
     fakeStore.focusedGroupId.returns('group-1');
