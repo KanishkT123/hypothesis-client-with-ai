@@ -16,9 +16,9 @@ describe('AISearchPanel', () => {
       tagInventoryRows: sinon.stub().returns([]),
       savedAnnotations: sinon.stub().returns([]),
       tagInventorySchemaTagColors: sinon.stub().returns({}),
+      mainFrame: sinon.stub().returns(null),
       searchUris: sinon.stub().returns([]),
       focusedGroupId: sinon.stub().returns('group-1'),
-      tagInventoryPublicDocumentScope: sinon.stub().returns(null),
       closeSidebarPanel: sinon.stub(),
       setAISearchPanelQueryInput: sinon.stub(),
       setFilterQuery: sinon.stub(),
@@ -50,7 +50,7 @@ describe('AISearchPanel', () => {
         annotationsService={{}}
         experimentLog={{}}
         frameSync={{ setTagHighlightPalette: sinon.stub() }}
-        claude={{ firstPDFURI: sinon.stub().returns(null) }}
+        claude={{}}
         api={{}}
         toastMessenger={{}}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
@@ -165,11 +165,9 @@ describe('AISearchPanel', () => {
         annotationIds: [],
       },
     ]);
-    fakeStore.mergeTagInventoryRowsWithSameTagQuery = sinon.stub();
     fakeStore.removeAnnotationIdsFromTagInventoryRows = sinon.stub();
 
     const fakeClaude = {
-      firstPDFURI: sinon.stub().returns('http://example.com/doc.pdf'),
       AISearchDocument: sinon.stub().rejects(new Error('stop after cache')),
     };
     const fakeAnnotationsService = {

@@ -4,7 +4,7 @@ import { fakeReduxStore } from '../../test/fake-redux-store';
 import { setupTagPaletteSync } from '../tag-palette-sync';
 
 describe('setupTagPaletteSync', () => {
-  function createStore(tagInventory, { focusedGroupId = 'group-1', publicScope = null } = {}) {
+  function createStore(tagInventory, { focusedGroupId = 'group-1' } = {}) {
     return fakeReduxStore(
       {
         sidebarPanels: {
@@ -13,7 +13,8 @@ describe('setupTagPaletteSync', () => {
       },
       {
         focusedGroupId: () => focusedGroupId,
-        tagInventoryPublicDocumentScope: () => publicScope,
+        mainFrame: () => null,
+        searchUris: () => [],
       },
     );
   }

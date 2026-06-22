@@ -34,6 +34,7 @@ import {
   tagsAfterRemovingTagInventoryRowSchemaTag,
 } from '../../helpers/claude-ai-search-user-message';
 import { quote as annotationQuote } from '../../helpers/annotation-metadata';
+import { currentDocumentUri } from '../../helpers/document-uri';
 import { mergeVisibleTagHighlightPalette } from '../../helpers/tag-palette';
 import {
   isTagInventoryRowVisibleInScope,
@@ -59,7 +60,10 @@ import type {
 } from '../../services/claude';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
-import type { TagInventoryRow } from '../../store/modules/sidebar-panels';
+import {
+  tagInventoryRowId,
+  type TagInventoryRow,
+} from '../../store/modules/sidebar-panels';
 import SidebarPanel from '../SidebarPanel';
 import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
 import SearchField from './SearchField';
@@ -144,10 +148,9 @@ function AISearchPanel({
 
   const aiRows = store.tagInventoryRows();
   const focusedGroupId = store.focusedGroupId();
-  const publicDocumentScope = store.tagInventoryPublicDocumentScope();
   const savedAnnotations = store.savedAnnotations();
   const schemaTagColors = store.tagInventorySchemaTagColors();
-  const documentURL = claude.firstPDFURI(store.searchUris());
+  const documentURL = currentDocumentUri(store);
 
   const globalRowLock =
     runAISearchInFlight ||
@@ -155,13 +158,6 @@ function AISearchPanel({
     deletingRowId !== null;
   const canAnnotateManually = schemaTag.trim().length > 0;
 
-  const publicDocumentDescriptorKeys = useMemo(
-    () =>
-      publicDocumentScope
-        ? new Set(publicDocumentScope.visibleDescriptorKeys)
-        : null,
-    [publicDocumentScope],
-  );
   /** Rows visible in the focused group (before the hidden-row toggle). */
   const scopedRows = useMemo(() => {
     if (!focusedGroupId) {
@@ -170,10 +166,10 @@ function AISearchPanel({
     return aiRows.filter(row =>
       isTagInventoryRowVisibleInScope(row, {
         focusedGroupId,
-        publicDocumentDescriptorKeys,
+        currentDocumentUri: documentURL,
       }),
     );
-  }, [aiRows, focusedGroupId, publicDocumentDescriptorKeys]);
+  }, [aiRows, focusedGroupId, documentURL]);
   const displayRows = useMemo(
     () =>
       sortTagInventoryRows(
@@ -253,7 +249,7 @@ function AISearchPanel({
   async function runAISearch(
     schemaTagForRow: string,
     query: string,
-    options?: { replaceRowId?: string },
+    options?: { isRerun?: boolean },
   ) {
     setRunAISearchInFlight(true);
     try {
@@ -370,20 +366,22 @@ function AISearchPanel({
         .map(a => a.id)
         .filter((id): id is string => typeof id === 'string');
 
-      const rowId = options?.replaceRowId ?? crypto.randomUUID();
+      const isPublicGroup = groupId === PUBLIC_GROUP_ID;
+      const docUri = isPublicGroup ? documentURL : undefined;
+      const rowId = tagInventoryRowId(schemaTagForRow, query, groupId, docUri);
 
-      if (options?.replaceRowId) {
-        store.setTagInventoryRowAnnotationIds(options.replaceRowId, newIds);
-        store.setTagInventoryRowHidden(options.replaceRowId, false);
+      if (options?.isRerun) {
+        store.setTagInventoryRowAnnotationIds(rowId, newIds);
+        store.setTagInventoryRowHidden(rowId, false);
       } else {
-        const row: TagInventoryRow = {
+        store.addTagInventoryRow({
           id: rowId,
           groupId,
           schemaTag: schemaTagForRow,
           query,
           annotationIds: newIds,
-        };
-        store.addTagInventoryRow(row);
+          ...(docUri !== undefined ? { documentUri: docUri } : {}),
+        });
       }
 
       experimentLog.logSearch({
@@ -416,11 +414,9 @@ function AISearchPanel({
   }
 
   async function onAISearch(query: string) {
-    const tagKey = schemaTag.trim();
-    const queryKey = query.trim();
-    const matchingRow = aiRows.find(
-      r => r.schemaTag.trim() === tagKey && r.query.trim() === queryKey,
-    );
+    const docUri = focusedGroupId === PUBLIC_GROUP_ID ? documentURL : undefined;
+    const targetId = tagInventoryRowId(schemaTag, query, focusedGroupId ?? undefined, docUri ?? undefined);
+    const matchingRow = aiRows.find(r => r.id === targetId);
     if (matchingRow) {
       await onRerunRow(matchingRow);
     } else {
@@ -436,17 +432,25 @@ function AISearchPanel({
     try {
       const userid = store.profile().userid;
       const groupId = store.focusedGroupId();
-      const documentURL = claude.firstPDFURI(store.searchUris());
+      const documentURL = currentDocumentUri(store);
 
-      if (!userid || !groupId || !documentURL) {
-        toastMessenger.error('Missing user, group, or PDF URL');
+      if (!userid) {
+        toastMessenger.error('Not signed in — please sign in to use AI search.');
+        return;
+      }
+      if (!groupId) {
+        toastMessenger.error('No group selected.');
+        return;
+      }
+      if (!documentURL) {
+        toastMessenger.error(
+          'No document URL — Hypothesis may not be connected to this page.',
+        );
         return;
       }
 
       setRerunningRowId(row.id);
       try {
-        store.mergeTagInventoryRowsWithSameTagQuery(row.id);
-
         const pending = listStrictTagInventoryRowPendingAnnotations(
           store.savedAnnotations() as SavedAnnotation[],
           documentURL,
@@ -481,7 +485,7 @@ function AISearchPanel({
           documentUri: documentURL,
         });
 
-        await runAISearch(row.schemaTag, row.query, { replaceRowId: row.id });
+        await runAISearch(row.schemaTag, row.query, { isRerun: true });
       } catch (err) {
         console.error(err);
         toastMessenger.error('Failed to rerun AI search.');

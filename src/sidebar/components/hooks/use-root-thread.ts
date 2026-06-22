@@ -1,5 +1,6 @@
 import { useMemo } from 'preact/hooks';
 
+import { currentDocumentUri } from '../../helpers/document-uri';
 import { isTagInventoryRowVisibleInScope } from '../../helpers/tag-inventory-group';
 import { threadAnnotations } from '../../helpers/thread-annotations';
 import type {
@@ -22,16 +23,7 @@ export function useRootThread(): ThreadAnnotationsResult {
   const showTabs = route === 'sidebar';
   const focusedGroupId = store.focusedGroupId();
   const tagInventoryRows = store.tagInventoryRows();
-  const publicScope = store.tagInventoryPublicDocumentScope();
-  const publicDocumentDescriptorKeys = useMemo(
-    () =>
-      publicScope?.visibleDescriptorKeys
-        ? new Set(publicScope.visibleDescriptorKeys)
-        : null,
-    [publicScope],
-  );
-  const documentUri =
-    store.mainFrame()?.uri ?? store.searchUris()[0] ?? null;
+  const documentUri = currentDocumentUri(store);
 
   const threadState = useMemo((): ThreadState => {
     const selection = { ...selectionState, filterQuery: query, filters };
@@ -42,7 +34,7 @@ export function useRootThread(): ThreadAnnotationsResult {
               row.hidden &&
               isTagInventoryRowVisibleInScope(row, {
                 focusedGroupId,
-                publicDocumentDescriptorKeys,
+                currentDocumentUri: documentUri,
               }),
           )
           .map(row => ({
@@ -65,7 +57,6 @@ export function useRootThread(): ThreadAnnotationsResult {
     showTabs,
     focusedGroupId,
     tagInventoryRows,
-    publicDocumentDescriptorKeys,
     documentUri,
   ]);
 

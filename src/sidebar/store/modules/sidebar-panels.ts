@@ -26,15 +26,33 @@ export type TagInventoryRow = {
   annotationIds: string[];
   /** Focused group when the row was created or synced. */
   groupId?: string;
+  /**
+   * Public group only: document URI this row was derived from.
+   * Private groups omit this field and use the prune mechanism instead.
+   */
+  documentUri?: string;
   /** When true, row can be filtered out of the inventory table (see AISearchPanel). */
   hidden?: boolean;
 };
 
-/** Which Public-document inventory rows are visible for the current PDF. */
-export type TagInventoryPublicDocumentScope = {
-  documentUri: string;
-  visibleDescriptorKeys: string[];
-};
+/**
+ * Stable, deterministic id for a tag inventory row.
+ * For Public group rows, pass `documentUri` to make the id document-scoped
+ * (replaces the separate publicGroupDocumentDescriptorKeys store slice).
+ * For private group rows, omit `documentUri`; the prune mechanism handles
+ * document-scoping there.
+ */
+export function tagInventoryRowId(
+  schemaTag: string,
+  query: string,
+  groupId: string | undefined,
+  documentUri?: string,
+): string {
+  const base = `${schemaTag.trim()}\0${query.trim()}\0${groupId ?? ''}`;
+  return encodeURIComponent(
+    documentUri !== undefined ? `${base}\0${documentUri}` : base,
+  );
+}
 
 export type TagInventoryState = {
   rows: TagInventoryRow[];
@@ -125,12 +143,6 @@ export type State = {
 
   /** AI search experiment log; persisted under `hypothesis.aiSearch.experimentLog`. */
   experimentLog: ExperimentLogState;
-
-  /**
-   * Public group only: descriptor keys for rows derived on the current document.
-   * Other Public rows stay stored but are hidden until that document is opened again.
-   */
-  tagInventoryPublicDocumentScope: TagInventoryPublicDocumentScope | null;
 };
 
 const initialTagInventory: TagInventoryState = {
@@ -147,7 +159,6 @@ const initialState: State = {
   activePanelName: null,
   tagInventory: initialTagInventory,
   experimentLog: emptyExperimentLog(),
-  tagInventoryPublicDocumentScope: null,
 };
 
 const reducers = {
@@ -198,9 +209,29 @@ const reducers = {
 
   ADD_TAG_INVENTORY_ROW(state: State, action: { row: TagInventoryRow }) {
     const { row } = action;
-    const rows = [row, ...state.tagInventory.rows];
-    const tag = row.schemaTag.trim();
+    const existing = state.tagInventory.rows.find(r => r.id === row.id);
+    if (existing) {
+      const unionIds = [
+        ...new Set([...(existing.annotationIds ?? []), ...(row.annotationIds ?? [])]),
+      ];
+      const existingIds = existing.annotationIds ?? [];
+      if (
+        unionIds.length === existingIds.length &&
+        unionIds.every((id, i) => id === existingIds[i])
+      ) {
+        return state;
+      }
+      return {
+        tagInventory: {
+          ...state.tagInventory,
+          rows: state.tagInventory.rows.map(r =>
+            r.id === row.id ? { ...r, annotationIds: unionIds } : r,
+          ),
+        },
+      };
+    }
     let { schemaTagColors } = state.tagInventory;
+    const tag = row.schemaTag.trim();
     if (tag && schemaTagColors[tag] === undefined) {
       schemaTagColors = {
         ...schemaTagColors,
@@ -208,7 +239,7 @@ const reducers = {
       };
     }
     return {
-      tagInventory: { rows, schemaTagColors },
+      tagInventory: { rows: [row, ...state.tagInventory.rows], schemaTagColors },
     };
   },
 
@@ -264,69 +295,27 @@ const reducers = {
 
   /**
    * Replace the full `tagInventory` slice (e.g. from `localStorage` on load or
-   * when another tab updates storage).
+   * when another tab updates storage). Normalizes row ids to the deterministic
+   * format and merges any duplicates that may exist from a previous id scheme.
    */
   HYDRATE_TAG_INVENTORY(state: State, action: { tagInventory: TagInventoryState }) {
-    return {
-      tagInventory: action.tagInventory,
-    };
-  },
-
-  /**
-   * Merge all rows with the same trimmed tag+query as `keepRowId` into that
-   * row (union of `annotationIds`) and remove the other duplicate rows.
-   */
-  MERGE_TAG_INVENTORY_ROWS_SAME_TAG_QUERY(
-    state: State,
-    action: { keepRowId: string },
-  ) {
-    const { rows } = state.tagInventory;
-    const keep = rows.find(r => r.id === action.keepRowId);
-    if (!keep) {
-      return state;
+    const normalized = new Map<string, TagInventoryRow>();
+    for (const row of action.tagInventory.rows) {
+      const newId = tagInventoryRowId(row.schemaTag, row.query, row.groupId);
+      const existing = normalized.get(newId);
+      if (existing) {
+        const unionIds = [
+          ...new Set([...(existing.annotationIds ?? []), ...(row.annotationIds ?? [])]),
+        ];
+        normalized.set(newId, { ...existing, annotationIds: unionIds });
+      } else {
+        normalized.set(newId, { ...row, id: newId });
+      }
     }
-    const tagKey = keep.schemaTag.trim();
-    const queryKey = keep.query.trim();
-    const groupKey = keep.groupId ?? '';
-    const sameKey = (r: TagInventoryRow) =>
-      (r.groupId ?? '') === groupKey &&
-      r.schemaTag.trim() === tagKey &&
-      r.query.trim() === queryKey;
-
-    const duplicates = rows.filter(sameKey);
-    // Keep the kept row's ids first, then append ids merged in from the other
-    // duplicates, so the merged order is stable regardless of row insertion order.
-    const others = duplicates.filter(r => r.id !== action.keepRowId);
-    const unionIds = [
-      ...new Set([
-        ...keep.annotationIds,
-        ...others.flatMap(r => r.annotationIds),
-      ]),
-    ];
-    const allHidden = duplicates.every(r => r.hidden === true);
-
-    const newRows = rows
-      .filter(r => !(sameKey(r) && r.id !== action.keepRowId))
-      .map(r => {
-        if (r.id !== action.keepRowId) {
-          return r;
-        }
-        const merged = { ...r, annotationIds: unionIds };
-        if (allHidden) {
-          return { ...merged, hidden: true as const };
-        }
-        if (!('hidden' in merged)) {
-          return merged;
-        }
-        const next = { ...merged };
-        delete next.hidden;
-        return next;
-      });
-
     return {
       tagInventory: {
-        ...state.tagInventory,
-        rows: newRows,
+        ...action.tagInventory,
+        rows: [...normalized.values()],
       },
     };
   },
@@ -372,15 +361,6 @@ const reducers = {
   HYDRATE_EXPERIMENT_LOG(state: State, action: { experimentLog: ExperimentLogState }) {
     return {
       experimentLog: action.experimentLog,
-    };
-  },
-
-  SET_TAG_INVENTORY_PUBLIC_DOCUMENT_SCOPE(
-    state: State,
-    action: { scope: TagInventoryPublicDocumentScope },
-  ) {
-    return {
-      tagInventoryPublicDocumentScope: action.scope,
     };
   },
 
@@ -452,12 +432,6 @@ function hydrateTagInventory(tagInventory: TagInventoryState) {
   return makeAction(reducers, 'HYDRATE_TAG_INVENTORY', { tagInventory });
 }
 
-function mergeTagInventoryRowsWithSameTagQuery(keepRowId: string) {
-  return makeAction(reducers, 'MERGE_TAG_INVENTORY_ROWS_SAME_TAG_QUERY', {
-    keepRowId,
-  });
-}
-
 function setTagInventoryRowAnnotationIds(rowId: string, annotationIds: string[]) {
   return makeAction(reducers, 'SET_TAG_INVENTORY_ROW_ANNOTATION_IDS', {
     rowId,
@@ -477,10 +451,6 @@ function setExperimentLog(experimentLog: ExperimentLogState) {
 
 function hydrateExperimentLog(experimentLog: ExperimentLogState) {
   return makeAction(reducers, 'HYDRATE_EXPERIMENT_LOG', { experimentLog });
-}
-
-function setTagInventoryPublicDocumentScope(scope: TagInventoryPublicDocumentScope) {
-  return makeAction(reducers, 'SET_TAG_INVENTORY_PUBLIC_DOCUMENT_SCOPE', { scope });
 }
 
 function pruneTagInventoryRowsForGroup(
@@ -512,10 +482,6 @@ function experimentLog(state: State) {
   return state.experimentLog;
 }
 
-function tagInventoryPublicDocumentScope(state: State) {
-  return state.tagInventoryPublicDocumentScope;
-}
-
 export const sidebarPanelsModule = createStoreModule(initialState, {
   namespace: 'sidebarPanels',
   reducers,
@@ -529,12 +495,10 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     setTagInventoryRowHidden,
     setTagInventorySchemaTagColor,
     hydrateTagInventory,
-    mergeTagInventoryRowsWithSameTagQuery,
     setTagInventoryRowAnnotationIds,
     removeAnnotationIdsFromTagInventoryRows,
     setExperimentLog,
     hydrateExperimentLog,
-    setTagInventoryPublicDocumentScope,
     pruneTagInventoryRowsForGroup,
   },
 
@@ -543,6 +507,5 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     tagInventoryRows,
     tagInventorySchemaTagColors,
     experimentLog,
-    tagInventoryPublicDocumentScope,
   },
 });

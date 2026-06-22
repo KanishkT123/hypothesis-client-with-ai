@@ -28,8 +28,10 @@ import type {
   SidebarToGuestCalls,
   GuestToSidebarCalls,
 } from '../../types/port-rpc-calls';
-import { ensureTagInventoryRowForTagQuery } from '../helpers/tag-inventory-row';
 import { isReply } from '../helpers/annotation-metadata';
+import { currentDocumentUri } from '../helpers/document-uri';
+import { PUBLIC_GROUP_ID } from '../helpers/groups';
+import { tagInventoryRowId } from '../store/modules/sidebar-panels';
 import {
   annotationMatchesSegment,
   segmentMatchesFocusFilters,
@@ -493,13 +495,21 @@ export class FrameSyncService {
           annot.tags = [...tags, schemaTag];
         }
 
-        ensureTagInventoryRowForTagQuery(this._store, {
-          id: `manual-${annot.$tag}`,
-          groupId: this._store.focusedGroupId() ?? undefined,
-          schemaTag,
-          query,
-          annotationIds: [],
-        });
+        const groupId = this._store.focusedGroupId() ?? undefined;
+        const isPublic = groupId === PUBLIC_GROUP_ID;
+        const docUri = isPublic
+          ? (currentDocumentUri(this._store) ?? undefined)
+          : undefined;
+        if (!isPublic || docUri) {
+          this._store.addTagInventoryRow({
+            id: tagInventoryRowId(schemaTag, query, groupId, docUri),
+            groupId,
+            schemaTag,
+            query,
+            annotationIds: [],
+            ...(docUri !== undefined ? { documentUri: docUri } : {}),
+          });
+        }
       }
 
       // Open the sidebar so that the user can immediately edit the draft

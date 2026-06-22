@@ -1,5 +1,8 @@
 import { createStore } from '../../store/create-store';
-import { sidebarPanelsModule } from '../../store/modules/sidebar-panels';
+import {
+  sidebarPanelsModule,
+  tagInventoryRowId,
+} from '../../store/modules/sidebar-panels';
 import {
   parseExperimentLogState,
   EXPERIMENT_LOG_STORAGE_KEY,
@@ -228,10 +231,12 @@ describe('PersistedTagInventoryService', () => {
 
   describe('#init', () => {
     it('hydrates from localStorage when data is valid', () => {
+      // HYDRATE_TAG_INVENTORY normalizes row ids; use the normalized form.
+      const normalizedId = tagInventoryRowId('methods', 'q1', undefined);
       const tagInventory = {
         rows: [
           {
-            id: 'r1',
+            id: normalizedId,
             schemaTag: 'methods',
             query: 'q1',
             annotationIds: ['a1'],
@@ -239,7 +244,11 @@ describe('PersistedTagInventoryService', () => {
         ],
         schemaTagColors: { methods: 'rgba(1,2,3,0.38)' },
       };
-      const persisted = { revision: 4, ...tagInventory };
+      const persisted = {
+        revision: 4,
+        rows: [{ id: 'old-r1', schemaTag: 'methods', query: 'q1', annotationIds: ['a1'] }],
+        schemaTagColors: { methods: 'rgba(1,2,3,0.38)' },
+      };
       fakeLocalStorage.getObject
         .withArgs(TAG_INVENTORY_STORAGE_KEY)
         .returns(persisted);
@@ -382,25 +391,19 @@ describe('PersistedTagInventoryService', () => {
 
       createService().init();
 
-      const tagInventory = {
-        rows: [
-          {
-            id: 'x',
-            schemaTag: 'remote',
-            query: 'rq',
-            annotationIds: [],
-          },
-        ],
+      const normalizedId = tagInventoryRowId('remote', 'rq', undefined);
+      const next = {
+        revision: 1,
+        rows: [{ id: 'old-x', schemaTag: 'remote', query: 'rq', annotationIds: [] }],
         schemaTagColors: { remote: 'rgba(9,9,9,0.38)' },
       };
-      const next = { revision: 1, ...tagInventory };
 
-      triggerStorage(
-        TAG_INVENTORY_STORAGE_KEY,
-        JSON.stringify(next),
-      );
+      triggerStorage(TAG_INVENTORY_STORAGE_KEY, JSON.stringify(next));
 
-      assert.deepEqual(store.getState().sidebarPanels.tagInventory, tagInventory);
+      assert.deepEqual(store.getState().sidebarPanels.tagInventory, {
+        rows: [{ id: normalizedId, schemaTag: 'remote', query: 'rq', annotationIds: [] }],
+        schemaTagColors: { remote: 'rgba(9,9,9,0.38)' },
+      });
     });
 
     it('hydrates experiment log from storage event payload', () => {
@@ -511,33 +514,24 @@ describe('PersistedTagInventoryService', () => {
       createService().init();
 
       store.addTagInventoryRow({
-        id: 'r1',
+        id: tagInventoryRowId('t', 'q', undefined),
         schemaTag: 't',
         query: 'q',
         annotationIds: [],
       });
 
+      const normalizedRemoteId = tagInventoryRowId('a', 'b', undefined);
       const remote = {
         revision: 5,
-        rows: [
-          {
-            id: 'remote',
-            schemaTag: 'a',
-            query: 'b',
-            annotationIds: ['z'],
-          },
-        ],
+        rows: [{ id: 'old-remote', schemaTag: 'a', query: 'b', annotationIds: ['z'] }],
         schemaTagColors: { a: 'rgba(1,1,1,0.38)' },
       };
 
-      triggerStorage(
-        TAG_INVENTORY_STORAGE_KEY,
-        JSON.stringify(remote),
-      );
+      triggerStorage(TAG_INVENTORY_STORAGE_KEY, JSON.stringify(remote));
 
       assert.deepEqual(store.getState().sidebarPanels.tagInventory, {
-        rows: remote.rows,
-        schemaTagColors: remote.schemaTagColors,
+        rows: [{ id: normalizedRemoteId, schemaTag: 'a', query: 'b', annotationIds: ['z'] }],
+        schemaTagColors: { a: 'rgba(1,1,1,0.38)' },
       });
     });
 

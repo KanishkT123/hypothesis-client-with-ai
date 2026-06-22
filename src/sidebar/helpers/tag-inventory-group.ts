@@ -152,11 +152,11 @@ export function negativeSchemaTagForPositiveTag(positiveSchemaTag: string): stri
 }
 
 /**
- * Positive schema tags on an annotation: not system tags, not negative schema tags.
+ * Positive schema tags on an annotation: non-empty, not system tags, not negative schema tags.
  */
 export function positiveSchemaTags(annotationTags: string[]): string[] {
   return annotationTags.filter(
-    tag => !isAiSearchSystemTag(tag) && !isNegativeSchemaTag(tag),
+    tag => tag.trim() && !isAiSearchSystemTag(tag) && !isNegativeSchemaTag(tag),
   );
 }
 
@@ -216,6 +216,9 @@ export function deriveTagInventoryRowDescriptors(
     }
 
     if (tags.includes(AI_PENDING)) {
+      for (const schemaTag of positiveSchemaTags(tags)) {
+        push({ schemaTag, query: textQuery });
+      }
       continue;
     }
 
@@ -233,22 +236,18 @@ export function isTagInventoryRowVisibleInScope(
   scope: {
     focusedGroupId: string;
     /**
-     * Public (`__world__`) only: descriptor keys derived/upserted for the
-     * **current document**. Rows outside this set stay stored (colors) but hidden.
+     * Public group only: URI of the current document. Public group rows carry a
+     * `documentUri` field and are only shown when it matches this value.
+     * Private groups omit this; they use the prune mechanism instead.
      */
-    publicDocumentDescriptorKeys?: ReadonlySet<string> | null;
+    currentDocumentUri?: string | null;
   },
 ): boolean {
   if (row.groupId !== scope.focusedGroupId) {
     return false;
   }
   if (scope.focusedGroupId === PUBLIC_GROUP_ID) {
-    if (!scope.publicDocumentDescriptorKeys) {
-      return false;
-    }
-    return scope.publicDocumentDescriptorKeys.has(
-      rowDescriptorKey(row.schemaTag, row.query),
-    );
+    return !!scope.currentDocumentUri && row.documentUri === scope.currentDocumentUri;
   }
   return true;
 }

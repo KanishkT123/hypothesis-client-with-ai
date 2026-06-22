@@ -1,12 +1,11 @@
 import sinon from 'sinon';
 
 import { PUBLIC_GROUP_ID } from '../../helpers/groups';
-import { rowDescriptorKey } from '../../helpers/tag-inventory-group';
 import {
   TagInventoryGroupSyncService,
   savedAnnotationsForCurrentDocument,
 } from '../tag-inventory-group-sync';
-import { loadSyncRowID } from '../tag-inventory-reconcile';
+import { tagInventoryRowId } from '../../store/modules/sidebar-panels';
 
 describe('TagInventoryGroupSyncService', () => {
   let fakeApi;
@@ -39,15 +38,12 @@ describe('TagInventoryGroupSyncService', () => {
 
     fakeStore = {
       addTagInventoryRow: sinon.stub(),
-      tagInventoryRows: sinon.stub().returns([]),
       focusedGroupId: sinon.stub().returns('private-group'),
       hasFetchedProfile: sinon.stub().returns(true),
       mainFrame: sinon.stub().returns({ uri: 'http://example.com' }),
-      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
       pruneTagInventoryRowsForGroup: sinon.stub(),
       savedAnnotations: sinon.stub().returns([]),
       searchUris: sinon.stub().returns(['http://example.com']),
-      setTagInventoryPublicDocumentScope: sinon.stub(),
       subscribe: sinon.stub().returns(sinon.stub()),
     };
 
@@ -75,15 +71,12 @@ describe('TagInventoryGroupSyncService', () => {
 
     assert.notCalled(groupAnnotationsRead);
     assert.calledWith(fakeStore.addTagInventoryRow, {
-      id: loadSyncRowID('methods', ''),
+      id: tagInventoryRowId('methods', '', PUBLIC_GROUP_ID, 'http://example.com'),
       groupId: PUBLIC_GROUP_ID,
       schemaTag: 'methods',
       query: '',
       annotationIds: [],
-    });
-    assert.calledWith(fakeStore.setTagInventoryPublicDocumentScope, {
       documentUri: 'http://example.com',
-      visibleDescriptorKeys: [rowDescriptorKey('methods', '')],
     });
   });
 
@@ -97,7 +90,7 @@ describe('TagInventoryGroupSyncService', () => {
     );
 
     assert.calledWith(fakeStore.addTagInventoryRow, {
-      id: loadSyncRowID('methods', 'find it'),
+      id: tagInventoryRowId('methods', 'find it', 'private-group'),
       groupId: 'private-group',
       schemaTag: 'methods',
       query: 'find it',

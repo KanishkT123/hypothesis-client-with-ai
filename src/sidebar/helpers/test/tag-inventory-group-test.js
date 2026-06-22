@@ -19,10 +19,10 @@ import {
 } from '../tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../groups';
 
-function publicScope(documentUri, keys) {
+function publicScope(documentUri) {
   return {
     focusedGroupId: PUBLIC_GROUP_ID,
-    publicDocumentDescriptorKeys: new Set(keys),
+    currentDocumentUri: documentUri,
   };
 }
 
@@ -193,13 +193,9 @@ describe('sidebar/helpers/tag-inventory-group', () => {
       ]);
     });
 
-    it('manual tag only yields empty query row', () => {
+    it('regular annotations create rows with empty query', () => {
       const descriptors = deriveTagInventoryRowDescriptors([
-        savedAnn({
-          id: 'm1',
-          tags: ['methods'],
-          text: 'ignored for manual',
-        }),
+        savedAnn({ id: 'm1', tags: ['methods'], text: 'ignored' }),
       ]);
       assert.deepEqual(descriptors, [{ schemaTag: 'methods', query: '' }]);
     });
@@ -315,23 +311,30 @@ describe('sidebar/helpers/tag-inventory-group', () => {
       assert.isFalse(isTagInventoryRowVisibleInScope(baseRow, privateScope('other')));
     });
 
-    it('public group: visible only when descriptor key is in current-doc set', () => {
-      const publicRow = { ...baseRow, groupId: PUBLIC_GROUP_ID };
-      const key = rowDescriptorKey('methods', 'q');
+    it('public group: visible only when row.documentUri matches currentDocumentUri', () => {
+      const publicRow = {
+        ...baseRow,
+        groupId: PUBLIC_GROUP_ID,
+        documentUri: pdf,
+      };
       assert.isTrue(
-        isTagInventoryRowVisibleInScope(publicRow, publicScope(pdf, [key])),
+        isTagInventoryRowVisibleInScope(publicRow, publicScope(pdf)),
       );
       assert.isFalse(
-        isTagInventoryRowVisibleInScope(
-          publicRow,
-          publicScope(pdf, [rowDescriptorKey('other', '')]),
-        ),
+        isTagInventoryRowVisibleInScope(publicRow, publicScope(pdfB)),
       );
       assert.isFalse(
         isTagInventoryRowVisibleInScope(publicRow, {
           focusedGroupId: PUBLIC_GROUP_ID,
-          publicDocumentDescriptorKeys: null,
+          currentDocumentUri: null,
         }),
+      );
+      assert.isFalse(
+        isTagInventoryRowVisibleInScope(
+          { ...baseRow, groupId: PUBLIC_GROUP_ID },
+          publicScope(pdf),
+        ),
+        'row without documentUri is not visible',
       );
     });
 

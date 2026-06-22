@@ -6,6 +6,7 @@ import { Injector } from '../../../shared/injector';
 import * as annotationFixtures from '../../test/annotation-fixtures';
 import { fakeReduxStore } from '../../test/fake-redux-store';
 import { FrameSyncService, $imports, formatAnnot } from '../frame-sync';
+import { tagInventoryRowId } from '../../store/modules/sidebar-panels';
 
 class FakeWindow extends EventTarget {
   constructor() {
@@ -181,7 +182,6 @@ describe('FrameSyncService', () => {
         getFocusFilters: sinon.stub().returns({}),
         hoverAnnotations: sinon.stub(),
         isLoggedIn: sinon.stub().returns(false),
-        mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
         openSidebarPanel: sinon.stub(),
         selectAnnotations: sinon.stub(),
         selectTab: sinon.stub(),
@@ -699,50 +699,23 @@ describe('FrameSyncService', () => {
         assert.calledWith(fakeAnnotationsService.create, ann);
       });
 
-      it('injects schema tag and creates history row when manual annotate toggle is enabled', () => {
+      it('injects schema tag and upserts history row when manual annotate toggle is enabled', () => {
         fakeStore.isLoggedIn.returns(true);
         fakeStore.aiSearchPanelAnnotateManually.returns(true);
         fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
         fakeStore.aiSearchPanelQueryInput.returns('query');
-        fakeStore.tagInventoryRows.returns([]);
         const ann = { $tag: 't1', target: [], tags: [] };
 
         emitGuestEvent('createAnnotation', ann);
 
         assert.deepEqual(ann.tags, ['methods']);
         assert.calledWith(fakeStore.addTagInventoryRow, {
-          id: 'manual-t1',
+          id: tagInventoryRowId('methods', 'query', 'foobar'),
           groupId: 'foobar',
           schemaTag: 'methods',
           query: 'query',
           annotationIds: [],
         });
-        assert.calledWith(fakeStore.mergeTagInventoryRowsWithSameTagQuery, 'manual-t1');
-      });
-
-      it('reuses and merges existing matching history row instead of creating another', () => {
-        fakeStore.isLoggedIn.returns(true);
-        fakeStore.aiSearchPanelAnnotateManually.returns(true);
-        fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
-        fakeStore.aiSearchPanelQueryInput.returns('query');
-        fakeStore.tagInventoryRows.returns([
-          {
-            id: 'existing',
-            groupId: 'foobar',
-            schemaTag: 'methods',
-            query: 'query',
-            annotationIds: [],
-          },
-        ]);
-        const ann = { $tag: 't1', target: [], tags: [] };
-
-        emitGuestEvent('createAnnotation', ann);
-
-        assert.notCalled(fakeStore.addTagInventoryRow);
-        assert.calledWith(
-          fakeStore.mergeTagInventoryRowsWithSameTagQuery,
-          'existing',
-        );
       });
 
       it('opens the sidebar ready for the user to edit the draft', async () => {

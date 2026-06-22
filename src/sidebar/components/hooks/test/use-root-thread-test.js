@@ -19,7 +19,6 @@ describe('sidebar/components/hooks/use-root-thread', () => {
       getFilterValues: sinon.stub().returns({ user: 'hotspur' }),
       focusedGroupId: sinon.stub().returns('group-1'),
       tagInventoryRows: sinon.stub().returns([]),
-      tagInventoryPublicDocumentScope: sinon.stub().returns(null),
       mainFrame: sinon.stub().returns({ uri: 'http://example.com/doc.pdf' }),
       searchUris: sinon.stub().returns(['http://example.com/doc.pdf']),
     };

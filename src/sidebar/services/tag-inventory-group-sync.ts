@@ -1,5 +1,6 @@
 import type { Annotation, SavedAnnotation } from '../../types/api';
 import { isSaved } from '../helpers/annotation-metadata';
+import { currentDocumentUri } from '../helpers/document-uri';
 import {
   deriveTagInventoryRowDescriptors,
 } from '../helpers/tag-inventory-group';
@@ -73,8 +74,8 @@ async function fetchAllGroupAnnotations(
       break;
     }
 
-    const params: { pubid: string } & Record<string, string | number> = {
-      pubid: groupId,
+    const params: { id: string } & Record<string, string | number> = {
+      id: groupId,
       'page[size]': GROUP_ANNOTATIONS_PAGE_SIZE,
     };
     if (pageAfter) {
@@ -131,6 +132,23 @@ export class TagInventoryGroupSyncService {
       return;
     }
     this._initDone = true;
+
+    // Re-sync when the document URI becomes available after the frame
+    // re-registers (e.g. sidebar opened by annotation creation before
+    // documentInfoChanged arrives). This fires the first time currentDocumentUri
+    // transitions from null to a real value, creating rows with the correct URI.
+    watch(
+      this._store.subscribe,
+      () => currentDocumentUri(this._store),
+      (docUri, prevDocUri) => {
+        if (docUri && !prevDocUri) {
+          const groupId = this._store.focusedGroupId();
+          if (groupId === PUBLIC_GROUP_ID) {
+            void this.applyStoreAnnotationsToInventory();
+          }
+        }
+      },
+    );
 
     watch(
       this._store.subscribe,
@@ -255,10 +273,8 @@ export class TagInventoryGroupSyncService {
           groupId,
           documentUris,
         );
-        this._applyDocumentInventory(groupId, annotations, {
-          updatePublicScope: groupId === PUBLIC_GROUP_ID,
-          documentUri: documentUris[0] ?? this._store.mainFrame()?.uri ?? '',
-        });
+        const resolvedUri = currentDocumentUri(this._store) ?? documentUris[0] ?? '';
+        this._applyDocumentInventory(groupId, annotations, { documentUri: resolvedUri });
       } catch (err) {
         console.warn('[TagInventoryGroupSync] document sync failed', err);
       } finally {
@@ -320,17 +336,14 @@ export class TagInventoryGroupSyncService {
   private _applyDocumentInventory(
     groupId: string,
     annotations: SavedAnnotation[],
-    options?: { updatePublicScope?: boolean; documentUri?: string },
+    options?: { documentUri?: string },
   ) {
     applyDerivedTagInventoryRows(this._store, {
       groupId,
       annotations,
-      updatePublicScope:
-        options?.updatePublicScope ?? groupId === PUBLIC_GROUP_ID,
       documentUri:
         options?.documentUri ??
-        this._store.searchUris()[0] ??
-        this._store.mainFrame()?.uri ??
+        currentDocumentUri(this._store) ??
         '',
     });
   }

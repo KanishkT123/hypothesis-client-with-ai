@@ -1,3 +1,4 @@
+import { currentDocumentUri } from '../helpers/document-uri';
 import { isTagInventoryRowVisibleInScope } from '../helpers/tag-inventory-group';
 import { mergeVisibleTagHighlightPalette } from '../helpers/tag-palette';
 import type { TagInventoryRow } from '../store/modules/sidebar-panels';
@@ -11,10 +12,7 @@ export function pushTagPalette(
 ) {
   const tagInventory = store.getState().sidebarPanels.tagInventory;
   const focusedGroupId = store.focusedGroupId();
-  const publicScope = store.tagInventoryPublicDocumentScope();
-  const publicDocumentDescriptorKeys = publicScope
-    ? new Set(publicScope.visibleDescriptorKeys)
-    : null;
+  const docUri = currentDocumentUri(store);
 
   // Only the focused group's visible rows contribute highlight colors, so the
   // PDF palette matches the (group-scoped) inventory table.
@@ -22,7 +20,7 @@ export function pushTagPalette(
     ? (tagInventory.rows as TagInventoryRow[]).filter((row: TagInventoryRow) =>
         isTagInventoryRowVisibleInScope(row, {
           focusedGroupId,
-          publicDocumentDescriptorKeys,
+          currentDocumentUri: docUri,
         }),
       )
     : [];
@@ -45,7 +43,7 @@ export function setupTagPaletteSync(
       [
         store.getState().sidebarPanels.tagInventory,
         store.focusedGroupId(),
-        store.tagInventoryPublicDocumentScope(),
+        currentDocumentUri(store),
       ] as const,
     () => {
       pushTagPalette(frameSync, store);

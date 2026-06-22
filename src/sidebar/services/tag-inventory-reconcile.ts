@@ -1,83 +1,63 @@
 import type { SavedAnnotation } from '../../types/api';
-import {
-  deriveTagInventoryRowDescriptors,
-  rowDescriptorKey,
-} from '../helpers/tag-inventory-group';
+import { currentDocumentUri } from '../helpers/document-uri';
+import { deriveTagInventoryRowDescriptors } from '../helpers/tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
-import { ensureTagInventoryRowForTagQuery } from '../helpers/tag-inventory-row';
+import { tagInventoryRowId } from '../store/modules/sidebar-panels';
 import type { SidebarStore } from '../store';
-
-const LOAD_SYNC_ROW_PREFIX = 'load-sync';
-
-export function loadSyncRowID(schemaTag: string, query: string): string {
-  return `${LOAD_SYNC_ROW_PREFIX}-${encodeURIComponent(
-    rowDescriptorKey(schemaTag, query),
-  )}`;
-}
 
 export type ApplyDerivedTagInventoryRowsOptions = {
   groupId: string;
   annotations: SavedAnnotation[];
-  /** When true, update Public document visibility keys from derived descriptors. */
-  updatePublicScope?: boolean;
+  /** Current document URI. Stored on Public group rows and included in their id. */
   documentUri?: string;
 };
 
 /**
- * Upsert inventory rows from derived descriptors and optionally refresh Public
- * document scope keys.
+ * Upsert inventory rows from derived descriptors.
+ * For Public group rows, `documentUri` is stored on the row and included in its
+ * id so that visibility is a plain URI equality check (no separate store slice).
  */
 export function applyDerivedTagInventoryRows(
-  store: Pick<
-    SidebarStore,
-    | 'addTagInventoryRow'
-    | 'tagInventoryRows'
-    | 'mergeTagInventoryRowsWithSameTagQuery'
-    | 'setTagInventoryPublicDocumentScope'
-  >,
-  { groupId, annotations, updatePublicScope, documentUri }: ApplyDerivedTagInventoryRowsOptions,
+  store: Pick<SidebarStore, 'addTagInventoryRow'>,
+  { groupId, annotations, documentUri }: ApplyDerivedTagInventoryRowsOptions,
 ) {
+  const isPublic = groupId === PUBLIC_GROUP_ID;
+  const docUri = isPublic ? documentUri : undefined;
+
+  // Public group rows must be document-scoped. If the URI is unknown (e.g.
+  // mainFrame hasn't re-registered after the sidebar opened), skip rather
+  // than creating permanently-invisible rows with documentUri=''.
+  if (isPublic && !docUri) {
+    return;
+  }
+
   const descriptors = deriveTagInventoryRowDescriptors(annotations);
 
   for (const { schemaTag, query } of descriptors) {
-    ensureTagInventoryRowForTagQuery(store, {
-      id: loadSyncRowID(schemaTag, query),
+    store.addTagInventoryRow({
+      id: tagInventoryRowId(schemaTag, query, groupId, docUri),
       groupId,
       schemaTag,
       query,
       annotationIds: [],
-    });
-  }
-
-  if (
-    updatePublicScope &&
-    groupId === PUBLIC_GROUP_ID &&
-    documentUri !== undefined
-  ) {
-    store.setTagInventoryPublicDocumentScope({
-      documentUri,
-      visibleDescriptorKeys: descriptors.map(d =>
-        rowDescriptorKey(d.schemaTag, d.query),
-      ),
+      ...(docUri !== undefined ? { documentUri: docUri } : {}),
     });
   }
 }
 
 /**
  * Ensure the inventory list reflects schema tags and queries on the current
- * document for the focused group. Idempotent via `ensureTagInventoryRowForTagQuery`.
+ * document for the focused group. Idempotent via the upsert-by-id semantics
+ * of `addTagInventoryRow`.
  */
 export function reconcileTagInventoryRowsFromAnnotations(
   store: Pick<
     SidebarStore,
     | 'addTagInventoryRow'
-    | 'tagInventoryRows'
     | 'focusedGroupId'
     | 'mainFrame'
-    | 'mergeTagInventoryRowsWithSameTagQuery'
     | 'savedAnnotations'
     | 'searchUris'
-    | 'setTagInventoryPublicDocumentScope'
   >,
 ) {
   const groupId = store.focusedGroupId();
@@ -93,7 +73,6 @@ export function reconcileTagInventoryRowsFromAnnotations(
   applyDerivedTagInventoryRows(store, {
     groupId,
     annotations,
-    updatePublicScope: groupId === PUBLIC_GROUP_ID,
-    documentUri: store.mainFrame()?.uri ?? '',
+    documentUri: currentDocumentUri(store) ?? '',
   });
 }
