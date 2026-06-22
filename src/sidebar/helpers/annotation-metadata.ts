@@ -254,7 +254,7 @@ export function quote(annotation: APIAnnotationData): string | null {
   const quoteSel = target.selector.find(s => s.type === 'TextQuoteSelector') as
     | TextQuoteSelector
     | undefined;
-  return quoteSel ? quoteSel.exact : null;
+  return quoteSel ? (quoteSel.displayExact ?? quoteSel.exact) : null;
 }
 
 /** Return the description of the annotation's selection. */

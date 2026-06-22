@@ -64,6 +64,8 @@ export type TextQuoteSelector = {
   exact: string;
   prefix?: string;
   suffix?: string;
+  /** Space-normalized version of `exact` for display; set when it differs from `exact`. */
+  displayExact?: string;
 };
 
 /**

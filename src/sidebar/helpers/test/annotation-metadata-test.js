@@ -431,6 +431,24 @@ describe('sidebar/helpers/annotation-metadata', () => {
       assert.equal(annotationMetadata.quote(ann), 'expected quote');
     });
 
+    it('returns displayExact when present on the text quote selector', () => {
+      const ann = {
+        target: [
+          {
+            source: 'https://publisher.org/article.pdf',
+            selector: [
+              {
+                type: 'TextQuoteSelector',
+                exact: 'wordAwordB',
+                displayExact: 'wordA wordB',
+              },
+            ],
+          },
+        ],
+      };
+      assert.equal(annotationMetadata.quote(ann), 'wordA wordB');
+    });
+
     // FIXME - This currently happens when creating a new Page Note. Annotations
     // from the API should always have a target.
     //

@@ -8,6 +8,7 @@ import type {
   Selector,
   ShapeSelector,
 } from '../../types/api';
+import { TextQuoteAnchor } from './types';
 import type {
   PDFPageProxy,
   PDFPageView,
@@ -19,7 +20,6 @@ import { matchQuote } from './match-quote';
 import { createPlaceholder } from './placeholder';
 import { textInDOMRect } from './text-in-rect';
 import { TextPosition, TextRange } from './text-range';
-import { TextQuoteAnchor } from './types';
 
 type PDFTextRange = {
   pageIndex: number;
@@ -763,6 +763,86 @@ function getContainingPageIndex(el: Element): number {
 }
 
 /**
+ * Fraction of the em size (approximated by span height) used as the minimum
+ * horizontal gap to infer a word space. Word spaces in typical fonts are
+ * ~0.25 em; 0.15 gives comfortable detection while ignoring sub-pixel
+ * rendering gaps within a word.
+ */
+const WORD_GAP_EM_RATIO = 0.15;
+
+/**
+ * Build a page-text string from the text layer that inserts spaces wherever
+ * the pdfjs renderer left a visible gap between adjacent spans (i.e. where
+ * `textContent` would concatenate two words without a space).
+ *
+ * Also returns `fromOrigOffset`, which maps a character offset in the
+ * original `textLayer.textContent` string to the corresponding offset in the
+ * returned space-aware string.  This lets `describe()` reuse the position
+ * offsets already computed by `TextPosition` without recomputing them.
+ */
+function buildSpaceAwareTextLayerText(textLayer: Element): {
+  text: string;
+  fromOrigOffset: (offset: number) => number;
+} {
+  // Real pdfjs renders text items as <span> elements; the test fake uses <div>.
+  // Filter to elements that carry text directly (no child elements with text),
+  // so nested containers don't double-count characters.
+  const spans = Array.from(
+    textLayer.querySelectorAll<HTMLElement>('span, div'),
+  ).filter(el => {
+    if ((el.textContent?.length ?? 0) === 0) {
+      return false;
+    }
+    // Exclude container elements — keep only leaf text elements.
+    return el.querySelector('span, div') === null;
+  });
+
+  let text = '';
+  const origToSpaceAware: number[] = [];
+  let origOffset = 0;
+
+  for (let i = 0; i < spans.length; i++) {
+    const spanText = spans[i].textContent ?? '';
+
+    if (i > 0 && spanText.length > 0) {
+      const prevRect = spans[i - 1].getBoundingClientRect();
+      const currRect = spans[i].getBoundingClientRect();
+      const sameLine =
+        Math.abs(prevRect.top - currRect.top) <
+        Math.min(prevRect.height, currRect.height) * 0.5;
+      if (sameLine) {
+        const gap = currRect.left - prevRect.right;
+        const threshold =
+          Math.min(prevRect.height, currRect.height) * WORD_GAP_EM_RATIO;
+        if (gap > threshold) {
+          text += ' ';
+        }
+      } else {
+        // Cross-line boundary: insert a space unless the previous span ends
+        // with a hyphen, which indicates a soft line-break (e.g. "Theory-" /
+        // "based" → "Theory-based", not "Theory- based").
+        const prevText = spans[i - 1].textContent ?? '';
+        if (!prevText.trimEnd().endsWith('-')) {
+          text += ' ';
+        }
+      }
+    }
+
+    for (const ch of spanText) {
+      origToSpaceAware[origOffset] = text.length;
+      text += ch;
+      origOffset++;
+    }
+  }
+  origToSpaceAware[origOffset] = text.length;
+
+  return {
+    text,
+    fromOrigOffset: (n: number) => origToSpaceAware[n] ?? text.length,
+  };
+}
+
+/**
  * Convert a DOM Range object into a set of selectors.
  *
  * Converts a DOM `Range` object into a `[position, quote]` tuple of selectors
@@ -796,6 +876,20 @@ export async function describe(range: Range): Promise<Selector[]> {
   } as TextPositionSelector;
 
   const quote = TextQuoteAnchor.fromRange(pageView.div, textRange).toSelector();
+
+  // Compute a space-aware display string for the quote. pdfjs renders words as
+  // separate absolutely-positioned spans with no text-node space between them,
+  // so `textContent` concatenates adjacent words. Insert spaces where visible
+  // gaps exist so the quote reads naturally in the sidebar.
+  const { text: layerText, fromOrigOffset } =
+    buildSpaceAwareTextLayerText(textLayer);
+  const saStart = fromOrigOffset(startPos.offset);
+  const saEnd = fromOrigOffset(endPos.offset);
+  const displayExact = layerText.slice(saStart, saEnd).replace(/\s+/g, ' ').trim();
+  if (displayExact !== quote.exact) {
+    quote.displayExact = displayExact;
+  }
+
   const pageSelector = createPageSelector(pageView, startPageIndex);
 
   return [position, quote, pageSelector];
