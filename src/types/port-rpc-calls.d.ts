@@ -219,7 +219,7 @@ export type SidebarToGuestCalls = {
    * Replace tag highlight colors in this guest (full map). Keys are tag names
    * (e.g. `ai-pending`); values are CSS colors (e.g. `rgba(...)`).
    */
-  setTagHighlightPalette(palette: Record<string, string>): void;
+  setTagHighlightPalette(palette: Record<string, string>, hiddenAnnotationIds: string[]): void;
 
   /** Navigate to the segment of a book associated with an annotation. */
   navigateToSegment(ann: AnnotationData): void;

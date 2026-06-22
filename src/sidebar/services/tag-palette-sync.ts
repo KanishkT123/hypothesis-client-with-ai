@@ -25,11 +25,16 @@ export function pushTagPalette(
       )
     : [];
 
+  const hiddenAnnotationIds = (tagInventory.rows as TagInventoryRow[])
+    .filter(row => row.hidden === true)
+    .flatMap(row => row.annotationIds);
+
   frameSync.setTagHighlightPalette(
     mergeVisibleTagHighlightPalette(
       visibleRows,
       tagInventory.schemaTagColors,
     ),
+    hiddenAnnotationIds,
   );
 }
 

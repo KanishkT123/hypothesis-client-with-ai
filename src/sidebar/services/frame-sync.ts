@@ -141,6 +141,8 @@ export class FrameSyncService {
   private _highlightsVisible: boolean;
   /** Latest tag highlight palette to replay to newly connected guests. */
   private _tagHighlightPalette: Record<string, string>;
+  /** Latest hidden annotation IDs to replay to newly connected guests. */
+  private _hiddenAnnotationIds: string[];
 
   /**
    * Channel for sidebar-host communication.
@@ -218,6 +220,7 @@ export class FrameSyncService {
     this._inFrame = new Set<string>();
     this._highlightsVisible = false;
     this._tagHighlightPalette = {};
+    this._hiddenAnnotationIds = [];
 
     this._pendingScrollToTag = null;
     this._pendingHoverTag = null;
@@ -612,7 +615,7 @@ export class FrameSyncService {
     guestRPC.call('setHighlightsVisible', this._highlightsVisible);
     guestRPC.call('featureFlagsUpdated', this._store.features());
     guestRPC.call('shortcutsUpdated', getAllShortcuts());
-    guestRPC.call('setTagHighlightPalette', this._tagHighlightPalette);
+    guestRPC.call('setTagHighlightPalette', this._tagHighlightPalette, this._hiddenAnnotationIds);
 
     // If we have content banner data, send it to the guest. If there are
     // multiple guests the banner is likely only appropriate for the main one.
@@ -739,10 +742,11 @@ export class FrameSyncService {
    * Replace tag highlight colors in every connected guest (e.g. after a color
    * picker change). Pass the full map each time.
    */
-  setTagHighlightPalette(palette: Record<string, string>): void {
+  setTagHighlightPalette(palette: Record<string, string>, hiddenAnnotationIds: string[] = []): void {
     this._tagHighlightPalette = { ...palette };
+    this._hiddenAnnotationIds = hiddenAnnotationIds;
     this._guestRPC.forEach(rpc =>
-      rpc.call('setTagHighlightPalette', this._tagHighlightPalette),
+      rpc.call('setTagHighlightPalette', this._tagHighlightPalette, this._hiddenAnnotationIds),
     );
   }
 

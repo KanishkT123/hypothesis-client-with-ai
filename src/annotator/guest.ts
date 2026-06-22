@@ -294,6 +294,8 @@ export class Guest
    * sidebar sends `setTagHighlightPalette`; starts empty (cluster styling only).
    */
   private _tagHighlightPalette: Record<string, string>;
+  /** Server annotation IDs whose highlights should be hidden (row hidden in tag inventory). */
+  private _hiddenAnnotationIds: Set<string>;
 
   /**
    * @param element -
@@ -321,6 +323,7 @@ export class Guest
     this.selectedRanges = [];
     this._outsideAssignmentNotice = null;
     this._tagHighlightPalette = {};
+    this._hiddenAnnotationIds = new Set();
     this._highlighter = new Highlighter(this.element);
 
     this._adder = new Adder(this.element, {
@@ -409,6 +412,19 @@ export class Guest
     this._setupElementEvents();
 
     this._hoveredAnnotations = new Set();
+  }
+
+  /** Add/remove `h-row-hidden` on highlight elements based on `_hiddenAnnotationIds`. */
+  private _applyHiddenAnnotationClasses() {
+    for (const anchor of this.anchors) {
+      if (!anchor.highlights?.length) {
+        continue;
+      }
+      const hidden = this._hiddenAnnotationIds.has(anchor.annotation.id ?? '');
+      for (const hl of anchor.highlights) {
+        (hl as HTMLElement).classList.toggle('h-row-hidden', hidden);
+      }
+    }
   }
 
   /** Return true if the sidebar is shown alongside the page content. */
@@ -729,12 +745,14 @@ export class Guest
 
     this._sidebarRPC.on(
       'setTagHighlightPalette',
-      (palette: Record<string, string>) => {
+      (palette: Record<string, string>, hiddenAnnotationIds: string[] = []) => {
         this._tagHighlightPalette = { ...palette };
+        this._hiddenAnnotationIds = new Set(hiddenAnnotationIds);
         applyTagHighlightPalette(
           this.element.ownerDocument,
           this._tagHighlightPalette,
         );
+        this._applyHiddenAnnotationClasses();
       },
     );
 
@@ -1047,6 +1065,11 @@ export class Guest
 
       if (this._hoveredAnnotations.has(anchor.annotation.$tag)) {
         this._highlighter.setHighlightsFocused(highlights, true);
+      }
+      if (this._hiddenAnnotationIds.has(anchor.annotation.id ?? '')) {
+        for (const hl of highlights) {
+          (hl as HTMLElement).classList.add('h-row-hidden');
+        }
       }
     };
 

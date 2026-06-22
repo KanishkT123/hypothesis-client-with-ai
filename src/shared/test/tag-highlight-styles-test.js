@@ -31,6 +31,15 @@ describe('shared/tag-highlight-styles', () => {
     );
   });
 
+  it('injects a rule to hide highlights marked with h-row-hidden', () => {
+    applyTagHighlightPalette(document, {});
+
+    const style = getDynamicStyle();
+    assert.ok(style);
+    assert.include(style.textContent, '.hypothesis-highlight.h-row-hidden');
+    assert.include(style.textContent, 'opacity: 0 !important');
+  });
+
   it('skips empty tags and colors', () => {
     applyTagHighlightPalette(document, {
       '': 'rgba(1, 2, 3, 0.38)',

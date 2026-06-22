@@ -1413,7 +1413,7 @@ describe('FrameSyncService', () => {
 
       await connectGuest();
 
-      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette);
+      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette, []);
     });
 
     it('sends updated palettes to connected guests immediately', async () => {
@@ -1422,7 +1422,21 @@ describe('FrameSyncService', () => {
 
       frameSync.setTagHighlightPalette(palette);
 
-      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette);
+      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette, []);
+    });
+
+    it('forwards hidden annotation IDs to connected guests', async () => {
+      await connectGuest();
+      guestRPC().call.resetHistory();
+
+      frameSync.setTagHighlightPalette(palette, ['ann-1', 'ann-2']);
+
+      assert.calledWith(
+        guestRPC().call,
+        'setTagHighlightPalette',
+        palette,
+        ['ann-1', 'ann-2'],
+      );
     });
 
     it('replays cached palette to later guest connections', async () => {
@@ -1431,7 +1445,7 @@ describe('FrameSyncService', () => {
 
       await connectGuest('iframe');
 
-      assert.calledWith(guestRPC(1).call, 'setTagHighlightPalette', palette);
+      assert.calledWith(guestRPC(1).call, 'setTagHighlightPalette', palette, []);
     });
   });
 

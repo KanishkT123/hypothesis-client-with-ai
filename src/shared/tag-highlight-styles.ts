@@ -35,7 +35,12 @@ export function applyTagHighlightPalette(
     targetDocument.head.appendChild(style);
   }
 
-  const lines: string[] = [];
+  const lines: string[] = [
+    `.hypothesis-highlights-always-on .hypothesis-highlight.h-row-hidden,` +
+    ` .hypothesis-highlights-always-on .hypothesis-svg-highlight.h-row-hidden,` +
+    ` .hypothesis-highlights-always-on .hypothesis-svg-highlight-overlay.h-row-hidden` +
+    ` { opacity: 0 !important; pointer-events: none !important; }`,
+  ];
   for (const [rawTag, rgba] of Object.entries(palette)) {
     const tag = rawTag.trim();
     if (!tag || !rgba?.trim()) {
