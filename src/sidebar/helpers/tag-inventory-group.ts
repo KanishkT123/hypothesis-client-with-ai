@@ -1,6 +1,7 @@
 import type { SavedAnnotation } from '../../types/api';
 import type { TagInventoryRow } from '../store/modules/sidebar-panels';
 import { isReply, isSaved } from './annotation-metadata';
+import { documentUriMatches } from './document-uri';
 import { PUBLIC_GROUP_ID } from './groups';
 
 /**
@@ -237,17 +238,24 @@ export function isTagInventoryRowVisibleInScope(
     focusedGroupId: string;
     /**
      * Public group only: URI of the current document. Public group rows carry a
-     * `documentUri` field and are only shown when it matches this value.
+     * `documentUri` field and are only shown when it matches this value (or an
+     * alias in `documentUriAliases`).
      * Private groups omit this; they use the prune mechanism instead.
      */
     currentDocumentUri?: string | null;
+    /** Public group only: URIs equivalent to the current document (e.g. URN + HTTPS). */
+    documentUriAliases?: readonly string[];
   },
 ): boolean {
   if (row.groupId !== scope.focusedGroupId) {
     return false;
   }
   if (scope.focusedGroupId === PUBLIC_GROUP_ID) {
-    return !!scope.currentDocumentUri && row.documentUri === scope.currentDocumentUri;
+    return documentUriMatches(
+      row.documentUri ?? '',
+      scope.currentDocumentUri,
+      scope.documentUriAliases ?? [],
+    );
   }
   return true;
 }

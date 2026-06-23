@@ -1,4 +1,5 @@
 import { createStore } from '../../store/create-store';
+import { framesModule } from '../../store/modules/frames';
 import {
   sidebarPanelsModule,
   tagInventoryRowId,
@@ -143,6 +144,44 @@ describe('parseTagInventoryPersisted', () => {
       }),
     );
   });
+
+  it('round-trips documentUri on Public rows', () => {
+    const tagInventory = {
+      rows: [
+        {
+          id: '1',
+          schemaTag: 'methods',
+          query: 'q',
+          annotationIds: [],
+          groupId: '__world__',
+          documentUri: 'https://example.com/paper.pdf',
+        },
+      ],
+      schemaTagColors: {},
+    };
+    assert.deepEqual(parseTagInventoryPersisted({ revision: 0, ...tagInventory }), {
+      revision: 0,
+      tagInventory,
+    });
+  });
+
+  it('returns null when documentUri is not a string', () => {
+    assert.isNull(
+      parseTagInventoryPersisted({
+        revision: 0,
+        rows: [
+          {
+            id: '1',
+            schemaTag: 't',
+            query: 'q',
+            annotationIds: [],
+            documentUri: 42,
+          },
+        ],
+        schemaTagColors: {},
+      }),
+    );
+  });
 });
 
 describe('parseExperimentLogState', () => {
@@ -211,7 +250,7 @@ describe('PersistedTagInventoryService', () => {
       }),
     };
 
-    store = createStore([sidebarPanelsModule]);
+    store = createStore([sidebarPanelsModule, framesModule]);
 
     fakeLocalStorage = {
       getObject: sinon.stub(),

@@ -11,6 +11,7 @@ import {
 } from './experiment-log';
 import type { LocalStorageService } from './local-storage';
 import type { ToastMessengerService } from './toast-messenger';
+import { backfillPublicTagInventoryDocumentUris } from './tag-inventory-reconcile';
 
 /** `localStorage` key for persisted tag inventory rows and tag colors. */
 export const TAG_INVENTORY_STORAGE_KEY = 'hypothesis.tagInventory.rows';
@@ -63,6 +64,9 @@ function parseTagInventoryStatePayload(v: Record<string, unknown>): TagInventory
     if ('groupId' in r && typeof r.groupId !== 'string') {
       return null;
     }
+    if ('documentUri' in r && typeof r.documentUri !== 'string') {
+      return null;
+    }
     const parsed: TagInventoryRow = {
       id: r.id,
       schemaTag: r.schemaTag,
@@ -71,6 +75,9 @@ function parseTagInventoryStatePayload(v: Record<string, unknown>): TagInventory
     };
     if (typeof r.groupId === 'string') {
       parsed.groupId = r.groupId;
+    }
+    if (typeof r.documentUri === 'string') {
+      parsed.documentUri = r.documentUri;
     }
     if (r.hidden === true) {
       parsed.hidden = true;
@@ -255,6 +262,7 @@ export class PersistedTagInventoryService {
 
     this._store.hydrateTagInventory(tagInventory);
     this._tagInventoryRevision = incomingRevision;
+    backfillPublicTagInventoryDocumentUris(this._store);
   }
 
   init() {
@@ -263,6 +271,7 @@ export class PersistedTagInventoryService {
     if (parsed) {
       this._store.hydrateTagInventory(parsed.tagInventory);
       this._tagInventoryRevision = parsed.revision;
+      backfillPublicTagInventoryDocumentUris(this._store);
     } else {
       this._tagInventoryRevision = 0;
     }

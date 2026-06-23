@@ -263,6 +263,39 @@ describe('sidebar/store/modules/sidebar-panels', () => {
           'aiSearchAnnotations',
         );
       });
+
+      it('preserves documentUri and document-scoped ids for Public rows', () => {
+        const documentUri = 'https://example.com/paper.pdf';
+        const normalizedId = tagInventoryRowId(
+          'methods',
+          'q',
+          PUBLIC_GROUP_ID,
+          documentUri,
+        );
+        store.hydrateTagInventory({
+          rows: [
+            {
+              id: 'legacy-id',
+              groupId: PUBLIC_GROUP_ID,
+              schemaTag: 'methods',
+              query: 'q',
+              annotationIds: ['a1'],
+              documentUri,
+            },
+          ],
+          schemaTagColors: {},
+        });
+        assert.deepEqual(getSidebarPanelsState().tagInventory.rows, [
+          {
+            id: normalizedId,
+            groupId: PUBLIC_GROUP_ID,
+            schemaTag: 'methods',
+            query: 'q',
+            annotationIds: ['a1'],
+            documentUri,
+          },
+        ]);
+      });
     });
 
     describe('#PRUNE_TAG_INVENTORY_ROWS_FOR_GROUP', () => {
@@ -362,6 +395,27 @@ describe('sidebar/store/modules/sidebar-panels', () => {
           isTagInventoryRowVisibleInScope(row, {
             focusedGroupId: PUBLIC_GROUP_ID,
             currentDocumentUri: null,
+          }),
+        );
+      });
+
+      it('shows Public rows when URN row matches HTTPS canonical via aliases', () => {
+        const urn = 'urn:x-pdf:abc';
+        const https = 'https://example.com/paper.pdf';
+        const row = {
+          id: 'r1',
+          groupId: PUBLIC_GROUP_ID,
+          schemaTag: 'methods',
+          query: '',
+          annotationIds: [],
+          documentUri: urn,
+        };
+
+        assert.isTrue(
+          isTagInventoryRowVisibleInScope(row, {
+            focusedGroupId: PUBLIC_GROUP_ID,
+            currentDocumentUri: https,
+            documentUriAliases: [urn, https],
           }),
         );
       });

@@ -338,6 +338,24 @@ describe('sidebar/helpers/tag-inventory-group', () => {
       );
     });
 
+    it('public group: visible when row URN and canonical HTTPS share alias set', () => {
+      const urn = 'urn:x-pdf:abc';
+      const https = 'https://example.com/paper.pdf';
+      const aliases = [urn, https];
+      const publicRow = {
+        ...baseRow,
+        groupId: PUBLIC_GROUP_ID,
+        documentUri: urn,
+      };
+      assert.isTrue(
+        isTagInventoryRowVisibleInScope(publicRow, {
+          focusedGroupId: PUBLIC_GROUP_ID,
+          currentDocumentUri: https,
+          documentUriAliases: aliases,
+        }),
+      );
+    });
+
     it('hides rows missing groupId', () => {
       assert.isFalse(
         isTagInventoryRowVisibleInScope(

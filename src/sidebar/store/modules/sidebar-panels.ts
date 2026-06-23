@@ -17,7 +17,20 @@ import {
   pruneTagInventoryRowsToDescriptors,
   type TagInventoryRowDescriptor,
 } from '../../helpers/tag-inventory-group';
+import { PUBLIC_GROUP_ID } from '../../helpers/groups';
 import { createStoreModule, makeAction } from '../create-store';
+
+function normalizedTagInventoryRowId(row: TagInventoryRow): string {
+  if (row.groupId === PUBLIC_GROUP_ID && row.documentUri) {
+    return tagInventoryRowId(
+      row.schemaTag,
+      row.query,
+      row.groupId,
+      row.documentUri,
+    );
+  }
+  return tagInventoryRowId(row.schemaTag, row.query, row.groupId);
+}
 
 export type TagInventoryRow = {
   id: string;
@@ -301,13 +314,19 @@ const reducers = {
   HYDRATE_TAG_INVENTORY(state: State, action: { tagInventory: TagInventoryState }) {
     const normalized = new Map<string, TagInventoryRow>();
     for (const row of action.tagInventory.rows) {
-      const newId = tagInventoryRowId(row.schemaTag, row.query, row.groupId);
+      const newId = normalizedTagInventoryRowId(row);
       const existing = normalized.get(newId);
       if (existing) {
         const unionIds = [
           ...new Set([...(existing.annotationIds ?? []), ...(row.annotationIds ?? [])]),
         ];
-        normalized.set(newId, { ...existing, annotationIds: unionIds });
+        normalized.set(newId, {
+          ...row,
+          ...existing,
+          id: newId,
+          documentUri: row.documentUri ?? existing.documentUri,
+          annotationIds: unionIds,
+        });
       } else {
         normalized.set(newId, { ...row, id: newId });
       }

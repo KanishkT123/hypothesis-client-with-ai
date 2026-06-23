@@ -1,5 +1,5 @@
 import type { SavedAnnotation } from '../../types/api';
-import { currentDocumentUri } from '../helpers/document-uri';
+import { resolveDocumentUriFromCandidates } from '../helpers/document-uri';
 import { deriveTagInventoryRowDescriptors } from '../helpers/tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
 import { tagInventoryRowId } from '../store/modules/sidebar-panels';
@@ -46,33 +46,42 @@ export function applyDerivedTagInventoryRows(
 }
 
 /**
- * Ensure the inventory list reflects schema tags and queries on the current
- * document for the focused group. Idempotent via the upsert-by-id semantics
- * of `addTagInventoryRow`.
+ * Assign `documentUri` to legacy Public rows that predate document-scoped ids.
+ * Re-keys rows via upsert + removes the old id when it changes.
  */
-export function reconcileTagInventoryRowsFromAnnotations(
+export function backfillPublicTagInventoryDocumentUris(
   store: Pick<
     SidebarStore,
     | 'addTagInventoryRow'
-    | 'focusedGroupId'
+    | 'removeTagInventoryRow'
+    | 'tagInventoryRows'
     | 'mainFrame'
-    | 'savedAnnotations'
+    | 'defaultContentFrame'
     | 'searchUris'
   >,
 ) {
-  const groupId = store.focusedGroupId();
-  if (!groupId) {
+  const documentUri = resolveDocumentUriFromCandidates(store);
+  if (!documentUri) {
     return;
   }
 
-  const uriSet = new Set(store.searchUris());
-  const annotations = store.savedAnnotations().filter(
-    ann => ann.group === groupId && uriSet.has(ann.uri),
-  );
-
-  applyDerivedTagInventoryRows(store, {
-    groupId,
-    annotations,
-    documentUri: currentDocumentUri(store) ?? '',
-  });
+  for (const row of store.tagInventoryRows()) {
+    if (row.groupId !== PUBLIC_GROUP_ID || row.documentUri) {
+      continue;
+    }
+    const migratedId = tagInventoryRowId(
+      row.schemaTag,
+      row.query,
+      row.groupId,
+      documentUri,
+    );
+    store.addTagInventoryRow({
+      ...row,
+      id: migratedId,
+      documentUri,
+    });
+    if (row.id !== migratedId) {
+      store.removeTagInventoryRow(row.id);
+    }
+  }
 }
