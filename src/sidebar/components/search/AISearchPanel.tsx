@@ -34,7 +34,7 @@ import {
   tagsAfterRemovingTagInventoryRowSchemaTag,
 } from '../../helpers/claude-ai-search-user-message';
 import { quote as annotationQuote } from '../../helpers/annotation-metadata';
-import { currentDocumentUri } from '../../helpers/document-uri';
+import { currentDocumentUri, documentUriAliases } from '../../helpers/document-uri';
 import { mergeVisibleTagHighlightPalette } from '../../helpers/tag-palette';
 import {
   isTagInventoryRowVisibleInScope,
@@ -53,7 +53,6 @@ import type { SavedAnnotation } from '../../../types/api';
 import type { AnnotationsService } from '../../services/annotations';
 import type { APIService } from '../../services/api';
 import type { FrameSyncService } from '../../services/frame-sync';
-// import type { ReductoService } from '../../services/reducto';
 import type {
   ClaudeSearchResult,
   ClaudeService,
@@ -107,7 +106,6 @@ type AISearchPanelProps = {
   annotationsService: AnnotationsService;
   experimentLog: ExperimentLogService;
   frameSync: FrameSyncService;
-  // reducto: ReductoService;
   claude: ClaudeService;
   api: APIService;
   toastMessenger: ToastMessengerService;
@@ -118,7 +116,6 @@ function AISearchPanel({
   annotationsService,
   experimentLog,
   frameSync,
-  // reducto,
   claude,
   api,
   toastMessenger,
@@ -129,7 +126,6 @@ function AISearchPanel({
   const aiSearchFieldQuery = store.aiSearchPanelQueryInput();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [runAISearchInFlight, setRunAISearchInFlight] = useState(false);
-  // const [reductoAPIKey, setReductoAPIKey] = useState('');
   const [claudeAPIKey, setClaudeAPIKey] = useState('');
   const schemaTag = store.aiSearchPanelSchemaTagInput();
   const annotateManually = store.aiSearchPanelAnnotateManually();
@@ -150,7 +146,8 @@ function AISearchPanel({
   const focusedGroupId = store.focusedGroupId();
   const savedAnnotations = store.savedAnnotations();
   const schemaTagColors = store.tagInventorySchemaTagColors();
-  const documentURL = currentDocumentUri(store);
+  const documentUri = currentDocumentUri(store);
+  const uriAliases = documentUriAliases(store);
 
   const globalRowLock =
     runAISearchInFlight ||
@@ -166,10 +163,11 @@ function AISearchPanel({
     return aiRows.filter(row =>
       isTagInventoryRowVisibleInScope(row, {
         focusedGroupId,
-        currentDocumentUri: documentURL,
+        currentDocumentUri: documentUri,
+        documentUriAliases: uriAliases,
       }),
     );
-  }, [aiRows, focusedGroupId, documentURL]);
+  }, [aiRows, focusedGroupId, documentUri, uriAliases]);
   const displayRows = useMemo(
     () =>
       sortTagInventoryRows(
@@ -264,7 +262,7 @@ function AISearchPanel({
         toastMessenger.error('No group selected.');
         return;
       }
-      if (!documentURL) {
+      if (!documentUri) {
         toastMessenger.error(
           'No document URL — Hypothesis may not be connected to this page.',
         );
@@ -315,7 +313,7 @@ function AISearchPanel({
         // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
         claudeResult = await claude.AISearchDocument({
           query: fullUserMessage,
-          documentUrl: documentURL ?? '',
+          documentUri: documentUri ?? '',
           apiKey: claudeAPIKey,
           signal,
         });
@@ -333,8 +331,9 @@ function AISearchPanel({
       const quotes = filterAiSearchQuotesAgainstExisting(
         rawQuotes,
         store.savedAnnotations(),
-        documentURL,
+        documentUri,
         tagTrim,
+        uriAliases,
       );
       const skippedDuplicate = countAiSearchQuotesSkippedAsDuplicates(
         rawQuotes,
@@ -352,10 +351,10 @@ function AISearchPanel({
         }
         const payload = {
           group: groupId,
-          uri: documentURL,
+          uri: documentUri,
           target: [
             {
-              source: documentURL,
+              source: documentUri,
               selector: [
                 { type: 'TextQuoteSelector' as const, exact: quote.text },
               ],
@@ -377,7 +376,7 @@ function AISearchPanel({
         .filter((id): id is string => typeof id === 'string');
 
       const isPublicGroup = groupId === PUBLIC_GROUP_ID;
-      const docUri = isPublicGroup ? documentURL : undefined;
+      const docUri = isPublicGroup ? documentUri : undefined;
       const rowId = tagInventoryRowId(schemaTagForRow, query, groupId, docUri);
 
       if (options?.isRerun) {
@@ -398,7 +397,7 @@ function AISearchPanel({
         query,
         schemaTag: schemaTagForRow,
         searchRowId: rowId,
-        documentUri: documentURL,
+        documentUri: documentUri,
         annotationIdsCreated: newIds,
         quoteTexts: created.map(a => annotationQuote(a) ?? ''),
       });
@@ -424,7 +423,7 @@ function AISearchPanel({
   }
 
   async function onAISearch(query: string) {
-    const docUri = focusedGroupId === PUBLIC_GROUP_ID ? documentURL : undefined;
+    const docUri = focusedGroupId === PUBLIC_GROUP_ID ? documentUri : undefined;
     const targetId = tagInventoryRowId(schemaTag, query, focusedGroupId ?? undefined, docUri ?? undefined);
     const matchingRow = aiRows.find(r => r.id === targetId);
     if (matchingRow) {
@@ -442,7 +441,7 @@ function AISearchPanel({
     try {
       const userid = store.profile().userid;
       const groupId = store.focusedGroupId();
-      const documentURL = currentDocumentUri(store);
+      const documentUri = currentDocumentUri(store);
 
       if (!userid) {
         toastMessenger.error('Not signed in — please sign in to use AI search.');
@@ -452,7 +451,7 @@ function AISearchPanel({
         toastMessenger.error('No group selected.');
         return;
       }
-      if (!documentURL) {
+      if (!documentUri) {
         toastMessenger.error(
           'No document URL — Hypothesis may not be connected to this page.',
         );
@@ -463,9 +462,10 @@ function AISearchPanel({
       try {
         const pending = listStrictTagInventoryRowPendingAnnotations(
           store.savedAnnotations() as SavedAnnotation[],
-          documentURL,
+          documentUri,
           row.schemaTag,
           row.query,
+          uriAliases,
         );
 
         const deletedIds: string[] = [];
@@ -492,7 +492,7 @@ function AISearchPanel({
           searchRowId: row.id,
           query: row.query,
           schemaTag: row.schemaTag,
-          documentUri: documentURL,
+          documentUri: documentUri,
         });
 
         await runAISearch(row.schemaTag, row.query, { isRerun: true });
@@ -508,7 +508,7 @@ function AISearchPanel({
   }
 
   async function onDeletePending(row: TagInventoryRow) {
-    if (!documentURL) {
+    if (!documentUri) {
       toastMessenger.error('Missing PDF URL');
       return;
     }
@@ -517,9 +517,10 @@ function AISearchPanel({
     try {
       const pending = listStrictTagInventoryRowPendingAnnotations(
         savedAnnotations as SavedAnnotation[],
-        documentURL,
+        documentUri,
         row.schemaTag,
         row.query,
+        uriAliases,
       );
       const deletedIds: string[] = [];
       const progressEmit = { current: 0 };
@@ -543,7 +544,7 @@ function AISearchPanel({
           searchRowId: row.id,
           query: row.query,
           schemaTag: row.schemaTag,
-          documentUri: documentURL,
+          documentUri: documentUri,
         });
         toastMessenger.success(
           `Deleted ${deletedIds.length} pending annotation(s).`,
@@ -559,7 +560,7 @@ function AISearchPanel({
   }
 
   async function onDeleteAll(row: TagInventoryRow) {
-    if (!documentURL) {
+    if (!documentUri) {
       toastMessenger.error('Missing PDF URL');
       return;
     }
@@ -578,9 +579,10 @@ function AISearchPanel({
     try {
       const matches = listSavedAnnotationsMatchingTagInventoryRow(
         savedAnnotations as SavedAnnotation[],
-        documentURL,
+        documentUri,
         row.schemaTag,
         row.query,
+        uriAliases,
       );
       const schemaTrim = row.schemaTag.trim();
       const touchedIds: string[] = [];
@@ -627,7 +629,7 @@ function AISearchPanel({
         searchRowId: row.id,
         query: row.query,
         schemaTag: row.schemaTag,
-        documentUri: documentURL,
+        documentUri: documentUri,
       });
 
       if (skippedOrFailedCount > 0) {
@@ -852,30 +854,32 @@ function AISearchPanel({
                       const tagKey = row.schemaTag.trim();
                       const rgba = colorForRow(row);
                       const hex = rgbaStringToHexColorInput(rgba);
-                      const pendingCount = documentURL
+                      const pendingCount = documentUri
                         ? countTagInventoryRowPendingAnnotations(
                             savedAnnotations,
-                            documentURL,
+                            documentUri,
                             row.schemaTag,
                             row.query,
+                            uriAliases,
                           )
                         : 0;
-                      const totalCount = documentURL
+                      const totalCount = documentUri
                         ? countTagInventoryRowTotalAnnotations(
                             savedAnnotations,
-                            documentURL,
+                            documentUri,
                             row.schemaTag,
                             row.query,
+                            uriAliases,
                           )
                         : 0;
                       const rerunDisabled =
-                        globalRowLock || !documentURL;
+                        globalRowLock || !documentUri;
                       const deletePendingDisabled =
                         globalRowLock ||
-                        !documentURL ||
+                        !documentUri ||
                         pendingCount === 0;
                       const deleteAllDisabled =
-                        globalRowLock || !documentURL;
+                        globalRowLock || !documentUri;
                       return (
                         <tr
                           key={row.id}
@@ -1109,7 +1113,6 @@ export default withServices(AISearchPanel, [
   'annotationsService',
   'experimentLog',
   'frameSync',
-  // 'reducto',
   'claude',
   'api',
   'toastMessenger',

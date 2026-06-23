@@ -1,6 +1,6 @@
 import { useMemo } from 'preact/hooks';
 
-import { currentDocumentUri } from '../../helpers/document-uri';
+import { currentDocumentUri, documentUriAliases } from '../../helpers/document-uri';
 import { isTagInventoryRowVisibleInScope } from '../../helpers/tag-inventory-group';
 import { threadAnnotations } from '../../helpers/thread-annotations';
 import type {
@@ -24,6 +24,7 @@ export function useRootThread(): ThreadAnnotationsResult {
   const focusedGroupId = store.focusedGroupId();
   const tagInventoryRows = store.tagInventoryRows();
   const documentUri = currentDocumentUri(store);
+  const uriAliases = documentUriAliases(store);
 
   const threadState = useMemo((): ThreadState => {
     const selection = { ...selectionState, filterQuery: query, filters };
@@ -35,6 +36,7 @@ export function useRootThread(): ThreadAnnotationsResult {
               isTagInventoryRowVisibleInScope(row, {
                 focusedGroupId,
                 currentDocumentUri: documentUri,
+                documentUriAliases: uriAliases,
               }),
           )
           .map(row => ({
@@ -48,6 +50,7 @@ export function useRootThread(): ThreadAnnotationsResult {
       showTabs,
       hiddenTagInventoryRows,
       documentUri,
+      documentUriAliases: uriAliases,
     };
   }, [
     selectionState,
@@ -58,6 +61,7 @@ export function useRootThread(): ThreadAnnotationsResult {
     focusedGroupId,
     tagInventoryRows,
     documentUri,
+    uriAliases,
   ]);
 
   return threadAnnotations(threadState);

@@ -17,6 +17,7 @@ describe('AISearchPanel', () => {
       savedAnnotations: sinon.stub().returns([]),
       tagInventorySchemaTagColors: sinon.stub().returns({}),
       mainFrame: sinon.stub().returns(null),
+      defaultContentFrame: sinon.stub().returns(null),
       searchUris: sinon.stub().returns([]),
       focusedGroupId: sinon.stub().returns('group-1'),
       closeSidebarPanel: sinon.stub(),
@@ -212,13 +213,11 @@ describe('AISearchPanel', () => {
       />,
     );
 
-    wrapper.find('SearchField').props().onSearch('find methods');
-    await Promise.resolve();
-    await Promise.resolve();
+    await wrapper.find('SearchField').props().onSearch('find methods');
 
     assert.calledWith(
       fakeClaude.AISearchDocument,
-      sinon.match({ documentUrl: 'http://example.com/paper.pdf' }),
+      sinon.match({ documentUri: 'http://example.com/paper.pdf' }),
     );
   });
 

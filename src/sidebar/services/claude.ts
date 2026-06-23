@@ -34,7 +34,7 @@ function isNetworkTransportError(error: unknown): boolean {
 }
 
 export type ClaudeSearchRequest = {
-  documentUrl: string;
+  documentUri: string;
   query: string;
   apiKey: string;
   /** When aborted, the request should be cancelled; callers must skip post-Claude work. */
@@ -54,8 +54,8 @@ export class ClaudeService {
   async AISearchDocument(
     request: ClaudeSearchRequest,
   ): Promise<ClaudeSearchResult> {
-    const {query, documentUrl, apiKey, signal} = request;
-    if (!documentUrl) {
+    const {query, documentUri, apiKey, signal} = request;
+    if (!documentUri) {
       throw new Error('No document URL provided');
     }
 
@@ -64,7 +64,7 @@ export class ClaudeService {
       dangerouslyAllowBrowser: true,
     });
 
-    console.log('[ClaudeService] start call', {documentUrl, query});
+    console.log('[ClaudeService] start call', {documentUri, query});
     const startedAt = Date.now();
     try {
       const message = await client.messages.parse(
@@ -79,7 +79,7 @@ export class ClaudeService {
               content: [
                 {
                   type: 'document',
-                  source: {type: 'url', url: documentUrl},
+                  source: {type: 'url', url: documentUri},
                   cache_control: {type: 'ephemeral'},
                 } as any,
                 {

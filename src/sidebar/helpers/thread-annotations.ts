@@ -31,6 +31,9 @@ export type ThreadState = {
 
   /** Current document URI for hidden-row matching. */
   documentUri?: string | null;
+
+  /** URI aliases for hidden-row document matching (e.g. URN + HTTPS). */
+  documentUriAliases?: readonly string[];
 };
 
 export type ThreadAnnotationsResult = {
@@ -103,6 +106,7 @@ function threadAnnotationsImpl(
 
   const hiddenRows = threadState.hiddenTagInventoryRows ?? [];
   const documentUri = threadState.documentUri;
+  const documentUriAliases = threadState.documentUriAliases ?? [];
   if (hiddenRows.length > 0 && documentUri) {
     const priorFilterFn = options.filterFn;
     options.filterFn = ann => {
@@ -111,6 +115,7 @@ function threadAnnotationsImpl(
           ann as SavedAnnotation,
           documentUri,
           hiddenRows,
+          documentUriAliases,
         )
       ) {
         return false;
