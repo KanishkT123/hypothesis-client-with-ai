@@ -10,13 +10,10 @@ import {
   calculateVisibleThreads,
   THREAD_DIMENSION_DEFAULTS,
 } from '../helpers/visible-threads';
+import { measureThreadListScrollMetrics } from '../helpers/thread-list-scroll-metrics';
 import { useSidebarStore } from '../store';
 import { getElementHeightWithMargins } from '../util/dom';
 import ThreadCard from './ThreadCard';
-
-// The precision of the `scrollPosition` value in pixels; values will be rounded
-// down to the nearest multiple of this scale value
-const SCROLL_PRECISION = 50;
 
 function getScrollContainer() {
   const container = document.querySelector('.js-thread-list-scroll-root');
@@ -24,44 +21,6 @@ function getScrollContainer() {
     throw new Error('Scroll container is missing');
   }
   return container;
-}
-
-function roundScrollPosition(pos: number) {
-  return Math.max(pos - (pos % SCROLL_PRECISION), 0);
-}
-
-type ScrollMetrics = {
-  scrollPosition: number;
-  viewportHeight: number;
-  listTopOffset: number;
-};
-
-function measureScrollMetrics(
-  scrollContainer: Element,
-  listRoot: Element | null,
-): ScrollMetrics {
-  const container = scrollContainer as HTMLElement;
-  const rootScrollTop = container.scrollTop;
-  const containerRect = container.getBoundingClientRect();
-  const listTopWithinContainer =
-    listRoot === null
-      ? 0
-      : listRoot.getBoundingClientRect().top - containerRect.top;
-  const listTopOffset = Math.max(0, listTopWithinContainer + rootScrollTop);
-
-  // For virtualization math, use list-relative scroll offsets. This keeps
-  // visibility calculations stable when widgets above the list grow/shrink.
-  const effectiveScrollPosition = Math.max(0, rootScrollTop - listTopOffset);
-  const visibleHeight = Math.max(
-    0,
-    container.clientHeight - Math.max(0, listTopWithinContainer),
-  );
-
-  return {
-    scrollPosition: roundScrollPosition(effectiveScrollPosition),
-    viewportHeight: visibleHeight,
-    listTopOffset,
-  };
 }
 
 export type ThreadListProps = {
@@ -142,7 +101,7 @@ export default function ThreadList({ threads }: ThreadListProps) {
     const scrollContainer = getScrollContainer();
 
     const updateMetrics = () => {
-      const metrics = measureScrollMetrics(scrollContainer, listRootRef.current);
+      const metrics = measureThreadListScrollMetrics(scrollContainer, listRootRef.current);
       setScrollContainerHeight(prev =>
         prev === metrics.viewportHeight ? prev : metrics.viewportHeight,
       );
@@ -180,7 +139,7 @@ export default function ThreadList({ threads }: ThreadListProps) {
   // changed height without a window resize or container scroll.
   useLayoutEffect(() => {
     const scrollContainer = getScrollContainer();
-    const metrics = measureScrollMetrics(scrollContainer, listRootRef.current);
+    const metrics = measureThreadListScrollMetrics(scrollContainer, listRootRef.current);
     setScrollContainerHeight(prev =>
       prev === metrics.viewportHeight ? prev : metrics.viewportHeight,
     );
