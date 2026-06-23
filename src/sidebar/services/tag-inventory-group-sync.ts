@@ -1,6 +1,6 @@
 import type { Annotation, SavedAnnotation } from '../../types/api';
 import { isSaved } from '../helpers/annotation-metadata';
-import { currentDocumentUri } from '../helpers/document-uri';
+import { currentDocumentUri, documentUriAliases, filterSavedAnnotationsForDocument, resolveDocumentUriFromCandidates } from '../helpers/document-uri';
 import {
   deriveTagInventoryRowDescriptors,
 } from '../helpers/tag-inventory-group';
@@ -8,7 +8,10 @@ import { PUBLIC_GROUP_ID } from '../helpers/groups';
 import type { SidebarStore } from '../store';
 import { watch } from '../util/watch';
 import type { APIService } from './api';
-import { applyDerivedTagInventoryRows } from './tag-inventory-reconcile';
+import {
+  applyDerivedTagInventoryRows,
+  backfillPublicTagInventoryDocumentUris,
+} from './tag-inventory-reconcile';
 
 type FocusedGroupWatchValue = readonly [boolean, string | null];
 
@@ -20,7 +23,7 @@ function focusedGroupWatchValuesEqual(
   return current[0] === previous[0] && current[1] === previous[1];
 }
 
-/** Max page size accepted by `GET /api/groups/{id}/annotations`. */
+/** Max page size accepted by `GET /api/groups/{pubid}/annotations`. */
 const GROUP_ANNOTATIONS_PAGE_SIZE = 100;
 
 /** Hard cap on pages to guard against a non-advancing cursor. */
@@ -30,32 +33,21 @@ export type SyncGroupInventoryOptions = {
   documentUris?: string[];
 };
 
-function filterAnnotationsForDocumentScope(
-  annotations: SavedAnnotation[],
-  groupId: string,
-  documentUris: string[],
-): SavedAnnotation[] {
-  const uriSet = new Set(documentUris);
-  return annotations.filter(
-    ann => ann.group === groupId && uriSet.has(ann.uri),
-  );
-}
-
 /** Saved annotations on the current document for Public-group few-shot examples. */
 export function savedAnnotationsForCurrentDocument(
   savedAnnotations: SavedAnnotation[],
   groupId: string,
-  documentUris: string[],
+  aliases: readonly string[],
 ): SavedAnnotation[] {
-  return filterAnnotationsForDocumentScope(
+  return filterSavedAnnotationsForDocument(
     savedAnnotations,
     groupId,
-    documentUris,
+    aliases,
   );
 }
 
 /**
- * Fetch every annotation in a group via `GET /api/groups/{id}/annotations`.
+ * Fetch every annotation in a group via `GET /api/groups/{pubid}/annotations`.
  *
  * This endpoint paginates with `page[after]` (a date-time cursor, "older than
  * this date") + `page[size]` and returns `{ meta, data }`, so it cannot reuse
@@ -74,8 +66,8 @@ async function fetchAllGroupAnnotations(
       break;
     }
 
-    const params: { id: string } & Record<string, string | number> = {
-      id: groupId,
+    const params: { pubid: string } & Record<string, string | number> = {
+      pubid: groupId,
       'page[size]': GROUP_ANNOTATIONS_PAGE_SIZE,
     };
     if (pageAfter) {
@@ -141,11 +133,13 @@ export class TagInventoryGroupSyncService {
       this._store.subscribe,
       () => currentDocumentUri(this._store),
       (docUri, prevDocUri) => {
-        if (docUri && !prevDocUri) {
-          const groupId = this._store.focusedGroupId();
-          if (groupId === PUBLIC_GROUP_ID) {
-            void this.applyStoreAnnotationsToInventory();
-          }
+        if (!docUri || docUri === prevDocUri) {
+          return;
+        }
+        const groupId = this._store.focusedGroupId();
+        if (groupId === PUBLIC_GROUP_ID) {
+          backfillPublicTagInventoryDocumentUris(this._store);
+          void this.applyStoreAnnotationsToInventory();
         }
       },
     );
@@ -262,19 +256,28 @@ export class TagInventoryGroupSyncService {
       return;
     }
 
-    const documentUris = options.documentUris ?? this._store.searchUris();
+    const aliases =
+      options.documentUris ?? documentUriAliases(this._store);
     this._syncing = true;
     this._syncOnStack = true;
 
     const syncWork = (async () => {
       try {
-        const annotations = filterAnnotationsForDocumentScope(
+        const annotations = filterSavedAnnotationsForDocument(
           this._store.savedAnnotations(),
           groupId,
-          documentUris,
+          aliases,
         );
-        const resolvedUri = currentDocumentUri(this._store) ?? documentUris[0] ?? '';
-        this._applyDocumentInventory(groupId, annotations, { documentUri: resolvedUri });
+        const resolvedUri = resolveDocumentUriFromCandidates(
+          this._store,
+          [...aliases],
+        );
+        if (groupId === PUBLIC_GROUP_ID && !resolvedUri) {
+          return;
+        }
+        this._applyDocumentInventory(groupId, annotations, {
+          documentUri: resolvedUri ?? undefined,
+        });
       } catch (err) {
         console.warn('[TagInventoryGroupSync] document sync failed', err);
       } finally {
@@ -338,13 +341,14 @@ export class TagInventoryGroupSyncService {
     annotations: SavedAnnotation[],
     options?: { documentUri?: string },
   ) {
+    const documentUri =
+      options?.documentUri ??
+      resolveDocumentUriFromCandidates(this._store) ??
+      undefined;
     applyDerivedTagInventoryRows(this._store, {
       groupId,
       annotations,
-      documentUri:
-        options?.documentUri ??
-        currentDocumentUri(this._store) ??
-        '',
+      documentUri,
     });
   }
 

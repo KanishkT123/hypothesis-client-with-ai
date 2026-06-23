@@ -41,6 +41,7 @@ describe('TagInventoryGroupSyncService', () => {
       focusedGroupId: sinon.stub().returns('private-group'),
       hasFetchedProfile: sinon.stub().returns(true),
       mainFrame: sinon.stub().returns({ uri: 'http://example.com' }),
+      defaultContentFrame: sinon.stub().returns(null),
       pruneTagInventoryRowsForGroup: sinon.stub(),
       savedAnnotations: sinon.stub().returns([]),
       searchUris: sinon.stub().returns(['http://example.com']),
@@ -80,13 +81,77 @@ describe('TagInventoryGroupSyncService', () => {
     });
   });
 
+  it('prefers HTTP(S) over URN when resolving Public documentUri', async () => {
+    fakeStore.focusedGroupId.returns(PUBLIC_GROUP_ID);
+    fakeStore.mainFrame.returns(null);
+    fakeStore.searchUris.returns([]);
+    fakeStore.savedAnnotations.returns([
+      {
+        id: 'a1',
+        group: PUBLIC_GROUP_ID,
+        uri: 'https://example.com/paper.pdf',
+        tags: ['methods'],
+      },
+    ]);
+
+    await svc.applyStoreAnnotationsToInventory({
+      documentUris: ['urn:x-pdf:abc', 'https://example.com/paper.pdf'],
+    });
+
+    assert.calledWith(fakeStore.addTagInventoryRow, {
+      id: tagInventoryRowId(
+        'methods',
+        '',
+        PUBLIC_GROUP_ID,
+        'https://example.com/paper.pdf',
+      ),
+      groupId: PUBLIC_GROUP_ID,
+      schemaTag: 'methods',
+      query: '',
+      annotationIds: [],
+      documentUri: 'https://example.com/paper.pdf',
+    });
+  });
+
+  it('re-syncs Public inventory when currentDocumentUri changes', async () => {
+    const subscribeCallbacks = [];
+    fakeStore.subscribe = cb => {
+      subscribeCallbacks.push(cb);
+      return () => {};
+    };
+    fakeStore.focusedGroupId.returns(PUBLIC_GROUP_ID);
+    fakeStore.removeTagInventoryRow = sinon.stub();
+    fakeStore.tagInventoryRows = sinon.stub().returns([]);
+    fakeStore.mainFrame.returns({ uri: 'https://example.com/old.pdf' });
+    fakeStore.searchUris.returns(['https://example.com/new.pdf']);
+    fakeStore.savedAnnotations.returns([
+      {
+        id: 'a1',
+        group: PUBLIC_GROUP_ID,
+        uri: 'https://example.com/new.pdf',
+        tags: ['methods'],
+      },
+    ]);
+
+    svc.init();
+    fakeStore.addTagInventoryRow.resetHistory();
+
+    fakeStore.mainFrame.returns({ uri: 'https://example.com/new.pdf' });
+    for (const cb of subscribeCallbacks) {
+      cb();
+    }
+    await Promise.resolve();
+
+    assert.called(fakeStore.addTagInventoryRow);
+  });
+
   it('fetches all group annotations via getGroupAnnotations', async () => {
     await svc.getGroupAnnotations('private-group');
 
     assert.calledOnce(groupAnnotationsRead);
     assert.calledWith(
       groupAnnotationsRead,
-      sinon.match({ id: 'private-group', 'page[size]': 100 }),
+      sinon.match({ pubid: 'private-group', 'page[size]': 100 }),
     );
 
     assert.calledWith(fakeStore.addTagInventoryRow, {
@@ -231,7 +296,7 @@ describe('TagInventoryGroupSyncService', () => {
     assert.calledWith(
       groupAnnotationsRead.secondCall,
       sinon.match({
-        id: 'private-group',
+        pubid: 'private-group',
         'page[size]': 100,
         'page[after]': fullPage[99].created,
       }),

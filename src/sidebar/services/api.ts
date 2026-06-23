@@ -164,7 +164,7 @@ type AnnotationSearchResult = {
 };
 
 /**
- * Result of `GET /api/groups/{id}/annotations`.
+ * Result of `GET /api/groups/{pubid}/annotations`.
  *
  * NB: This endpoint paginates with `page[after]` (a date-time cursor) +
  * `page[size]` and returns `{ meta, data }` — it is NOT search-compatible
@@ -235,7 +235,7 @@ export class APIService {
   group: {
     annotations: {
       read: APICall<
-        { id: string } & Record<string, Param | Param[]>,
+        { pubid: string } & Record<string, Param | Param[]>,
         void,
         GroupAnnotationsResult
       >;
@@ -325,7 +325,7 @@ export class APIService {
     this.group = {
       annotations: {
         read: apiCall('group.annotations.read') as APICall<
-          { id: string } & Record<string, Param | Param[]>,
+          { pubid: string } & Record<string, Param | Param[]>,
           void,
           GroupAnnotationsResult
         >,
