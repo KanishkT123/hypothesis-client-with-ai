@@ -99,6 +99,13 @@ describe('ThreadList', () => {
       '../helpers/highlighted-annotations': {
         mostRelevantAnnotation: fakeMostRelevantAnnotation,
       },
+      // Replace lodash.debounce with an immediate-call shim that also exposes
+      // the .cancel() method that ThreadList calls on cleanup.
+      'lodash.debounce': fn => {
+        const immediate = (...args) => fn(...args);
+        immediate.cancel = () => {};
+        return immediate;
+      },
     });
     sinon.stub(console, 'warn');
   });
