@@ -1,5 +1,6 @@
 import fetchMock from 'fetch-mock';
 
+import { clientVersion } from '../../../test-util/client-version';
 import { APIService } from '../api';
 // API route directory.
 //
@@ -303,7 +304,7 @@ describe('APIService', () => {
     expectCall('get', 'profile');
     return api.profile.read({}).then(() => {
       const [, options] = fetchMock.lastCall();
-      assert.equal(options.headers['Hypothesis-Client-Version'], '__VERSION__');
+      assert.equal(options.headers['Hypothesis-Client-Version'], clientVersion);
     });
   });
 
