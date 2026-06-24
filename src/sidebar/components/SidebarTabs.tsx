@@ -3,8 +3,8 @@ import {
   Button,
   Card,
   CardContent,
+  GlobeIcon,
   LinkButton,
-  ListIcon,
   PlusIcon,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
@@ -224,11 +224,11 @@ function SidebarTabs({
               pressed={isGroupTabOpen}
               role="tab"
               tabIndex={0}
-              title="All group annotations"
+              title="Abstract Explorer"
               underline="none"
             >
-              <ListIcon className="w-em h-em inline mr-1" />
-              Group
+              <GlobeIcon className="w-em h-em inline mr-1" />
+              Abstract Explorer
             </LinkButton>
           </div>}
           {isGroupTabOpen ? (

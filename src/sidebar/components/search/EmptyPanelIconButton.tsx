@@ -1,4 +1,4 @@
-import { ListIcon } from '@hypothesis/frontend-shared';
+import { GlobeIcon } from '@hypothesis/frontend-shared';
 import { useCallback } from 'preact/hooks';
 
 import { useSidebarStore } from '../../store';
@@ -14,11 +14,11 @@ export default function EmptyPanelIconButton() {
 
   return (
     <TopBarToggleButton
-      icon={ListIcon}
+      icon={GlobeIcon}
       expanded={isPanelOpen}
       pressed={isPanelOpen}
       onClick={togglePanel}
-      title="Show empty panel"
+      title="Abstract Explorer"
     />
   );
 }

@@ -56,9 +56,12 @@ const DEFAULT_CATEGORY_ROWS: CategoryRow[] = [
   { name: 'Example', description: '' },
 ];
 
-// Hex colors assigned to labels in order of first appearance.
+// Tableau 20 palette — primaries first, then their lighter pairs.
 const LABEL_HEX_COLORS = [
-  '#4F46E5', '#059669', '#F59E0B', '#DC2626', '#0EA5E9', '#EC4899', '#8B5CF6', '#D97706',
+  '#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F',
+  '#EDC948', '#B07AA1', '#FF9DA7', '#9C755F', '#BAB0AC',
+  '#A0CBE8', '#FFBE7D', '#FF9D9A', '#86BCB6', '#8CD17D',
+  '#F1CE63', '#D4A6C8', '#FABFD2', '#D7B5A6', '#B6992D',
 ];
 
 // Measure the rendered pixel width of a string as it would appear in the
@@ -622,21 +625,29 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
         >
           {searchCategoryIds.map((id, idx) => {
             const color = labelIndex.labelColors[id];
-            const name = labelIndex.labelNames[id] ?? `Label ${id}`;
+            const fullName = labelIndex.labelNames[id] ?? `Label ${id}`;
+            const displayName = fullName.length > 20 ? fullName.slice(0, 20) + '…' : fullName;
             return (
-              <span
-                key={idx}
-                className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded font-medium"
-                style={{ backgroundColor: color, color: 'white' }}
-              >
-                {name}
-                <button
-                  style={{ lineHeight: 1, opacity: 0.8 }}
-                  onClick={() => setSearchCategoryIds(prev => prev.filter((_, i) => i !== idx))}
+              <div key={idx} className="relative group/searchchip">
+                <span
+                  className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded font-medium"
+                  style={{ backgroundColor: color, color: 'white' }}
                 >
-                  ×
-                </button>
-              </span>
+                  {displayName}
+                  <button
+                    style={{ lineHeight: 1, opacity: 0.8 }}
+                    onClick={() => setSearchCategoryIds(prev => prev.filter((_, i) => i !== idx))}
+                  >
+                    ×
+                  </button>
+                </span>
+                {fullName !== displayName && (
+                  <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover/searchchip:opacity-100 transition-opacity z-50">
+                    {fullName}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                  </div>
+                )}
+              </div>
             );
           })}
           <input
@@ -666,24 +677,33 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
           {legendEntries.map(([id, color]) => {
             const labelId = Number(id);
             const isActive = activeLabels?.has(labelId) ?? true;
+            const fullName = labelIndex.labelNames[labelId] ?? `Label ${labelId}`;
+            const displayName = fullName.length > 20 ? fullName.slice(0, 20) + '…' : fullName;
             return (
-              <button
-                key={id}
-                draggable
-                onDragStart={(e: DragEvent) => {
-                  e.dataTransfer!.setData('application/x-category-id', String(labelId));
-                  e.dataTransfer!.effectAllowed = 'copy';
-                }}
-                onClick={() => toggleLabel(labelId)}
-                className="text-xs px-2 py-0.5 rounded border-2 font-medium transition-colors cursor-grab"
-                style={{
-                  borderColor: color,
-                  backgroundColor: isActive ? color : 'transparent',
-                  color: isActive ? 'white' : '#374151',
-                }}
-              >
-                {labelIndex.labelNames[labelId]}
-              </button>
+              <div key={id} className="relative group/chip">
+                <button
+                  draggable
+                  onDragStart={(e: DragEvent) => {
+                    e.dataTransfer!.setData('application/x-category-id', String(labelId));
+                    e.dataTransfer!.effectAllowed = 'copy';
+                  }}
+                  onClick={() => toggleLabel(labelId)}
+                  className="text-xs px-2 py-0.5 rounded border-2 font-medium transition-colors cursor-grab"
+                  style={{
+                    borderColor: color,
+                    backgroundColor: isActive ? color : 'transparent',
+                    color: isActive ? 'white' : '#374151',
+                  }}
+                >
+                  {displayName}
+                </button>
+                {fullName !== displayName && (
+                  <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover/chip:opacity-100 transition-opacity z-50">
+                    {fullName}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -695,8 +715,8 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
         // Headers use position:sticky left:0 on a single-column <td> — the standard
         // "frozen first column" pattern. The <tr> background fills the full row width,
         // so headers appear static while annotation rows scroll horizontally.
-        <div ref={alignedScrollRef} style={{ overflowX: 'auto' }}>
-          <table style={{ tableLayout: 'auto', borderCollapse: 'separate', borderSpacing: 0 }}>
+        <div ref={alignedScrollRef} style={{ overflowX: 'auto', backgroundColor: 'white' }}>
+          <table style={{ tableLayout: 'auto', borderCollapse: 'separate', borderSpacing: 0, backgroundColor: 'white' }}>
             <tbody>
               {sortedTags.flatMap(tag => {
                 const sortedAnns = [...tagMap.get(tag)!].sort((a, b) => {
@@ -753,10 +773,10 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
                       ({ left, right } = splitAtOffset(excerptText, labeledSpans, splitOffset));
                     }
                     return [
-                      <tr key={ann.id}>
+                      <tr key={ann.id} style={{ backgroundColor: 'white' }}>
                         <td
-                          className="italic text-color-text-light text-xs py-0.5"
-                          style={{ paddingRight: '2px', whiteSpace: 'nowrap', textAlign: 'right' }}
+                          className="italic text-color-text-light text-xs"
+                          style={{ paddingRight: '4px', paddingTop: '4px', paddingBottom: '4px', whiteSpace: 'nowrap', textAlign: 'right', borderBottom: '1px solid #e5e7eb' }}
                         >
                           {left.spans.length > 0 ? (
                             <HighlightedSentence
@@ -770,8 +790,8 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
                           ) : left.text}
                         </td>
                         <td
-                          className="italic text-color-text-light text-xs py-0.5"
-                          style={{ paddingLeft: '2px', whiteSpace: 'nowrap' }}
+                          className="italic text-color-text-light text-xs"
+                          style={{ paddingLeft: '4px', paddingTop: '4px', paddingBottom: '4px', whiteSpace: 'nowrap', borderBottom: '1px solid #e5e7eb' }}
                         >
                           {right.spans.length > 0 ? (
                             <HighlightedSentence
