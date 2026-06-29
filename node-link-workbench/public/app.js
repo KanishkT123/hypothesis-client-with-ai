@@ -590,9 +590,8 @@ async function saveEditsNow() {
 
 async function login() {
   showNotice('');
-  const { authUrl, state: oauthState } = await api('/api/oauth/start');
   const popup = window.open(
-    authUrl,
+    'about:blank',
     'Hypothesis Login',
     'width=475,height=630',
   );
@@ -601,8 +600,21 @@ async function login() {
     return;
   }
 
+  const { authUrl, state: oauthState } = await api('/api/oauth/start');
   const code = await new Promise((resolve, reject) => {
+    const closedInterval = setInterval(() => {
+      if (popup.closed) {
+        clearTimeout(timeout);
+        clearInterval(closedInterval);
+        window.removeEventListener('message', listener);
+        reject(
+          new Error('Login window closed before authorization completed.'),
+        );
+      }
+    }, 500);
+
     const timeout = setTimeout(() => {
+      clearInterval(closedInterval);
       window.removeEventListener('message', listener);
       reject(new Error('Login timed out.'));
     }, 180_000);
@@ -613,16 +625,19 @@ async function login() {
       }
       if (event.data.type === 'authorization_response') {
         clearTimeout(timeout);
+        clearInterval(closedInterval);
         window.removeEventListener('message', listener);
         resolve(event.data.code);
       } else if (event.data.type === 'authorization_canceled') {
         clearTimeout(timeout);
+        clearInterval(closedInterval);
         window.removeEventListener('message', listener);
         reject(new Error('Login was canceled.'));
       }
     }
 
     window.addEventListener('message', listener);
+    popup.location.href = authUrl;
   });
 
   state.session = await api('/api/oauth/exchange', {
