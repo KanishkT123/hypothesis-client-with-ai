@@ -2,7 +2,6 @@ const SYSTEM_TAGS = new Set(['ai-pending', 'ai-user-approved']);
 const TAG_NODE_RADIUS = 34;
 const QUOTE_WIDTH = 250;
 const QUOTE_HEIGHT = 86;
-const OAUTH_POPUP_CLOSE_GRACE_MS = 4000;
 
 const els = {
   sessionLabel: document.querySelector('#sessionLabel'),
@@ -604,13 +603,10 @@ async function login() {
   const { authUrl, state: oauthState } = await api('/api/oauth/start');
   const code = await new Promise((resolve, reject) => {
     let settled = false;
-    let closeGraceTimeout = null;
     let timeout = null;
 
     function cleanup() {
       clearTimeout(timeout);
-      clearTimeout(closeGraceTimeout);
-      clearInterval(closedInterval);
       window.removeEventListener('message', listener);
     }
 
@@ -622,19 +618,6 @@ async function login() {
       cleanup();
       callback(value);
     }
-
-    const closedInterval = setInterval(() => {
-      if (popup.closed) {
-        closeGraceTimeout ??= setTimeout(() => {
-          finish(
-            reject,
-            new Error(
-              'Login window closed before the workbench received authorization. Try Log in again; if it repeats, open https://hypothes.is/login in Edge first.',
-            ),
-          );
-        }, OAUTH_POPUP_CLOSE_GRACE_MS);
-      }
-    }, 500);
 
     timeout = setTimeout(() => {
       finish(reject, new Error('Login timed out.'));

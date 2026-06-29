@@ -121,6 +121,10 @@ function sendError(res, status, message, details) {
   sendJson(res, status, { error: message, details });
 }
 
+function requestOrigin(req) {
+  return `http://${req.headers.host || `${host}:${port}`}`;
+}
+
 function assertWithin(root, candidate) {
   const relative = path.relative(root, candidate);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
@@ -495,10 +499,11 @@ async function handleApi(req, res, url) {
     const links = await getLinks();
     const state = crypto.randomBytes(16).toString('hex');
     pendingOAuthStates.add(state);
+    const oauthOrigin = requestOrigin(req);
 
     const authUrl = new URL(links['oauth.authorize']);
     authUrl.searchParams.set('client_id', oauthClientId);
-    authUrl.searchParams.set('origin', origin);
+    authUrl.searchParams.set('origin', oauthOrigin);
     authUrl.searchParams.set('response_mode', 'web_message');
     authUrl.searchParams.set('response_type', 'code');
     authUrl.searchParams.set('state', state);
@@ -507,7 +512,11 @@ async function handleApi(req, res, url) {
       url.searchParams.get('action') || 'login',
     );
 
-    sendJson(res, 200, { authUrl: authUrl.toString(), state });
+    sendJson(res, 200, {
+      authUrl: authUrl.toString(),
+      origin: oauthOrigin,
+      state,
+    });
     return;
   }
 
