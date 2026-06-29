@@ -27,10 +27,7 @@ type CategoryRow = {
   description: string;
 };
 
-const CATEGORY_ROWS_KEY = 'hypothesis-category-rows';
-
-// Returns true if `spans` contains each category in `categoryIds` in order:
-// each category's span must start after the previous category's span ends.
+// Returns true if `spans` contains each category in `categoryIds` in order.
 function hasSequence(spans: ApiSpan[], categoryIds: number[]): boolean {
   let minPos = 0;
   for (const catId of categoryIds) {
@@ -42,7 +39,6 @@ function hasSequence(spans: ApiSpan[], categoryIds: number[]): boolean {
   }
   return true;
 }
-const highlightCacheKey = (groupId: string) => `hypothesis-highlights-${groupId}`;
 
 const DEFAULT_CATEGORY_ROWS: CategoryRow[] = [
   { name: 'Status Quo/Context (the particular context or existing work)', description: '' },
@@ -64,8 +60,6 @@ const LABEL_HEX_COLORS = [
   '#F1CE63', '#D4A6C8', '#FABFD2', '#D7B5A6', '#B6992D',
 ];
 
-// Measure the rendered pixel width of a string as it would appear in the
-// blockquote (text-xs italic). Used to compute alignment padding.
 const _measureCanvas = document.createElement('canvas');
 function measureTextWidth(text: string): number {
   const ctx = _measureCanvas.getContext('2d');
@@ -74,8 +68,6 @@ function measureTextWidth(text: string): number {
   return ctx.measureText(text).width;
 }
 
-// Merge consecutive spans that share the same label and are adjacent in position
-// (gap of at most 1 character, i.e., a single whitespace between them).
 function mergeAdjacentSpans(spans: ApiSpan[]): ApiSpan[] {
   if (spans.length === 0) return spans;
   const sorted = [...spans].sort((a, b) => a.start - b.start);
@@ -104,27 +96,19 @@ async function fetchSpansBatch(
       body.category_descriptions = categoryDescriptions;
     }
   }
-  console.log('label-multi-batch request:', body);
   const response = await fetch(
     'https://phrase-labeler.onrender.com/label-multi-batch',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    },
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
   );
   if (!response.ok) {
     const errText = await response.text();
-    console.error('label-multi-batch error:', response.status, errText);
     throw new Error(`Labeling service error: ${response.status} ${errText}`);
   }
   const data = await response.json();
-  console.log('label-multi-batch response:', data);
   const results = (data.results ?? []) as { spans: ApiSpan[] }[];
   return results.map(r => mergeAdjacentSpans(r.spans ?? []));
 }
 
-// Shared label index across all annotations in a single highlight run.
 type LabelIndex = {
   labelColors: Record<number, string>;
   labelNames: Record<number, string>;
@@ -132,10 +116,8 @@ type LabelIndex = {
 
 function buildLabelIndex(allSpans: ApiSpan[][], categoryNames?: string[]): LabelIndex {
   const seenIds = new Set<number>();
-  for (const spans of allSpans) {
-    for (const span of spans) {
-      if (span.label !== -1) seenIds.add(span.label);
-    }
+  for (const spans of allSpans) for (const span of spans) {
+    if (span.label !== -1) seenIds.add(span.label);
   }
   const labelColors: Record<number, string> = {};
   const labelNames: Record<number, string> = {};
@@ -148,269 +130,156 @@ function buildLabelIndex(allSpans: ApiSpan[][], categoryNames?: string[]): Label
 }
 
 function toLabeled(spans: ApiSpan[]): LabeledSpan[] {
-  return spans.map(s => ({
-    text: s.text ?? '',
-    start: s.start,
-    end: s.end,
-    label: s.label,
-  }));
+  return spans.map(s => ({ text: s.text ?? '', start: s.start, end: s.end, label: s.label }));
 }
 
-// Split text and spans at two boundaries: [0, leftEnd) goes left, [rightStart, end) goes right.
-// Text between the two boundaries is dropped, giving a clean gap between the columns.
 function splitAtTwoOffsets(
   original: string,
   spans: LabeledSpan[],
   leftEnd: number,
   rightStart: number,
-): {
-  left: { text: string; spans: LabeledSpan[] };
-  right: { text: string; spans: LabeledSpan[] };
-} {
+): { left: { text: string; spans: LabeledSpan[] }; right: { text: string; spans: LabeledSpan[] } } {
   const rs = Math.max(leftEnd, rightStart);
-  const leftText = original.slice(0, leftEnd);
-  const rightText = original.slice(rs);
-
-  const leftSpans = spans
-    .filter(s => s.start < leftEnd)
-    .map(s => ({ ...s, end: Math.min(s.end, leftEnd) }));
-
-  const rightSpans = spans
-    .filter(s => s.end > rs)
-    .map(s => ({
-      ...s,
-      start: Math.max(s.start, rs) - rs,
-      end: s.end - rs,
-      text: original.slice(Math.max(s.start, rs), s.end),
-    }));
-
-  return {
-    left: { text: leftText, spans: leftSpans },
-    right: { text: rightText, spans: rightSpans },
-  };
+  const leftSpans = spans.filter(s => s.start < leftEnd).map(s => ({ ...s, end: Math.min(s.end, leftEnd) }));
+  const rightSpans = spans.filter(s => s.end > rs).map(s => ({
+    ...s, start: Math.max(s.start, rs) - rs, end: s.end - rs,
+    text: original.slice(Math.max(s.start, rs), s.end),
+  }));
+  return { left: { text: original.slice(0, leftEnd), spans: leftSpans }, right: { text: original.slice(rs), spans: rightSpans } };
 }
 
-// Split text and spans at a character offset for the two-column alignment layout.
 function splitAtOffset(
   original: string,
   spans: LabeledSpan[],
   offset: number,
-): {
-  left: { text: string; spans: LabeledSpan[] };
-  right: { text: string; spans: LabeledSpan[] };
-} {
-  const leftText = original.slice(0, offset);
-  const rightText = original.slice(offset);
-
-  const leftSpans = spans
-    .filter(s => s.start < offset)
-    .map(s => ({ ...s, end: Math.min(s.end, offset) }));
-
-  const rightSpans = spans
-    .filter(s => s.end > offset)
-    .map(s => ({
-      ...s,
-      start: Math.max(s.start, offset) - offset,
-      end: s.end - offset,
-      text: original.slice(Math.max(s.start, offset), s.end),
-    }));
-
-  return {
-    left: { text: leftText, spans: leftSpans },
-    right: { text: rightText, spans: rightSpans },
-  };
+): { left: { text: string; spans: LabeledSpan[] }; right: { text: string; spans: LabeledSpan[] } } {
+  const leftSpans = spans.filter(s => s.start < offset).map(s => ({ ...s, end: Math.min(s.end, offset) }));
+  const rightSpans = spans.filter(s => s.end > offset).map(s => ({
+    ...s, start: Math.max(s.start, offset) - offset, end: s.end - offset,
+    text: original.slice(Math.max(s.start, offset), s.end),
+  }));
+  return { left: { text: original.slice(0, offset), spans: leftSpans }, right: { text: original.slice(offset), spans: rightSpans } };
 }
 
-function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps) {
-  const store = useSidebarStore();
-  const focusedGroupId = store.focusedGroupId();
-  const isFullWidth = store.isSidebarFullWidth();
+// ─── Per-tag section ────────────────────────────────────────────────────────
 
-  // For the public group, derive annotations from the store directly so the list
-  // stays reactive: any new annotation created in this session appears immediately.
-  // For private groups the API fetch is used (see the useEffect below).
-  const storeAnnotations = store.savedAnnotations();
-  const searchUris = store.searchUris();
-  const [fetchedAnnotations, setFetchedAnnotations] = useState<SavedAnnotation[]>([]);
-  const annotations: SavedAnnotation[] = focusedGroupId === PUBLIC_GROUP_ID
-    ? (savedAnnotationsForCurrentDocument(storeAnnotations, focusedGroupId, searchUris) as SavedAnnotation[])
-    : fetchedAnnotations;
+type GroupSectionProps = {
+  tag: string;
+  annotations: SavedAnnotation[];
+  groupId: string;
+  isFullWidth: boolean;
+};
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionProps) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [isControlsExpanded, setIsControlsExpanded] = useState(false);
 
-  // Category editor state — loaded from localStorage, saved on every change.
+  const tagKey = tag || '__untagged__';
+  const categoryRowsKey = `hypothesis-category-rows-${groupId}-${tagKey}`;
+  const cacheKey = `hypothesis-highlights-${groupId}-${tagKey}`;
+
   const [categoryRows, setCategoryRows] = useState<CategoryRow[]>(() => {
     try {
-      const stored = localStorage.getItem(CATEGORY_ROWS_KEY);
+      const stored = localStorage.getItem(categoryRowsKey);
       if (stored) return JSON.parse(stored) as CategoryRow[];
     } catch {}
     return DEFAULT_CATEGORY_ROWS;
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem(CATEGORY_ROWS_KEY, JSON.stringify(categoryRows));
-    } catch {}
-  }, [categoryRows]);
+    try { localStorage.setItem(categoryRowsKey, JSON.stringify(categoryRows)); } catch {}
+  }, [categoryRows, categoryRowsKey]);
 
-  // Per-annotation API spans (string labels from the server)
   const [rawSpanMap, setRawSpanMap] = useState<Map<string, ApiSpan[]>>(new Map());
-  // Shared label index (string → integer ID, color map, name map)
-  const [labelIndex, setLabelIndex] = useState<LabelIndex>({
-    labelColors: {},
-    labelNames: {},
-  });
+  const [labelIndex, setLabelIndex] = useState<LabelIndex>({ labelColors: {}, labelNames: {} });
   const [isHighlighting, setIsHighlighting] = useState(false);
   const [highlightError, setHighlightError] = useState<string | null>(null);
   const [renderMode, setRenderMode] = useState<RenderMode>('highlight');
   const [activeLabels, setActiveLabels] = useState<Set<number> | undefined>(undefined);
   const [searchText, setSearchText] = useState('');
   const [searchCategoryIds, setSearchCategoryIds] = useState<number[]>([]);
-  // Category names/descriptions that were active during the last highlight run.
-  // undefined = no highlight has been run yet this session.
   const [highlightedCategories, setHighlightedCategories] = useState<string[] | undefined>(undefined);
   const [highlightedDescriptions, setHighlightedDescriptions] = useState<string[] | undefined>(undefined);
 
-  // Any dropped categories → aligned view; zero → normal view.
   const alignCategory = searchCategoryIds.length >= 1 ? searchCategoryIds[0] : null;
   const contentRef = useRef<HTMLDivElement>(null);
   const alignedScrollRef = useRef<HTMLDivElement>(null);
 
-  // After the aligned table renders, scroll so the column boundary is centered.
+  // Restore highlight cache on mount.
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const { rawSpans, categories: cats, categoryDescriptions: descs } = JSON.parse(cached) as {
+          rawSpans: Record<string, ApiSpan[]>;
+          categories: string[] | undefined;
+          categoryDescriptions: string[] | undefined;
+        };
+        const restoredMap = new Map<string, ApiSpan[]>(
+          Object.entries(rawSpans).map(([id, spans]) => [id, mergeAdjacentSpans(spans)]),
+        );
+        const index = buildLabelIndex([...restoredMap.values()], cats);
+        setRawSpanMap(restoredMap);
+        setLabelIndex(index);
+        setActiveLabels(new Set(Object.keys(index.labelColors).map(Number)));
+        setHighlightedCategories(cats ?? []);
+        setHighlightedDescriptions(descs ?? []);
+        return;
+      }
+    } catch {}
+    setRawSpanMap(new Map());
+    setLabelIndex({ labelColors: {}, labelNames: {} });
+    setActiveLabels(undefined);
+  }, [cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scroll so the split column boundary is centered after aligned table renders.
   useEffect(() => {
     if (alignCategory === null || !isFullWidth) return;
     const container = alignedScrollRef.current;
     if (!container) return;
     requestAnimationFrame(() => {
-      // First <td> in the table is always a header cell in column 1.
-      // Table layout guarantees all column-1 cells share the same width.
       const firstTd = container.querySelector('td') as HTMLElement | null;
       if (!firstTd) return;
-      const leftColWidth = firstTd.getBoundingClientRect().width;
-      container.scrollLeft = leftColWidth - container.clientWidth / 2;
+      container.scrollLeft = firstTd.getBoundingClientRect().width - container.clientWidth / 2;
     });
   }, [alignCategory, searchCategoryIds.length, isFullWidth, rawSpanMap]);
 
-  useEffect(() => {
-    if (!focusedGroupId) {
-      return;
-    }
+  const updateCategory = (i: number, field: 'name' | 'description', value: string) =>
+    setCategoryRows(rows => { const u = [...rows]; u[i] = { ...u[i], [field]: value }; return u; });
+  const addCategory = () => setCategoryRows(rows => [...rows, { name: '', description: '' }]);
+  const removeCategory = (i: number) => setCategoryRows(rows => rows.filter((_, idx) => idx !== i));
 
-    const restoreCache = () => {
-      try {
-        const cached = localStorage.getItem(highlightCacheKey(focusedGroupId));
-        if (cached) {
-          const { rawSpans, categories: cats, categoryDescriptions: descs } = JSON.parse(cached) as {
-            rawSpans: Record<string, ApiSpan[]>;
-            categories: string[] | undefined;
-            categoryDescriptions: string[] | undefined;
-          };
-          const restoredMap = new Map<string, ApiSpan[]>(
-            Object.entries(rawSpans).map(([id, spans]) => [id, mergeAdjacentSpans(spans)]),
-          );
-          const index = buildLabelIndex([...restoredMap.values()], cats);
-          setRawSpanMap(restoredMap);
-          setLabelIndex(index);
-          setActiveLabels(new Set(Object.keys(index.labelColors).map(Number)));
-          setHighlightedCategories(cats ?? []);
-          setHighlightedDescriptions(descs ?? []);
-          return;
-        }
-      } catch {}
-      setRawSpanMap(new Map());
-      setLabelIndex({ labelColors: {}, labelNames: {} });
-      setActiveLabels(undefined);
-    };
-
-    if (focusedGroupId === PUBLIC_GROUP_ID) {
-      // Annotations are derived from the store reactively above — no fetch needed.
-      restoreCache();
-      return;
-    }
-
-    // Private group: fetch annotation list from the API.
-    setIsLoading(true);
-    setError(null);
-
-    const fetchAnnotations = async () => {
-      try {
-        const anns = await tagInventoryGroupSync.getGroupAnnotations(focusedGroupId);
-        setFetchedAnnotations(anns);
-        restoreCache();
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : 'Failed to load annotations',
-        );
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    void fetchAnnotations();
-  }, [focusedGroupId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const updateCategory = (i: number, field: 'name' | 'description', value: string) => {
-    setCategoryRows(rows => {
-      const updated = [...rows];
-      updated[i] = { ...updated[i], [field]: value };
-      return updated;
+  const toggleLabel = (labelId: number) => {
+    setActiveLabels(prev => {
+      const next = new Set(prev ?? Object.keys(labelIndex.labelColors).map(Number));
+      if (next.has(labelId)) next.delete(labelId); else next.add(labelId);
+      return next;
     });
   };
 
-  const addCategory = () => {
-    setCategoryRows(rows => [...rows, { name: '', description: '' }]);
-  };
-
-  const removeCategory = (i: number) => {
-    setCategoryRows(rows => rows.filter((_, idx) => idx !== i));
-  };
-
-  // Per-annotation left-padding (px) so the first span of alignCategory
-  // starts at the horizontal center of the content area.
-  const alignPaddings = useMemo<Map<string, number> | null>(() => {
+  // Memoize left-padding for single-category alignment (unused in table mode but kept for future).
+  const _alignPaddings = useMemo<Map<string, number> | null>(() => {
     if (alignCategory === null || rawSpanMap.size === 0) return null;
     const containerWidth = contentRef.current?.offsetWidth ?? 300;
     const targetX = containerWidth / 2;
     const paddings = new Map<string, number>();
     for (const ann of annotations) {
       const original = (annotationQuote(ann) ?? '').trim();
-      const spans = rawSpanMap.get(ann.id) ?? [];
-      const firstSpan = spans.find(s => s.label === alignCategory);
-      // No matching span → treat as if category is at position 0 (all text is "after").
-      const prefixText = firstSpan ? original.slice(0, firstSpan.start) : '';
-      const prefixWidth = measureTextWidth(prefixText);
+      const firstSpan = (rawSpanMap.get(ann.id) ?? []).find(s => s.label === alignCategory);
+      const prefixWidth = measureTextWidth(firstSpan ? original.slice(0, firstSpan.start) : '');
       paddings.set(ann.id, Math.max(0, targetX - prefixWidth));
     }
     return paddings;
   }, [alignCategory, annotations, rawSpanMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggleLabel = (labelId: number) => {
-    setActiveLabels(prev => {
-      const next = new Set(prev ?? Object.keys(labelIndex.labelColors).map(Number));
-      if (next.has(labelId)) {
-        next.delete(labelId);
-      } else {
-        next.add(labelId);
-      }
-      return next;
-    });
-  };
-
   const handleHighlight = async () => {
     setIsHighlighting(true);
     setHighlightError(null);
-
     try {
       const validRows = categoryRows.filter(r => r.name.trim().length > 0);
-      const categories = validRows.length > 0
-        ? validRows.map(r => r.name.trim())
-        : undefined;
-      const categoryDescriptions = validRows.length > 0
-        ? validRows.map(r => r.description.trim())
-        : undefined;
+      const categories = validRows.length > 0 ? validRows.map(r => r.name.trim()) : undefined;
+      const categoryDescriptions = validRows.length > 0 ? validRows.map(r => r.description.trim()) : undefined;
 
-      // Full re-highlight when categories changed or no existing spans.
       const currentCats = categories ?? [];
       const currentDescs = categoryDescriptions ?? [];
       const catsDiffer = highlightedCategories === undefined ||
@@ -424,19 +293,15 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
         .map(ann => ({ ann, sentence: (annotationQuote(ann) ?? '').trim() }))
         .filter(({ sentence }) => sentence.length > 0);
 
-      // Incremental: skip annotations that already have spans.
       const toProcess = isFullRun
         ? allCandidates
         : allCandidates.filter(({ ann }) => !rawSpanMap.has(ann.id));
 
       if (toProcess.length === 0) return;
 
-      console.log(`Highlighting ${toProcess.length} annotation(s) (${isFullRun ? 'full' : 'incremental'})`);
-
       const sentences = toProcess.map(({ sentence }) => sentence);
       const batchSpans = await fetchSpansBatch(sentences, categories, categoryDescriptions);
 
-      // Start from existing map for incremental runs; fresh map for full runs.
       const newRawSpanMap = new Map<string, ApiSpan[]>(isFullRun ? [] : rawSpanMap);
       for (let i = 0; i < toProcess.length; i++) {
         newRawSpanMap.set(toProcess[i].ann.id, batchSpans[i] ?? []);
@@ -449,70 +314,19 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
       setHighlightedCategories(currentCats);
       setHighlightedDescriptions(currentDescs);
 
-      // Persist so highlights survive page reloads.
       try {
-        if (focusedGroupId) {
-          localStorage.setItem(
-            highlightCacheKey(focusedGroupId),
-            JSON.stringify({
-              rawSpans: Object.fromEntries(newRawSpanMap),
-              categories,
-              categoryDescriptions,
-            }),
-          );
-        }
+        localStorage.setItem(cacheKey, JSON.stringify({
+          rawSpans: Object.fromEntries(newRawSpanMap),
+          categories,
+          categoryDescriptions,
+        }));
       } catch {}
     } catch (err) {
-      setHighlightError(
-        err instanceof Error ? err.message : 'Highlighting failed',
-      );
+      setHighlightError(err instanceof Error ? err.message : 'Highlighting failed');
     } finally {
       setIsHighlighting(false);
     }
   };
-
-  if (isLoading) {
-    return (
-      <p className="text-center text-color-text-light p-4">
-        Loading annotations…
-      </p>
-    );
-  }
-
-  if (error) {
-    return <p className="text-center text-color-text-light p-4">{error}</p>;
-  }
-
-  if (annotations.length === 0) {
-    return (
-      <p className="text-center text-color-text-light p-4">
-        No annotations in this group.
-      </p>
-    );
-  }
-
-  // Filter by search keyword before building the tag map.
-  const q = searchText.trim().toLowerCase();
-  const visibleAnnotations = q
-    ? annotations.filter(ann =>
-        (annotationQuote(ann) ?? '').toLowerCase().includes(q),
-      )
-    : annotations;
-
-  // Build an ordered map: tag → annotations.
-  const tagMap = new Map<string, SavedAnnotation[]>();
-  for (const ann of visibleAnnotations) {
-    const tags = ann.tags.length > 0 ? ann.tags : [''];
-    for (const tag of tags) {
-      if (!tagMap.has(tag)) tagMap.set(tag, []);
-      tagMap.get(tag)!.push(ann);
-    }
-  }
-
-  const sortedTags = [...tagMap.keys()]
-    .filter(t => t !== '')
-    .sort((a, b) => a.localeCompare(b));
-  if (tagMap.has('')) sortedTags.push('');
 
   const hasHighlights = rawSpanMap.size > 0;
   const validCategories = categoryRows.filter(r => r.name.trim().length > 0).map(r => r.name.trim());
@@ -523,347 +337,321 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
      highlightedCategories.some((c, i) => c !== validCategories[i]) ||
      (highlightedDescriptions ?? []).length !== validDescriptions.length ||
      (highlightedDescriptions ?? []).some((d, i) => d !== validDescriptions[i]));
-  const legendEntries = Object.entries(labelIndex.labelColors)
-    .sort((a, b) => Number(a[0]) - Number(b[0]));
-  const allLabelsActive =
-    legendEntries.length > 0 &&
-    legendEntries.every(([id]) => activeLabels?.has(Number(id)) ?? true);
+  const legendEntries = Object.entries(labelIndex.labelColors).sort((a, b) => Number(a[0]) - Number(b[0]));
+  const allLabelsActive = legendEntries.length > 0 && legendEntries.every(([id]) => activeLabels?.has(Number(id)) ?? true);
+
+  const q = searchText.trim().toLowerCase();
+  const visibleAnnotations = q
+    ? annotations.filter(ann => (annotationQuote(ann) ?? '').toLowerCase().includes(q))
+    : annotations;
+
+  const sortedAnns = [...visibleAnnotations].sort((a, b) => {
+    if (searchCategoryIds.length >= 2) {
+      return (hasSequence(rawSpanMap.get(a.id) ?? [], searchCategoryIds) ? 0 : 1) -
+             (hasSequence(rawSpanMap.get(b.id) ?? [], searchCategoryIds) ? 0 : 1);
+    }
+    if (alignCategory !== null) {
+      return (rawSpanMap.get(a.id)?.some(s => s.label === alignCategory) ? 0 : 1) -
+             (rawSpanMap.get(b.id)?.some(s => s.label === alignCategory) ? 0 : 1);
+    }
+    return 0;
+  });
 
   return (
-    <div className="flex flex-col gap-y-3" ref={contentRef}>
-      {/* Category editor */}
-      <div className="flex flex-col gap-y-1 px-2 pt-2">
-        <p className="text-xs font-semibold text-color-text-light uppercase tracking-wide mb-1">
-          Categories
-        </p>
-        {categoryRows.map((row, i) => (
-          <div key={i} className="flex gap-x-1 items-center">
-            <input
-              type="text"
-              placeholder="Name"
-              value={row.name}
-              onChange={e => updateCategory(i, 'name', (e.target as HTMLInputElement).value)}
-              className="w-24 shrink-0 text-xs px-1.5 py-1 border border-grey-3 rounded bg-white"
-            />
-            <input
-              type="text"
-              placeholder="Description (optional)"
-              value={row.description}
-              onChange={e => updateCategory(i, 'description', (e.target as HTMLInputElement).value)}
-              className="flex-1 min-w-0 text-xs px-1.5 py-1 border border-grey-3 rounded bg-white"
-            />
-            <button
-              className="shrink-0 text-sm leading-none text-color-text-light hover:text-color-text px-1"
-              onClick={() => removeCategory(i)}
-              title="Remove row"
-            >
-              ×
+    <section ref={contentRef} className="border-b border-grey-3 last:border-b-0">
+      {/* Header with expand/collapse */}
+      <button
+        className="w-full flex items-center justify-between font-bold text-color-text px-2 py-2 bg-grey-1 sticky top-0 z-10"
+        style={{ fontSize: '16px' }}
+        onClick={() => setIsExpanded(v => !v)}
+      >
+        <span>{tag || 'Untagged'}</span>
+        <span className="text-color-text-light" style={{ fontSize: '10px' }}>{isExpanded ? '▲' : '▼'}</span>
+      </button>
+
+      {isExpanded && (
+        <div className="flex flex-col gap-y-3 py-2">
+          {/* Controls toggle */}
+          <button
+            className="text-xs text-left px-2 text-color-text-light hover:text-color-text flex items-center gap-x-1"
+            onClick={() => setIsControlsExpanded(v => !v)}
+          >
+            <span style={{ fontSize: '8px' }}>{isControlsExpanded ? '▲' : '▼'}</span>
+            {isControlsExpanded ? 'Hide controls' : 'Show controls'}
+          </button>
+
+          {isControlsExpanded && (<div className="flex flex-col gap-y-3">
+          {/* Category editor */}
+          <div className="flex flex-col gap-y-1 px-2">
+            <p className="text-xs font-semibold text-color-text-light uppercase tracking-wide mb-1">
+              Sub Tags
+            </p>
+            {categoryRows.map((row, i) => (
+              <div key={i} className="flex gap-x-1 items-center">
+                <input
+                  type="text"
+                  placeholder="Name"
+                  value={row.name}
+                  onChange={e => updateCategory(i, 'name', (e.target as HTMLInputElement).value)}
+                  className="w-24 shrink-0 text-xs px-1.5 py-1 border border-grey-3 rounded bg-white"
+                />
+                <input
+                  type="text"
+                  placeholder="Description (optional)"
+                  value={row.description}
+                  onChange={e => updateCategory(i, 'description', (e.target as HTMLInputElement).value)}
+                  className="flex-1 min-w-0 text-xs px-1.5 py-1 border border-grey-3 rounded bg-white"
+                />
+                <button
+                  className="shrink-0 text-sm leading-none text-color-text-light hover:text-color-text px-1"
+                  onClick={() => removeCategory(i)}
+                  title="Remove row"
+                >×</button>
+              </div>
+            ))}
+            <button className="text-xs text-left text-color-text-light hover:text-color-text mt-0.5" onClick={addCategory}>
+              + Add category
             </button>
           </div>
-        ))}
-        <button
-          className="text-xs text-left text-color-text-light hover:text-color-text mt-0.5"
-          onClick={addCategory}
-        >
-          + Add category
-        </button>
-      </div>
 
-      {/* Highlight toolbar */}
-      <div className="flex items-center gap-x-2 px-2">
-        <button
-          className={`text-xs px-2 py-1 rounded border disabled:opacity-50 ${
-            categoriesDiffer
-              ? 'border-yellow-400 bg-yellow-50 text-yellow-800 hover:bg-yellow-100'
-              : 'border-grey-3 bg-white hover:bg-grey-1'
-          }`}
-          onClick={handleHighlight}
-          disabled={isHighlighting}
-          title={categoriesDiffer ? 'Categories changed — clicking will re-highlight all annotations' : undefined}
-        >
-          {isHighlighting ? 'Highlighting…' : categoriesDiffer ? '⚠ Highlight' : 'Highlight'}
-        </button>
-        <div className="inline-flex rounded border border-grey-3 bg-white p-0.5 text-xs">
-          <button
-            onClick={() => setRenderMode('underline')}
-            className={`px-2 py-0.5 rounded-sm ${
-              renderMode === 'underline'
-                ? 'bg-indigo-100 text-indigo-700 font-medium'
-                : 'text-color-text-light hover:text-color-text'
-            }`}
-          >
-            Underline
-          </button>
-          <button
-            onClick={() => setRenderMode('highlight')}
-            className={`px-2 py-0.5 rounded-sm ${
-              renderMode === 'highlight'
-                ? 'bg-indigo-100 text-indigo-700 font-medium'
-                : 'text-color-text-light hover:text-color-text'
-            }`}
-          >
-            Highlight
-          </button>
-        </div>
-        {highlightError && (
-          <span className="text-xs" style={{ color: '#dc2626' }}>{highlightError}</span>
-        )}
-      </div>
+          {/* Highlight toolbar */}
+          <div className="flex items-center gap-x-2 px-2">
+            <button
+              className={`text-xs px-2 py-1 rounded border disabled:opacity-50 ${
+                categoriesDiffer
+                  ? 'border-yellow-400 bg-yellow-50 text-yellow-800 hover:bg-yellow-100'
+                  : 'border-grey-3 bg-white hover:bg-grey-1'
+              }`}
+              onClick={handleHighlight}
+              disabled={isHighlighting}
+              title={categoriesDiffer ? 'Categories changed — clicking will re-highlight all annotations' : undefined}
+            >
+              {isHighlighting ? 'Highlighting…' : categoriesDiffer ? '⚠ Highlight' : 'Highlight'}
+            </button>
+            <div className="inline-flex rounded border border-grey-3 bg-white p-0.5 text-xs">
+              <button
+                onClick={() => setRenderMode('underline')}
+                className={`px-2 py-0.5 rounded-sm ${renderMode === 'underline' ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-color-text-light hover:text-color-text'}`}
+              >Underline</button>
+              <button
+                onClick={() => setRenderMode('highlight')}
+                className={`px-2 py-0.5 rounded-sm ${renderMode === 'highlight' ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-color-text-light hover:text-color-text'}`}
+              >Highlight</button>
+            </div>
+            {highlightError && <span className="text-xs" style={{ color: '#dc2626' }}>{highlightError}</span>}
+          </div>
 
-      {/* Search bar — accepts typed keywords and dragged category chips */}
-      <div className="px-2">
-        <div
-          className="flex flex-wrap items-center gap-1 px-2 py-1 border border-grey-3 rounded bg-white min-h-[28px] cursor-text"
-          onDragOver={(e: DragEvent) => { e.preventDefault(); (e as DragEvent).dataTransfer!.dropEffect = 'copy'; }}
-          onDrop={(e: DragEvent) => {
-            e.preventDefault();
-            const raw = (e as DragEvent).dataTransfer?.getData('application/x-category-id');
-            if (!raw) return;
-            const id = Number(raw);
-            setSearchCategoryIds(prev => prev.includes(id) ? prev : [...prev, id]);
-          }}
-        >
-          {searchCategoryIds.map((id, idx) => {
-            const color = labelIndex.labelColors[id];
-            const fullName = labelIndex.labelNames[id] ?? `Label ${id}`;
-            const displayName = fullName.length > 20 ? fullName.slice(0, 20) + '…' : fullName;
-            return (
-              <div key={idx} className="relative group/searchchip">
-                <span
-                  className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded font-medium"
-                  style={{ backgroundColor: color, color: 'white' }}
-                >
-                  {displayName}
-                  <button
-                    style={{ lineHeight: 1, opacity: 0.8 }}
-                    onClick={() => setSearchCategoryIds(prev => prev.filter((_, i) => i !== idx))}
-                  >
-                    ×
-                  </button>
-                </span>
-                {fullName !== displayName && (
-                  <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover/searchchip:opacity-100 transition-opacity z-50">
-                    {fullName}
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+          {/* Search / align drop zone */}
+          <div className="px-2">
+            <div
+              className="flex flex-wrap items-center gap-1 px-2 py-1 border border-grey-3 rounded bg-white min-h-[28px] cursor-text"
+              onDragOver={(e: DragEvent) => { e.preventDefault(); (e as DragEvent).dataTransfer!.dropEffect = 'copy'; }}
+              onDrop={(e: DragEvent) => {
+                e.preventDefault();
+                const raw = (e as DragEvent).dataTransfer?.getData('application/x-category-id');
+                if (!raw) return;
+                const id = Number(raw);
+                setSearchCategoryIds(prev => prev.includes(id) ? prev : [...prev, id]);
+              }}
+            >
+              {searchCategoryIds.map((id, idx) => {
+                const color = labelIndex.labelColors[id];
+                const fullName = labelIndex.labelNames[id] ?? `Label ${id}`;
+                const displayName = fullName.length > 20 ? fullName.slice(0, 20) + '…' : fullName;
+                return (
+                  <div key={idx} className="relative group/searchchip">
+                    <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: color, color: 'white' }}>
+                      {displayName}
+                      <button style={{ lineHeight: 1, opacity: 0.8 }} onClick={() => setSearchCategoryIds(prev => prev.filter((_, i) => i !== idx))}>×</button>
+                    </span>
+                    {fullName !== displayName && (
+                      <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover/searchchip:opacity-100 transition-opacity z-50">
+                        {fullName}
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-          <input
-            type="text"
-            value={searchText}
-            onInput={(e: Event) => setSearchText((e.target as HTMLInputElement).value)}
-            placeholder={searchCategoryIds.length === 0 ? 'Search or drop a category…' : ''}
-            className="flex-1 min-w-[80px] text-xs outline-none bg-transparent text-color-text"
-          />
-        </div>
-      </div>
+                );
+              })}
+              <input
+                type="text"
+                value={searchText}
+                onInput={(e: Event) => setSearchText((e.target as HTMLInputElement).value)}
+                placeholder={searchCategoryIds.length === 0 ? 'Search or drop a category…' : ''}
+                className="flex-1 min-w-[80px] text-xs outline-none bg-transparent text-color-text"
+              />
+            </div>
+          </div>
 
-      {/* Legend — shown in full-width mode when highlights are present */}
-      {hasHighlights && legendEntries.length > 0 && (
-        <div className="flex flex-wrap gap-x-2 gap-y-1 px-2 items-center">
-          <button
-            onClick={() =>
-              allLabelsActive
-                ? setActiveLabels(new Set())
-                : setActiveLabels(new Set(legendEntries.map(([id]) => Number(id))))
-            }
-            className="text-xs px-2 py-0.5 rounded border border-grey-3 hover:bg-grey-1 text-color-text-light"
-            style={{ backgroundColor: allLabelsActive ? '#ececec' : 'white' }}
-          >
-            {allLabelsActive ? 'None' : 'All'}
-          </button>
-          {legendEntries.map(([id, color]) => {
-            const labelId = Number(id);
-            const isActive = activeLabels?.has(labelId) ?? true;
-            const fullName = labelIndex.labelNames[labelId] ?? `Label ${labelId}`;
-            const displayName = fullName.length > 20 ? fullName.slice(0, 20) + '…' : fullName;
-            return (
-              <div key={id} className="relative group/chip">
-                <button
-                  draggable
-                  onDragStart={(e: DragEvent) => {
-                    e.dataTransfer!.setData('application/x-category-id', String(labelId));
-                    e.dataTransfer!.effectAllowed = 'copy';
-                  }}
-                  onClick={() => toggleLabel(labelId)}
-                  className="text-xs px-2 py-0.5 rounded border-2 font-medium transition-colors cursor-grab"
-                  style={{
-                    borderColor: color,
-                    backgroundColor: isActive ? color : 'transparent',
-                    color: isActive ? 'white' : '#374151',
-                  }}
-                >
-                  {displayName}
-                </button>
-                {fullName !== displayName && (
-                  <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover/chip:opacity-100 transition-opacity z-50">
-                    {fullName}
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+          {/* Legend */}
+          {hasHighlights && legendEntries.length > 0 && (
+            <div className="flex flex-wrap gap-x-2 gap-y-1 px-2 items-center">
+              <button
+                onClick={() => allLabelsActive ? setActiveLabels(new Set()) : setActiveLabels(new Set(legendEntries.map(([id]) => Number(id))))}
+                className="text-xs px-2 py-0.5 rounded border border-grey-3 hover:bg-grey-1 text-color-text-light"
+                style={{ backgroundColor: allLabelsActive ? '#ececec' : 'white' }}
+              >{allLabelsActive ? 'None' : 'All'}</button>
+              {legendEntries.map(([id, color]) => {
+                const labelId = Number(id);
+                const isActive = activeLabels?.has(labelId) ?? true;
+                const fullName = labelIndex.labelNames[labelId] ?? `Label ${labelId}`;
+                const displayName = fullName.length > 20 ? fullName.slice(0, 20) + '…' : fullName;
+                return (
+                  <div key={id} className="relative group/chip">
+                    <button
+                      draggable
+                      onDragStart={(e: DragEvent) => {
+                        e.dataTransfer!.setData('application/x-category-id', String(labelId));
+                        e.dataTransfer!.effectAllowed = 'copy';
+                      }}
+                      onClick={() => toggleLabel(labelId)}
+                      className="text-xs px-2 py-0.5 rounded border-2 font-medium transition-colors cursor-grab"
+                      style={{
+                        borderColor: color,
+                        backgroundColor: isActive ? color : 'transparent',
+                        color: isActive ? 'white' : '#374151',
+                      }}
+                    >{displayName}</button>
+                    {fullName !== displayName && (
+                      <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded bg-gray-800 text-white text-xs whitespace-nowrap opacity-0 group-hover/chip:opacity-100 transition-opacity z-50">
+                        {fullName}
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                );
+              })}
+            </div>
+          )}
 
-      {/* Tag sections */}
-      {alignCategory !== null && isFullWidth ? (
-        // Aligned mode: HTML table so all rows share the same column widths automatically.
-        // Headers use position:sticky left:0 on a single-column <td> — the standard
-        // "frozen first column" pattern. The <tr> background fills the full row width,
-        // so headers appear static while annotation rows scroll horizontally.
-        <div ref={alignedScrollRef} style={{ overflowX: 'auto', backgroundColor: 'white' }}>
-          <table style={{ tableLayout: 'auto', borderCollapse: 'separate', borderSpacing: 0, backgroundColor: 'white' }}>
-            <tbody>
-              {sortedTags.flatMap(tag => {
-                const sortedAnns = [...tagMap.get(tag)!].sort((a, b) => {
-                  if (searchCategoryIds.length >= 2) {
-                    const aSeq = hasSequence(rawSpanMap.get(a.id) ?? [], searchCategoryIds) ? 0 : 1;
-                    const bSeq = hasSequence(rawSpanMap.get(b.id) ?? [], searchCategoryIds) ? 0 : 1;
-                    return aSeq - bSeq;
-                  }
-                  const aHas = rawSpanMap.get(a.id)?.some(s => s.label === alignCategory) ? 0 : 1;
-                  const bHas = rawSpanMap.get(b.id)?.some(s => s.label === alignCategory) ? 0 : 1;
-                  return aHas - bHas;
-                });
-                return [
-                  <tr key={`header-${tag || '__untagged__'}`}>
-                    <td
-                      style={{ position: 'sticky', left: 0, zIndex: 1 }}
-                      className="text-sm font-bold text-color-text px-2 py-1 bg-grey-1 border-b border-grey-3"
-                    >
-                      {tag || 'Untagged'}
-                    </td>
-                    <td className="bg-grey-1 border-b border-grey-3" />
-                  </tr>,
-                  ...sortedAnns.flatMap(ann => {
+          </div>)} {/* end isControlsExpanded */}
+
+          {/* Annotations — aligned table or card list */}
+          {alignCategory !== null && isFullWidth ? (
+            <div ref={alignedScrollRef} style={{ overflowX: 'auto', backgroundColor: 'white' }}>
+              <table style={{ tableLayout: 'auto', borderCollapse: 'separate', borderSpacing: 0, backgroundColor: 'white' }}>
+                <tbody>
+                  {sortedAnns.flatMap(ann => {
                     const excerptText = annotationQuote(ann);
                     if (!excerptText) return [];
                     const rawSpans = rawSpanMap.get(ann.id);
                     const labeledSpans = rawSpans ? toLabeled(rawSpans) : [];
-                    console.log('[GroupAnnotationsTab] spans for ann', ann.id, {
-                      spans: (rawSpans ?? []).map(s => ({
-                        label: s.label,
-                        category: labelIndex.labelNames[s.label] ?? `Label ${s.label}`,
-                        start: s.start,
-                        end: s.end,
-                        text: s.text,
-                      })),
-                      searchCategoryIds: searchCategoryIds.map(id => ({
-                        id,
-                        name: labelIndex.labelNames[id] ?? `Label ${id}`,
-                      })),
-                    });
                     let left: { text: string; spans: LabeledSpan[] };
                     let right: { text: string; spans: LabeledSpan[] };
                     if (searchCategoryIds.length >= 2) {
                       const firstCat = rawSpans?.find(s => s.label === searchCategoryIds[0]);
                       const secondCat = rawSpans?.find(s => s.label === searchCategoryIds[1]);
-                      const leftEnd = firstCat?.end ?? 0;
-                      const rightStart = secondCat?.start ?? leftEnd;
-                      console.log('[GroupAnnotationsTab] 2-cat split', ann.id, {leftEnd, rightStart, firstCat, secondCat});
-                      ({ left, right } = splitAtTwoOffsets(excerptText, labeledSpans, leftEnd, rightStart));
+                      ({ left, right } = splitAtTwoOffsets(excerptText, labeledSpans, firstCat?.end ?? 0, secondCat?.start ?? (firstCat?.end ?? 0)));
                     } else {
                       const firstAlignSpan = rawSpans?.find(s => s.label === alignCategory);
-                      const splitOffset = firstAlignSpan?.start ?? 0;
-                      console.log('[GroupAnnotationsTab] 1-cat split', ann.id, {alignCategory, splitOffset, firstAlignSpan});
-                      ({ left, right } = splitAtOffset(excerptText, labeledSpans, splitOffset));
+                      ({ left, right } = splitAtOffset(excerptText, labeledSpans, firstAlignSpan?.start ?? 0));
                     }
-                    return [
+                    return [(
                       <tr key={ann.id} style={{ backgroundColor: 'white' }}>
-                        <td
-                          className="italic text-color-text-light text-xs"
-                          style={{ paddingRight: '4px', paddingTop: '4px', paddingBottom: '4px', whiteSpace: 'nowrap', textAlign: 'right', borderBottom: '1px solid #e5e7eb' }}
-                        >
+                        <td className="italic text-color-text-light text-xs" style={{ paddingRight: '4px', paddingTop: '4px', paddingBottom: '4px', whiteSpace: 'nowrap', textAlign: 'right', borderBottom: '1px solid #e5e7eb' }}>
                           {left.spans.length > 0 ? (
-                            <HighlightedSentence
-                              original={left.text}
-                              spans={left.spans}
-                              labelColors={labelIndex.labelColors}
-                              labelNames={labelIndex.labelNames}
-                              activeLabels={activeLabels}
-                              mode={renderMode}
-                            />
+                            <HighlightedSentence original={left.text} spans={left.spans} labelColors={labelIndex.labelColors} labelNames={labelIndex.labelNames} activeLabels={activeLabels} mode={renderMode} />
                           ) : left.text}
                         </td>
-                        <td
-                          className="italic text-color-text-light text-xs"
-                          style={{ paddingLeft: '4px', paddingTop: '4px', paddingBottom: '4px', whiteSpace: 'nowrap', borderBottom: '1px solid #e5e7eb' }}
-                        >
+                        <td className="italic text-color-text-light text-xs" style={{ paddingLeft: '4px', paddingTop: '4px', paddingBottom: '4px', whiteSpace: 'nowrap', borderBottom: '1px solid #e5e7eb' }}>
                           {right.spans.length > 0 ? (
-                            <HighlightedSentence
-                              original={right.text}
-                              spans={right.spans}
-                              labelColors={labelIndex.labelColors}
-                              labelNames={labelIndex.labelNames}
-                              activeLabels={activeLabels}
-                              mode={renderMode}
-                            />
+                            <HighlightedSentence original={right.text} spans={right.spans} labelColors={labelIndex.labelColors} labelNames={labelIndex.labelNames} activeLabels={activeLabels} mode={renderMode} />
                           ) : right.text}
                         </td>
-                      </tr>,
-                    ];
-                  }),
-                ];
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        sortedTags.map(tag => (
-          <section key={tag || '__untagged__'}>
-            <h3 className="text-sm font-bold text-color-text px-2 py-1 bg-grey-1 border-b border-grey-3 sticky top-0">
-              {tag || 'Untagged'}
-            </h3>
-            <ul className="flex flex-col mt-2">
-              {(searchCategoryIds.length > 1
-                ? [...tagMap.get(tag)!].sort((a, b) => {
-                    const aSeq = hasSequence(rawSpanMap.get(a.id) ?? [], searchCategoryIds) ? 0 : 1;
-                    const bSeq = hasSequence(rawSpanMap.get(b.id) ?? [], searchCategoryIds) ? 0 : 1;
-                    return aSeq - bSeq;
-                  })
-                : tagMap.get(tag)!
-              ).map(ann => {
+                      </tr>
+                    )];
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-y-1 px-2">
+              {visibleAnnotations.map(ann => {
                 const excerptText = annotationQuote(ann);
                 const rawSpans = rawSpanMap.get(ann.id);
                 const labeledSpans = rawSpans ? toLabeled(rawSpans) : [];
                 return (
-                  <li
-                    key={ann.id}
-                    className="border border-grey-3 rounded p-2 text-sm bg-white mx-2"
-                  >
-                    <p className="text-xs text-color-text-light truncate mb-1">
-                      {ann.document?.title || ann.uri}
-                    </p>
+                  <li key={ann.id} className="border border-grey-3 rounded p-2 text-sm bg-white">
+                    <p className="text-xs text-color-text-light truncate mb-1">{ann.document?.title || ann.uri}</p>
                     {excerptText && (
                       <blockquote className="border-l-2 border-grey-4 pl-2 italic text-color-text-light text-xs mb-1">
                         {labeledSpans.length > 0 ? (
-                          <HighlightedSentence
-                            original={excerptText}
-                            spans={labeledSpans}
-                            labelColors={labelIndex.labelColors}
-                            labelNames={labelIndex.labelNames}
-                            activeLabels={activeLabels}
-                            mode={renderMode}
-                          />
-                        ) : (
-                          excerptText
-                        )}
+                          <HighlightedSentence original={excerptText} spans={labeledSpans} labelColors={labelIndex.labelColors} labelNames={labelIndex.labelNames} activeLabels={activeLabels} mode={renderMode} />
+                        ) : excerptText}
                       </blockquote>
                     )}
-                    {ann.text && (
-                      <p className="text-color-text text-sm">{ann.text}</p>
-                    )}
+                    {ann.text && <p className="text-color-text text-sm">{ann.text}</p>}
                   </li>
                 );
               })}
             </ul>
-          </section>
-        ))
+          )}
+        </div>
       )}
+    </section>
+  );
+}
+
+// ─── Main tab component ──────────────────────────────────────────────────────
+
+function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps) {
+  const store = useSidebarStore();
+  const focusedGroupId = store.focusedGroupId();
+  const isFullWidth = store.isSidebarFullWidth();
+
+  const storeAnnotations = store.savedAnnotations();
+  const searchUris = store.searchUris();
+  const [fetchedAnnotations, setFetchedAnnotations] = useState<SavedAnnotation[]>([]);
+  const annotations: SavedAnnotation[] = focusedGroupId === PUBLIC_GROUP_ID
+    ? (savedAnnotationsForCurrentDocument(storeAnnotations, focusedGroupId, searchUris) as SavedAnnotation[])
+    : fetchedAnnotations;
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!focusedGroupId || focusedGroupId === PUBLIC_GROUP_ID) return;
+    setIsLoading(true);
+    setError(null);
+    const fetchAnnotations = async () => {
+      try {
+        const anns = await tagInventoryGroupSync.getGroupAnnotations(focusedGroupId);
+        setFetchedAnnotations(anns);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load annotations');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    void fetchAnnotations();
+  }, [focusedGroupId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (isLoading) return <p className="text-center text-color-text-light p-4">Loading annotations…</p>;
+  if (error) return <p className="text-center text-color-text-light p-4">{error}</p>;
+  if (annotations.length === 0) return <p className="text-center text-color-text-light p-4">No annotations in this group.</p>;
+
+  const tagMap = new Map<string, SavedAnnotation[]>();
+  for (const ann of annotations) {
+    const tags = ann.tags.length > 0 ? ann.tags : [''];
+    for (const tag of tags) {
+      if (!tagMap.has(tag)) tagMap.set(tag, []);
+      tagMap.get(tag)!.push(ann);
+    }
+  }
+  const sortedTags = [...tagMap.keys()].filter(t => t !== '').sort((a, b) => a.localeCompare(b));
+  if (tagMap.has('')) sortedTags.push('');
+
+  return (
+    <div className="flex flex-col">
+      {sortedTags.map(tag => (
+        <GroupSection
+          key={`${focusedGroupId}-${tag || '__untagged__'}`}
+          tag={tag}
+          annotations={tagMap.get(tag)!}
+          groupId={focusedGroupId ?? ''}
+          isFullWidth={isFullWidth}
+        />
+      ))}
     </div>
   );
 }
