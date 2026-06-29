@@ -11,6 +11,7 @@ export type PanelName =
   | 'shareGroupAnnotations'
   | 'searchAnnotations'
   | 'aiSearchAnnotations'
+  | 'nodeLinkAnnotations'
   | 'emptyPanel';
 
 /**

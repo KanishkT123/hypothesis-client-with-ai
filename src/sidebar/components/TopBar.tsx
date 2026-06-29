@@ -12,6 +12,7 @@ import GroupList from './GroupList';
 import SortMenu from './SortMenu';
 import TopBarToggleButton from './TopBarToggleButton';
 import UserMenu from './UserMenu';
+import NodeLinkIconButton from './node-link/NodeLinkIconButton';
 import AISearchIconButton from './search/AISearchIconButton';
 import EmptyPanelIconButton from './search/EmptyPanelIconButton';
 import SearchIconButton from './search/SearchIconButton';
@@ -114,6 +115,7 @@ function TopBar({
           {isSidebar && (
             <>
               <AISearchIconButton />
+              <NodeLinkIconButton />
               <EmptyPanelIconButton />
               <SearchIconButton />
               <SortMenu />

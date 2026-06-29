@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hypothesis Node Link</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <h1>Node Link</h1>
+          <p id="sessionLabel">Checking session</p>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <label class="control">
+          <span>Group</span>
+          <select id="groupSelect" disabled>
+            <option value="">No group loaded</option>
+          </select>
+        </label>
+        <button id="refreshBtn" class="button primary" disabled>Refresh</button>
+        <button id="newEdgeBtn" class="button" disabled>New Tag Edge</button>
+        <button id="loginBtn" class="button">Log in</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="canvas-panel" aria-label="Node-link graph">
+        <div class="canvas-status">
+          <div>
+            <strong id="graphTitle">No snapshot loaded</strong>
+            <span id="graphStats">Log in, choose a group, then refresh.</span>
+          </div>
+          <span id="saveState" class="save-state">Idle</span>
+        </div>
+        <div id="notice" class="notice" hidden></div>
+        <div id="canvasScroll" class="canvas-scroll">
+          <svg
+            id="graphSvg"
+            class="graph-svg"
+            role="img"
+            aria-label="Tag and quote graph"
+          ></svg>
+        </div>
+      </section>
+
+      <aside class="inspector" aria-label="Graph inspector">
+        <section id="edgeEditor" class="panel" hidden>
+          <div class="panel-heading">
+            <h2>Add Tag Edge</h2>
+            <button id="cancelEdgeBtn" class="ghost-button">Cancel</button>
+          </div>
+          <label class="field">
+            <span>Source tag</span>
+            <select id="edgeSource"></select>
+          </label>
+          <label class="field">
+            <span>Target tag</span>
+            <select id="edgeTarget"></select>
+          </label>
+          <label class="field">
+            <span>Label</span>
+            <input
+              id="edgeLabel"
+              type="text"
+              placeholder="supports, contrasts, explains..."
+            />
+          </label>
+          <button id="saveEdgeBtn" class="button primary full-width">
+            Save Edge
+          </button>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Selection</h2>
+          </div>
+          <div id="selectionPanel" class="empty-panel">
+            Select a tag or quote node.
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Human Tag Edges</h2>
+          </div>
+          <div id="edgeList" class="edge-list"></div>
+        </section>
+      </aside>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

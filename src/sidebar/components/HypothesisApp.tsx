@@ -21,9 +21,10 @@ import SidebarView from './SidebarView';
 import StreamView from './StreamView';
 import ToastMessages from './ToastMessages';
 import TopBar from './TopBar';
-import SearchPanel from './search/SearchPanel';
+import NodeLinkPanel from './node-link/NodeLinkPanel';
 import AISearchPanel from './search/AISearchPanel';
 import EmptyPanel from './search/EmptyPanel';
+import SearchPanel from './search/SearchPanel';
 
 export type HypothesisAppProps = {
   auth: AuthService;
@@ -60,7 +61,9 @@ function HypothesisApp({
   const isSidebar = route === 'sidebar';
   const currentPDFUri = useMemo(
     () =>
-      searchUris.find(uri => /\.pdf($|[?#])/i.test(uri)) ?? searchUris[0] ?? null,
+      searchUris.find(uri => /\.pdf($|[?#])/i.test(uri)) ??
+      searchUris[0] ??
+      null,
     [searchUris],
   );
   const lastAutoOpenedPDFRef = useRef<string | null>(null);
@@ -185,6 +188,7 @@ function HypothesisApp({
         <HelpPanel />
         <SearchPanel />
         <AISearchPanel />
+        <NodeLinkPanel />
         <EmptyPanel />
         <SharePanel shareTab={!isThirdParty} />
 
