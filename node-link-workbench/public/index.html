@@ -91,6 +91,27 @@
       </section>
 
       <aside class="inspector" aria-label="Graph inspector">
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>View</h2>
+          </div>
+          <label class="field">
+            <span>Color</span>
+            <select id="colorModeSelect" disabled>
+              <option value="tag">Tags</option>
+              <option value="document">Document focus</option>
+              <option value="bridge">Cross-document</option>
+              <option value="density">Density</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Focus</span>
+            <select id="colorFocusSelect" disabled>
+              <option value="all">All documents</option>
+            </select>
+          </label>
+        </section>
+
         <section id="edgeEditor" class="panel" hidden>
           <div class="panel-heading">
             <h2>Add Tag Edge</h2>

@@ -32,9 +32,11 @@ The server uses the token directly as a bearer token and does not copy it into
 2. Choose a group from the dropdown.
 3. Click `Refresh` to pull that group's annotations from Hypothesis.
 4. Use the document dropdown to show all documents or one source document.
-5. Drag tag or quote nodes to arrange the graph.
-6. Use the zoom controls to inspect the full graph or fit it to the canvas.
-7. Add human-authored tag-to-tag edges with labels and explanations.
+5. Use the color dropdown to view tag color, document focus, cross-document
+   bridge tags, or density.
+6. Drag tag or quote nodes to arrange the graph.
+7. Use the zoom controls to inspect the full graph or fit it to the canvas.
+8. Add human-authored tag-to-tag edges with labels and explanations.
 
 Tag-to-quote edges are regenerated from the latest annotation snapshot. Human tag-to-tag edges and node positions are saved separately. If a document filter hides either endpoint tag, that human edge is hidden until both tags are visible again.
 

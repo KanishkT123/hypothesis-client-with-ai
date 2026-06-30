@@ -100,6 +100,11 @@ p {
   gap: 10px;
 }
 
+.toolbar .button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .control,
 .field {
   display: grid;
@@ -133,6 +138,12 @@ textarea {
   color: var(--ink);
   padding: 8px 10px;
   line-height: 1.35;
+}
+
+.field select,
+.field input,
+.field textarea {
+  width: 100%;
 }
 
 select:focus,
@@ -306,11 +317,12 @@ button:focus-visible {
   fill: none;
   stroke-width: 1.35;
   stroke-opacity: 0.38;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .edge-human {
   fill: none;
-  stroke: var(--brand);
   stroke-width: 2.7;
   stroke-dasharray: 7 5;
   stroke-linecap: round;
@@ -376,9 +388,20 @@ button:focus-visible {
   text-anchor: middle;
 }
 
+.node-port {
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.tag-port {
+  stroke: #fff;
+}
+
+.quote-port {
+  stroke-width: 2.2;
+}
+
 .quote-node rect {
-  fill: var(--quote);
-  stroke: var(--quote-line);
   stroke-width: 1.1;
   filter: drop-shadow(0 7px 12px rgba(70, 58, 28, 0.1));
 }

@@ -13,8 +13,17 @@ const TAG_CENTER_X = 150;
 const LANE_START_X = 310;
 const LANE_WIDTH = 286;
 const LANE_GAP = 34;
+const LANE_RAIL_GAP = 24;
 const QUOTE_GAP = 12;
 const ROW_GAP = 22;
+const DOC_COLORS = [
+  '#0f766e',
+  '#7c3aed',
+  '#c2410c',
+  '#2563eb',
+  '#be123c',
+  '#15803d',
+];
 
 const els = {
   sessionLabel: document.querySelector('#sessionLabel'),
@@ -23,6 +32,8 @@ const els = {
   refreshBtn: document.querySelector('#refreshBtn'),
   newEdgeBtn: document.querySelector('#newEdgeBtn'),
   loginBtn: document.querySelector('#loginBtn'),
+  colorModeSelect: document.querySelector('#colorModeSelect'),
+  colorFocusSelect: document.querySelector('#colorFocusSelect'),
   graphTitle: document.querySelector('#graphTitle'),
   graphStats: document.querySelector('#graphStats'),
   saveState: document.querySelector('#saveState'),
@@ -52,6 +63,8 @@ const state = {
   edits: null,
   graph: null,
   documentFilter: 'all',
+  colorMode: 'tag',
+  colorFocus: 'all',
   zoom: 0.82,
   userZoomed: false,
   selectedNodeId: null,
@@ -253,6 +266,10 @@ function formatTagLabel(tag) {
   };
 }
 
+function documentColor(index) {
+  return DOC_COLORS[index % DOC_COLORS.length];
+}
+
 function currentLayoutNodes() {
   const layout = state.edits?.layout;
   if (layout?.version !== LAYOUT_VERSION) {
@@ -319,9 +336,19 @@ function buildGraph() {
 
     for (const tag of tags) {
       if (!tagMap.has(tag)) {
-        tagMap.set(tag, { id: `tag:${tag}`, type: 'tag', tag, count: 0 });
+        tagMap.set(tag, {
+          id: `tag:${tag}`,
+          type: 'tag',
+          tag,
+          count: 0,
+          documentUris: new Set(),
+        });
       }
-      tagMap.get(tag).count += 1;
+      const tagNode = tagMap.get(tag);
+      tagNode.count += 1;
+      if (docUri) {
+        tagNode.documentUris.add(docUri);
+      }
     }
 
     if (!ann.quote) {
@@ -371,6 +398,7 @@ function buildGraph() {
   lanes.forEach((lane, index) => {
     lane.index = index;
     lane.x = LANE_START_X + index * (LANE_WIDTH + LANE_GAP);
+    lane.color = documentColor(index);
   });
 
   const laneByUri = new Map(lanes.map(lane => [lane.uri, lane]));
@@ -401,6 +429,8 @@ function buildGraph() {
     const tagPos = nodePosition(tagNode.id, TAG_CENTER_X, rowCenterY);
     Object.assign(tagNode, tagPos, {
       color: hashColor(tagNode.tag),
+      documentUris: [...tagNode.documentUris],
+      docCount: tagNode.documentUris.size,
       rowY: cursorY,
       rowHeight,
     });
@@ -426,7 +456,10 @@ function buildGraph() {
         index * (QUOTE_HEIGHT + QUOTE_GAP) +
         QUOTE_HEIGHT / 2;
       const pos = nodePosition(quoteNode.id, fallbackX, fallbackY);
-      Object.assign(quoteNode, pos, { laneIndex: lane.index });
+      Object.assign(quoteNode, pos, {
+        laneIndex: lane.index,
+        documentColor: lane.color,
+      });
     }
 
     cursorY += rowHeight + ROW_GAP;
@@ -483,13 +516,138 @@ function nodeRight(node) {
     : node.x + TAG_WIDTH / 2;
 }
 
+function hexToRgba(hex, alpha) {
+  const value = hex.replace('#', '');
+  if (value.length !== 6) {
+    return hex;
+  }
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function tagDocuments(node) {
+  return Array.isArray(node.documentUris) ? node.documentUris : [];
+}
+
+function tagTouchesFocus(node) {
+  return (
+    state.colorFocus === 'all' || tagDocuments(node).includes(state.colorFocus)
+  );
+}
+
+function tagVisual(node) {
+  if (state.colorMode === 'document') {
+    if (state.colorFocus !== 'all' && tagTouchesFocus(node)) {
+      const lane = state.graph.lanes.find(
+        item => item.uri === state.colorFocus,
+      );
+      return { fill: lane?.color || node.color, opacity: 1 };
+    }
+    return {
+      fill: state.colorFocus === 'all' ? '#516360' : '#80908d',
+      opacity: state.colorFocus === 'all' || tagTouchesFocus(node) ? 1 : 0.24,
+    };
+  }
+
+  if (state.colorMode === 'bridge') {
+    return {
+      fill: node.docCount > 1 ? '#0f766e' : '#8d9a97',
+      opacity: node.docCount > 1 ? 1 : 0.32,
+    };
+  }
+
+  if (state.colorMode === 'density') {
+    const fill =
+      node.count >= 5
+        ? '#be123c'
+        : node.count >= 4
+          ? '#b45309'
+          : node.count >= 3
+            ? '#0f766e'
+            : '#2563eb';
+    return {
+      fill,
+      opacity: 1,
+    };
+  }
+
+  return { fill: node.color, opacity: 1 };
+}
+
+function quoteVisual(node) {
+  const tagNode = state.graph.nodeById.get(`tag:${node.primaryTag}`);
+  const tagStyle = tagNode
+    ? tagVisual(tagNode)
+    : { fill: '#7c8a87', opacity: 1 };
+
+  if (state.colorMode === 'document') {
+    const focused =
+      state.colorFocus === 'all' || node.documentUri === state.colorFocus;
+    return {
+      fill: focused ? hexToRgba(node.documentColor, 0.15) : '#f1f5f5',
+      stroke: focused ? node.documentColor : '#c8d4d2',
+      opacity: focused ? 1 : 0.24,
+      port: focused ? node.documentColor : '#9aa8a6',
+    };
+  }
+
+  if (state.colorMode === 'bridge') {
+    const bridge = (tagNode?.docCount || 0) > 1;
+    return {
+      fill: bridge ? '#eef8f4' : '#f4f6f6',
+      stroke: bridge ? '#0f766e' : '#cbd8d6',
+      opacity: bridge ? 1 : 0.32,
+      port: bridge ? '#0f766e' : '#9aa8a6',
+    };
+  }
+
+  if (state.colorMode === 'density') {
+    return {
+      fill: hexToRgba('#d7a940', clamp((tagNode?.count || 1) / 18, 0.08, 0.22)),
+      stroke: tagStyle.fill,
+      opacity: 1,
+      port: tagStyle.fill,
+    };
+  }
+
+  return {
+    fill: '#fffaf0',
+    stroke: '#d7a940',
+    opacity: 1,
+    port: tagStyle.fill,
+  };
+}
+
+function edgeVisual(edge, source, target) {
+  const selected = edgeIsSelected(edge);
+  const selectionMuted = state.selectedNodeId && !selected;
+  const sourceStyle = source.type === 'tag' ? tagVisual(source) : null;
+  const targetStyle =
+    target.type === 'quote' ? quoteVisual(target) : tagVisual(target);
+  const color =
+    state.colorMode === 'document' && target.type === 'quote'
+      ? targetStyle.port
+      : sourceStyle?.fill || '#7c8a87';
+  const colorMuted =
+    (sourceStyle?.opacity ?? 1) < 1 || (targetStyle?.opacity ?? 1) < 1;
+  return {
+    color,
+    muted: selectionMuted || colorMuted,
+    selected,
+  };
+}
+
 function autoEdgePath(source, target) {
   const startX = nodeRight(source);
   const endX = nodeLeft(target);
   const startY = source.y;
   const endY = target.y;
-  const dx = Math.max(42, Math.abs(endX - startX) * 0.34);
-  return `M ${startX} ${startY} C ${startX + dx} ${startY}, ${endX - dx} ${endY}, ${endX} ${endY}`;
+  const railX = endX - LANE_RAIL_GAP;
+  const busY = Number.isFinite(source.rowY) ? source.rowY + 22 : startY;
+  const curve = 16;
+  return `M ${startX} ${startY} C ${startX + curve} ${startY}, ${startX + curve} ${busY}, ${startX + curve * 2} ${busY} L ${railX} ${busY} L ${railX} ${endY} C ${railX} ${endY}, ${endX - curve} ${endY}, ${endX} ${endY}`;
 }
 
 function humanEdgePath(source, target, index) {
@@ -517,11 +675,12 @@ function renderEdges(group) {
     if (!source || !target) {
       continue;
     }
+    const visual = edgeVisual(edge, source, target);
     group.append(
       svgEl('path', {
-        class: `edge-auto ${state.selectedNodeId && !edgeIsSelected(edge) ? 'edge-muted' : ''} ${edgeIsSelected(edge) ? 'edge-active' : ''}`,
+        class: `edge-auto ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
         d: autoEdgePath(source, target),
-        stroke: source.color,
+        stroke: visual.color,
       }),
     );
   }
@@ -532,11 +691,13 @@ function renderEdges(group) {
     if (!source || !target) {
       return;
     }
+    const visual = edgeVisual(edge, source, target);
     const pathId = `path-${edge.id}`;
     const path = svgEl('path', {
       id: pathId,
-      class: `edge-human ${state.selectedNodeId && !edgeIsSelected(edge) ? 'edge-muted' : ''} ${edgeIsSelected(edge) ? 'edge-active' : ''}`,
+      class: `edge-human ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
       d: humanEdgePath(source, target, index),
+      stroke: visual.color,
     });
     group.append(path);
 
@@ -604,9 +765,11 @@ function renderTagNode(group, node) {
   const x = node.x - TAG_WIDTH / 2;
   const y = node.y - TAG_HEIGHT / 2;
   const label = formatTagLabel(node.tag);
+  const visual = tagVisual(node);
   const g = svgEl('g', {
     class: `node tag-node ${node.id === state.selectedNodeId ? 'selected-node' : ''}`,
     transform: `translate(${x} ${y})`,
+    opacity: visual.opacity,
   });
   g.append(
     svgEl('rect', {
@@ -614,7 +777,7 @@ function renderTagNode(group, node) {
       height: TAG_HEIGHT,
       rx: 8,
       ry: 8,
-      fill: node.color,
+      fill: visual.fill,
     }),
   );
 
@@ -642,6 +805,16 @@ function renderTagNode(group, node) {
   count.textContent = String(node.count);
   g.append(count);
 
+  g.append(
+    svgEl('circle', {
+      class: 'node-port tag-port',
+      cx: TAG_WIDTH,
+      cy: TAG_HEIGHT / 2,
+      r: 5,
+      fill: visual.fill,
+    }),
+  );
+
   g.addEventListener('pointerdown', event => startDrag(event, node));
   g.addEventListener('click', () => selectNode(node.id));
   group.append(g);
@@ -650,9 +823,11 @@ function renderTagNode(group, node) {
 function renderQuoteNode(group, node) {
   const x = node.x - QUOTE_WIDTH / 2;
   const y = node.y - QUOTE_HEIGHT / 2;
+  const visual = quoteVisual(node);
   const g = svgEl('g', {
     class: `node quote-node ${node.id === state.selectedNodeId ? 'selected-node' : ''}`,
     transform: `translate(${x} ${y})`,
+    opacity: visual.opacity,
   });
   g.append(
     svgEl('rect', {
@@ -660,6 +835,8 @@ function renderQuoteNode(group, node) {
       height: QUOTE_HEIGHT,
       rx: 8,
       ry: 8,
+      fill: visual.fill,
+      stroke: visual.stroke,
     }),
   );
 
@@ -680,6 +857,17 @@ function renderQuoteNode(group, node) {
     text.textContent = line;
     g.append(text);
   });
+
+  g.append(
+    svgEl('circle', {
+      class: 'node-port quote-port',
+      cx: 0,
+      cy: QUOTE_HEIGHT / 2,
+      r: 4.5,
+      fill: '#fff',
+      stroke: visual.port,
+    }),
+  );
 
   g.addEventListener('pointerdown', event => startDrag(event, node));
   g.addEventListener('click', () => selectNode(node.id));
@@ -1132,6 +1320,7 @@ async function loadGraph() {
   ensureCurrentLayout();
   updateGroupSelect();
   updateDocumentSelect();
+  updateColorFocusSelect();
   buildGraph();
   renderGraph();
   updateGraphHeader();
@@ -1158,6 +1347,7 @@ async function refreshSnapshot() {
     state.edits = edits;
     ensureCurrentLayout();
     updateDocumentSelect();
+    updateColorFocusSelect();
     buildGraph();
     renderGraph();
     updateGraphHeader();
@@ -1224,6 +1414,31 @@ function updateDocumentSelect() {
   }
 }
 
+function updateColorFocusSelect() {
+  const options = documentOptions();
+  const current = state.colorFocus;
+
+  els.colorFocusSelect.replaceChildren();
+  const allOption = document.createElement('option');
+  allOption.value = 'all';
+  allOption.textContent = 'All documents';
+  els.colorFocusSelect.append(allOption);
+
+  for (const option of options) {
+    const item = document.createElement('option');
+    item.value = option.uri;
+    item.textContent = option.label;
+    els.colorFocusSelect.append(item);
+  }
+
+  if (current !== 'all' && options.some(option => option.uri === current)) {
+    els.colorFocusSelect.value = current;
+  } else {
+    state.colorFocus = 'all';
+    els.colorFocusSelect.value = 'all';
+  }
+}
+
 function updateControls() {
   const authenticated = Boolean(state.session?.authenticated);
   const tokenAuth = state.session?.authMethod === 'apiToken';
@@ -1240,6 +1455,11 @@ function updateControls() {
   els.loginBtn.disabled = tokenAuth;
   els.groupSelect.disabled = !authenticated || !state.groups.length;
   els.documentSelect.disabled = !state.snapshot?.annotations?.length;
+  els.colorModeSelect.disabled = !state.graph;
+  els.colorFocusSelect.disabled =
+    !state.graph || state.colorMode !== 'document';
+  els.colorModeSelect.value = state.colorMode;
+  els.colorFocusSelect.value = state.colorFocus;
   els.refreshBtn.disabled = !authenticated || !els.groupSelect.value;
   els.newEdgeBtn.disabled = !state.graph?.tagNodes.length;
   els.zoomOutBtn.disabled = !state.graph;
@@ -1315,9 +1535,24 @@ async function init() {
     state.edits.selectedGroupId = els.groupSelect.value || null;
     saveEditsNow().catch(err => showNotice(err.message));
   });
+  els.colorModeSelect.addEventListener('change', () => {
+    state.colorMode = els.colorModeSelect.value || 'tag';
+    if (state.colorMode !== 'document') {
+      state.colorFocus = 'all';
+    }
+    updateColorFocusSelect();
+    renderGraph();
+    updateControls();
+  });
+  els.colorFocusSelect.addEventListener('change', () => {
+    state.colorFocus = els.colorFocusSelect.value || 'all';
+    renderGraph();
+    updateControls();
+  });
   els.documentSelect.addEventListener('change', () => {
     state.documentFilter = els.documentSelect.value || 'all';
     buildGraph();
+    updateColorFocusSelect();
     if (
       state.selectedNodeId &&
       !state.graph.nodeById.has(state.selectedNodeId)
