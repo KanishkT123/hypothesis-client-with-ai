@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "groupId": "nwE71DXZ",
+  "groupName": "TestGroup1",
+  "description": "Sentence-level HCI and Gestalt tags for testing the node-link workbench across Doyle and Little Women.",
+  "documents": [
+    {
+      "id": "doyle",
+      "uri": "http://127.0.0.1:8765/doyle.html",
+      "title": "The Disappearance of Lady Frances Carfax",
+      "items": [
+        {
+          "tag": "hci:information-scent",
+          "quote": "There is one correspondent who is a sure draw, Watson."
+        },
+        {
+          "tag": "hci:information-scent",
+          "quote": "A silver-and-brilliant pendant of old Spanish design had been pawned at Bovington's, in Westminster Road."
+        },
+        {
+          "tag": "hci:visibility-of-state",
+          "quote": "Ah, what has happened to the Lady Frances?"
+        },
+        {
+          "tag": "hci:visibility-of-state",
+          "quote": "Nearly five weeks have passed without a word."
+        },
+        {
+          "tag": "hci:mental-model",
+          "quote": "Already the mystery began to define itself, as figures grow clearer with the lifting of a fog."
+        },
+        {
+          "tag": "hci:mental-model",
+          "quote": "To leave room for another body."
+        },
+        {
+          "tag": "hci:distributed-cognition",
+          "quote": "All this I jotted down and felt that Holmes himself could not have been more adroit in collecting his facts."
+        },
+        {
+          "tag": "hci:distributed-cognition",
+          "quote": "For this reason I sent a duplicate to the manager of the Englischer Hof, whose answer lies here."
+        },
+        {
+          "tag": "hci:trust-signifier",
+          "quote": "Dr. Shlessinger's remarkable personality, his whole hearted devotion, and the fact that he was recovering from a disease contracted in the exercise of his apostolic duties affected her deeply."
+        },
+        {
+          "tag": "hci:trust-signifier",
+          "quote": "She had helped Mrs. Shlessinger in the nursing of the convalescent saint."
+        },
+        {
+          "tag": "hci:breakdown-repair",
+          "quote": "The total effect of your proceeding has been to give the alarm everywhere and yet to discover nothing."
+        },
+        {
+          "tag": "hci:breakdown-repair",
+          "quote": "We must prepare for the worst."
+        },
+        {
+          "tag": "gestalt:closure",
+          "quote": "That incident proves, I fear, beyond all doubt that the lady is dead."
+        },
+        {
+          "tag": "gestalt:closure",
+          "quote": "Our one chance was to stop the coffin before it left the house."
+        },
+        {
+          "tag": "gestalt:figure-ground",
+          "quote": "You may remember my seemingly irrelevant question as to this clerical gentleman's left ear."
+        },
+        {
+          "tag": "gestalt:figure-ground",
+          "quote": "The ear had escaped notice, but the description was surely that of Shlessinger."
+        },
+        {
+          "tag": "hci:deceptive-interface",
+          "quote": "The Rev. Dr. Shlessinger, missionary from South America, is none other than Holy Peters, one of the most unscrupulous rascals that Australia has ever evolved--and for a young country it has turned out some very finished types."
+        },
+        {
+          "tag": "hci:deceptive-interface",
+          "quote": "His particular specialty is the beguiling of lonely ladies by playing upon their religious feelings, and his so-called wife, an Englishwoman named Fraser, is a worthy helpmate."
+        },
+        {
+          "tag": "hci:diagnostic-cue",
+          "quote": "\"Jagged or torn,\" was the message, and the place of origin, Baden."
+        },
+        {
+          "tag": "hci:diagnostic-cue",
+          "quote": "M. Moser knew nothing of any valuable jewellery, but it had been remarked by the servants that the heavy trunk in the lady's bedroom was always scrupulously locked."
+        },
+        {
+          "tag": "hci:identity-resolution",
+          "quote": "You are Henry Peters, of Adelaide, late the Rev. Dr. Shlessinger, of Baden and South America."
+        },
+        {
+          "tag": "hci:identity-resolution",
+          "quote": "The nature of his tactics suggested his identity to me, and this physical peculiarity--he was badly bitten in a saloon-fight at Adelaide in '89--confirmed my suspicion."
+        },
+        {
+          "tag": "gestalt:continuity",
+          "quote": "Both she and it reached the Rhenish spa by some circuitous route."
+        },
+        {
+          "tag": "gestalt:continuity",
+          "quote": "Lady Frances had started thither in their company."
+        }
+      ]
+    },
+    {
+      "id": "little-women-1",
+      "uri": "http://127.0.0.1:8765/little-women-1.html",
+      "title": "Little Women, Chapter 1",
+      "items": [
+        {
+          "tag": "hci:information-scent",
+          "quote": "We ought to have our roll of directions, like Christian."
+        },
+        {
+          "tag": "hci:information-scent",
+          "quote": "\"Look under your pillows Christmas morning, and you will find your guidebook,\" replied Mrs. March."
+        },
+        {
+          "tag": "hci:visibility-of-state",
+          "quote": "We haven't got Father, and shall not have him for a long time."
+        },
+        {
+          "tag": "hci:visibility-of-state",
+          "quote": "She didn't say \"perhaps never,\" but each silently added it, thinking of Father far away, where the fighting was."
+        },
+        {
+          "tag": "hci:mental-model",
+          "quote": "I think too much of my looks and hate to work, but won't any more, if I can help it."
+        },
+        {
+          "tag": "hci:mental-model",
+          "quote": "It is only another name for trying to be good, and the story may help us, for though we do want to be good, it's hard work and we forget, and don't do our best."
+        },
+        {
+          "tag": "hci:distributed-cognition",
+          "quote": "They all drew to the fire, Mother in the big chair with Beth at her feet, Meg and Amy perched on either arm of the chair, and Jo leaning on the back, where no one would see any sign of emotion if the letter should happen to be touching."
+        },
+        {
+          "tag": "hci:distributed-cognition",
+          "quote": "They adopted Jo's plan of dividing the long seams into four parts, and calling the quarters Europe, Asia, Africa, and America, and in that way got on capitally, especially when they talked about the different countries as they stitched their way through them."
+        },
+        {
+          "tag": "hci:trust-signifier",
+          "quote": "\"We've got Father and Mother, and each other,\" said Beth contentedly from her corner."
+        },
+        {
+          "tag": "hci:trust-signifier",
+          "quote": "\"You're a dear, and nothing else,\" answered Meg warmly, and no one contradicted her, for the 'Mouse' was the pet of the family."
+        },
+        {
+          "tag": "hci:breakdown-repair",
+          "quote": "We were in the Slough of Despond tonight, and Mother came and pulled us out as Help did in the book."
+        },
+        {
+          "tag": "hci:breakdown-repair",
+          "quote": "Beth's bundle was such a funny one that everybody wanted to laugh, but nobody did, for it would have hurt her feelings very much."
+        },
+        {
+          "tag": "gestalt:closure",
+          "quote": "Each of you told what your burden was just now, except Beth."
+        },
+        {
+          "tag": "gestalt:closure",
+          "quote": "Now, my little pilgrims, suppose you begin again, not in play, but in earnest, and see how far on you can get before Father comes home."
+        },
+        {
+          "tag": "gestalt:figure-ground",
+          "quote": "It was uninteresting sewing, but tonight no one grumbled."
+        },
+        {
+          "tag": "gestalt:figure-ground",
+          "quote": "The first sound in the morning was her voice as she went about the house singing like a lark, and the last sound at night was the same cheery sound, for the girls never grew too old for that familiar lullaby."
+        },
+        {
+          "tag": "hci:resource-constraint",
+          "quote": "\"Christmas won't be Christmas without any presents,\" grumbled Jo, lying on the rug."
+        },
+        {
+          "tag": "hci:resource-constraint",
+          "quote": "We've each got a dollar, and the army wouldn't be much helped by our giving that."
+        },
+        {
+          "tag": "hci:social-coordination",
+          "quote": "Don't peck at one another, children."
+        },
+        {
+          "tag": "hci:social-coordination",
+          "quote": "They talked over the new plan while old Hannah cleared the table, then out came the four little work baskets, and the needles flew as the girls made sheets for Aunt March."
+        },
+        {
+          "tag": "hci:role-negotiation",
+          "quote": "It's bad enough to be a girl, anyway, when I like boy's games and work and manners!"
+        },
+        {
+          "tag": "hci:role-negotiation",
+          "quote": "So you must try to be contented with making your name boyish, and playing brother to us girls"
+        },
+        {
+          "tag": "hci:ritual-interface",
+          "quote": "We never are too old for this, my dear, because it is a play we are playing all the time in one way or another."
+        },
+        {
+          "tag": "hci:ritual-interface",
+          "quote": "At nine they stopped work, and sang, as usual, before they went to bed."
+        }
+      ]
+    }
+  ]
+}

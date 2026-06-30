@@ -6,6 +6,7 @@ const QUOTE_HEIGHT = 86;
 const els = {
   sessionLabel: document.querySelector('#sessionLabel'),
   groupSelect: document.querySelector('#groupSelect'),
+  documentSelect: document.querySelector('#documentSelect'),
   refreshBtn: document.querySelector('#refreshBtn'),
   newEdgeBtn: document.querySelector('#newEdgeBtn'),
   loginBtn: document.querySelector('#loginBtn'),
@@ -20,6 +21,7 @@ const els = {
   edgeSource: document.querySelector('#edgeSource'),
   edgeTarget: document.querySelector('#edgeTarget'),
   edgeLabel: document.querySelector('#edgeLabel'),
+  edgeExplanation: document.querySelector('#edgeExplanation'),
   saveEdgeBtn: document.querySelector('#saveEdgeBtn'),
   selectionPanel: document.querySelector('#selectionPanel'),
   edgeList: document.querySelector('#edgeList'),
@@ -31,6 +33,7 @@ const state = {
   snapshot: null,
   edits: null,
   graph: null,
+  documentFilter: 'all',
   selectedNodeId: null,
   dragging: null,
   saveTimer: null,
@@ -132,6 +135,62 @@ function contentTags(tags = []) {
   return result;
 }
 
+function annotationDocumentId(annotation) {
+  return annotation?.uri || '';
+}
+
+function documentLabelFromUrl(uri) {
+  try {
+    const url = new URL(uri);
+    const file = url.pathname.split('/').filter(Boolean).pop();
+    if (file) {
+      return decodeURIComponent(file).replace(/[-_]+/g, ' ');
+    }
+    return url.hostname;
+  } catch {
+    return uri || 'Untitled document';
+  }
+}
+
+function annotationDocumentLabel(annotation) {
+  const title = annotation?.documentTitle || '';
+  if (title && title !== annotation?.uri) {
+    return title;
+  }
+  return documentLabelFromUrl(annotationDocumentId(annotation));
+}
+
+function documentOptions() {
+  const byUri = new Map();
+  for (const ann of state.snapshot?.annotations || []) {
+    if (ann.hidden || ann.isReply || !ann.quote) {
+      continue;
+    }
+    const uri = annotationDocumentId(ann);
+    if (!uri) {
+      continue;
+    }
+    const option = byUri.get(uri) || {
+      uri,
+      label: annotationDocumentLabel(ann),
+      count: 0,
+    };
+    option.count += 1;
+    byUri.set(uri, option);
+  }
+  return [...byUri.values()].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function selectedDocumentLabel() {
+  if (state.documentFilter === 'all') {
+    return 'All documents';
+  }
+  return (
+    documentOptions().find(option => option.uri === state.documentFilter)
+      ?.label || documentLabelFromUrl(state.documentFilter)
+  );
+}
+
 function hashColor(text) {
   let hash = 0;
   for (let i = 0; i < text.length; i += 1) {
@@ -155,9 +214,15 @@ function buildGraph() {
   const quoteNodes = [];
   const autoEdges = [];
 
-  const annotations = (snapshot.annotations || []).filter(
-    ann => !ann.hidden && !ann.isReply,
-  );
+  const annotations = (snapshot.annotations || []).filter(ann => {
+    if (ann.hidden || ann.isReply) {
+      return false;
+    }
+    return (
+      state.documentFilter === 'all' ||
+      annotationDocumentId(ann) === state.documentFilter
+    );
+  });
 
   for (const ann of annotations) {
     const tags = contentTags(ann.tags);
@@ -239,6 +304,7 @@ function buildGraph() {
   state.graph = {
     width,
     height,
+    annotations,
     nodes,
     tagNodes,
     quoteNodes,
@@ -390,10 +456,7 @@ function renderQuoteNode(group, node) {
     x: 12,
     y: 18,
   });
-  title.textContent = shortText(
-    node.annotation.documentTitle || node.annotation.uri,
-    34,
-  );
+  title.textContent = shortText(annotationDocumentLabel(node.annotation), 34);
   g.append(title);
 
   const lines = wrapLines(node.annotation.quote, 34, 3);
@@ -437,6 +500,7 @@ function renderGraph() {
   els.svg.append(edges, nodes);
   renderSelection();
   renderEdgeList();
+  updateGraphHeader();
 }
 
 function selectNode(id) {
@@ -472,7 +536,7 @@ function renderSelection() {
   const ann = node.annotation;
   const sourceUrl = ann.links?.incontext || ann.links?.html || ann.uri;
   els.selectionPanel.innerHTML = `
-    <div class="selection-title">${escapeHtml(shortText(ann.documentTitle || ann.uri, 70))}</div>
+    <div class="selection-title">${escapeHtml(shortText(annotationDocumentLabel(ann), 70))}</div>
     <div class="selection-copy">${escapeHtml(ann.quote)}</div>
     <div class="tag-chip-row">
       ${node.tags.map(tag => `<span class="tag-chip">${escapeHtml(tag)}</span>`).join('')}
@@ -510,24 +574,33 @@ function renderEdgeList() {
         <span>${escapeHtml(edge.targetTag)}</span>
       </div>
       <input type="text" value="${escapeAttr(edge.label || '')}" aria-label="Edge label" />
+      <textarea aria-label="Edge explanation">${escapeHtml(edge.explanation || '')}</textarea>
       <div class="edge-actions">
         <span>${isVisible ? 'Visible' : 'Hidden until both tags exist'}</span>
         <button class="ghost-button danger" type="button">Delete</button>
       </div>
     `;
     const input = item.querySelector('input');
+    const textarea = item.querySelector('textarea');
     const deleteButton = item.querySelector('button');
     input.addEventListener('change', () => {
       edge.label = input.value.trim();
       edge.updatedAt = new Date().toISOString();
       saveEditsNow();
+      buildGraph();
       renderGraph();
+    });
+    textarea.addEventListener('change', () => {
+      edge.explanation = textarea.value.trim();
+      edge.updatedAt = new Date().toISOString();
+      saveEditsNow();
     });
     deleteButton.addEventListener('click', () => {
       state.edits.tagEdges = state.edits.tagEdges.filter(
         itemEdge => itemEdge.id !== edge.id,
       );
       saveEditsNow();
+      buildGraph();
       renderGraph();
     });
     els.edgeList.append(item);
@@ -551,6 +624,7 @@ function openEdgeEditor() {
   populateEdgeSelects();
   els.edgeEditor.hidden = false;
   els.edgeLabel.value = '';
+  els.edgeExplanation.value = '';
 }
 
 function closeEdgeEditor() {
@@ -561,6 +635,7 @@ function saveNewEdge() {
   const sourceTag = els.edgeSource.value;
   const targetTag = els.edgeTarget.value;
   const label = els.edgeLabel.value.trim();
+  const explanation = els.edgeExplanation.value.trim();
   if (!sourceTag || !targetTag || sourceTag === targetTag) {
     showNotice('Choose two different tags before saving the edge.');
     return;
@@ -573,6 +648,7 @@ function saveNewEdge() {
     sourceTag,
     targetTag,
     label,
+    explanation,
     createdAt: now,
     updatedAt: now,
     createdBy: 'human',
@@ -747,6 +823,7 @@ async function loadGraph() {
   state.snapshot = snapshot;
   state.edits = edits;
   updateGroupSelect();
+  updateDocumentSelect();
   buildGraph();
   renderGraph();
   updateGraphHeader();
@@ -771,6 +848,7 @@ async function refreshSnapshot() {
     });
     const { edits } = await api('/api/graph');
     state.edits = edits;
+    updateDocumentSelect();
     buildGraph();
     renderGraph();
     updateGraphHeader();
@@ -810,6 +888,33 @@ function updateGroupSelect() {
   }
 }
 
+function updateDocumentSelect() {
+  const options = documentOptions();
+  const current = state.documentFilter;
+
+  els.documentSelect.replaceChildren();
+  const allOption = document.createElement('option');
+  allOption.value = 'all';
+  allOption.textContent = options.length
+    ? `All documents (${options.reduce((sum, option) => sum + option.count, 0)})`
+    : 'All documents';
+  els.documentSelect.append(allOption);
+
+  for (const option of options) {
+    const item = document.createElement('option');
+    item.value = option.uri;
+    item.textContent = `${option.label} (${option.count})`;
+    els.documentSelect.append(item);
+  }
+
+  if (current !== 'all' && options.some(option => option.uri === current)) {
+    els.documentSelect.value = current;
+  } else {
+    state.documentFilter = 'all';
+    els.documentSelect.value = 'all';
+  }
+}
+
 function updateControls() {
   const authenticated = Boolean(state.session?.authenticated);
   const tokenAuth = state.session?.authMethod === 'apiToken';
@@ -825,6 +930,7 @@ function updateControls() {
       : 'Log in';
   els.loginBtn.disabled = tokenAuth;
   els.groupSelect.disabled = !authenticated || !state.groups.length;
+  els.documentSelect.disabled = !state.snapshot?.annotations?.length;
   els.refreshBtn.disabled = !authenticated || !els.groupSelect.value;
   els.newEdgeBtn.disabled = !state.graph?.tagNodes.length;
 }
@@ -839,7 +945,7 @@ function updateGraphHeader() {
   const quotes = state.graph?.quoteNodes.length || 0;
   const humanEdges = state.graph?.humanEdges.length || 0;
   els.graphTitle.textContent = groupName;
-  els.graphStats.textContent = `${tags} tags / ${quotes} quotes / ${humanEdges} human edges. Refreshed ${refreshed}.`;
+  els.graphStats.textContent = `${selectedDocumentLabel()}: ${tags} tags / ${quotes} quotes / ${humanEdges} human edges. Refreshed ${refreshed}.`;
 }
 
 function formatDate(value) {
@@ -882,6 +988,19 @@ async function init() {
   els.groupSelect.addEventListener('change', () => {
     state.edits.selectedGroupId = els.groupSelect.value || null;
     saveEditsNow().catch(err => showNotice(err.message));
+  });
+  els.documentSelect.addEventListener('change', () => {
+    state.documentFilter = els.documentSelect.value || 'all';
+    buildGraph();
+    if (
+      state.selectedNodeId &&
+      !state.graph.nodeById.has(state.selectedNodeId)
+    ) {
+      state.selectedNodeId = null;
+    }
+    renderGraph();
+    updateGraphHeader();
+    updateControls();
   });
   els.svg.addEventListener('pointermove', handleDrag);
   els.svg.addEventListener('pointerup', stopDrag);

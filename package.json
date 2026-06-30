@@ -116,6 +116,7 @@
   "scripts": {
     "build": "cross-env NODE_ENV=production gulp build",
     "node-link": "node node-link-workbench/server.mjs",
+    "node-link:seed": "node node-link-workbench/scripts/seed-hci-annotations.mjs",
     "lint": "eslint --cache .",
     "checkformatting": "prettier --cache --check '**/*.{css,js,scss,ts,tsx,d.ts}'",
     "format": "prettier --cache --list-different --write '**/*.{css,js,scss,ts,tsx,d.ts}'",

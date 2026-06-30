@@ -38,7 +38,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -109,6 +110,10 @@ p {
   min-width: 280px;
 }
 
+.document-control select {
+  min-width: 220px;
+}
+
 select,
 input {
   height: 34px;
@@ -119,8 +124,20 @@ input {
   padding: 0 10px;
 }
 
+textarea {
+  min-height: 94px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 10px;
+  line-height: 1.35;
+}
+
 select:focus,
 input:focus,
+textarea:focus,
 button:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
@@ -411,6 +428,12 @@ button:focus-visible {
   width: 100%;
 }
 
+.edge-item textarea {
+  width: 100%;
+  min-height: 76px;
+  margin-top: 7px;
+}
+
 .edge-actions {
   display: flex;
   justify-content: space-between;
@@ -433,5 +456,9 @@ button:focus-visible {
 
   .control select {
     min-width: 210px;
+  }
+
+  .document-control select {
+    min-width: 170px;
   }
 }

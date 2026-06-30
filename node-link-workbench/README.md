@@ -28,13 +28,35 @@ The server uses the token directly as a bearer token and does not copy it into
 
 ## Flow
 
-1. Log in with Hypothesis OAuth.
+1. Start the server with `API_TOKEN` or `HYPOTHESIS_API_TOKEN` available.
 2. Choose a group from the dropdown.
 3. Click `Refresh` to pull that group's annotations from Hypothesis.
-4. Drag tag or quote nodes to arrange the graph.
-5. Add human-authored tag-to-tag edges with labels.
+4. Use the document dropdown to show all documents or one source document.
+5. Drag tag or quote nodes to arrange the graph.
+6. Add human-authored tag-to-tag edges with labels and explanations.
 
-Tag-to-quote edges are regenerated from the latest annotation snapshot. Human tag-to-tag edges and node positions are saved separately.
+Tag-to-quote edges are regenerated from the latest annotation snapshot. Human tag-to-tag edges and node positions are saved separately. If a document filter hides either endpoint tag, that human edge is hidden until both tags are visible again.
+
+## Seed Test Annotations
+
+The HCI/Gestalt test corpus for `TestGroup1` is stored in
+`node-link-workbench/seed/hci-gestalt-sentences.json`.
+
+Validate the local sample documents and Hypothesis API access without creating
+annotations:
+
+```sh
+npm run node-link:seed -- --dry-run
+```
+
+Create any missing seed annotations:
+
+```sh
+npm run node-link:seed
+```
+
+The script deduplicates by document URL, exact sentence quote, and tag. It uses
+the same group-shared permissions shape as the Hypothesis client.
 
 ## Local Data
 

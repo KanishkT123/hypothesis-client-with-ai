@@ -24,6 +24,12 @@
             <option value="">No group loaded</option>
           </select>
         </label>
+        <label class="control document-control">
+          <span>Document</span>
+          <select id="documentSelect" disabled>
+            <option value="all">All documents</option>
+          </select>
+        </label>
         <button id="refreshBtn" class="button primary" disabled>Refresh</button>
         <button id="newEdgeBtn" class="button" disabled>New Tag Edge</button>
         <button id="loginBtn" class="button">Log in</button>
@@ -71,6 +77,14 @@
               type="text"
               placeholder="supports, contrasts, explains..."
             />
+          </label>
+          <label class="field">
+            <span>Explanation</span>
+            <textarea
+              id="edgeExplanation"
+              rows="4"
+              placeholder="Why should these tags be connected?"
+            ></textarea>
           </label>
           <button id="saveEdgeBtn" class="button primary full-width">
             Save Edge
