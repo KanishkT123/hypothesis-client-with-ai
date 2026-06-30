@@ -111,6 +111,15 @@ p {
   gap: 5px;
 }
 
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
 .control select {
   min-width: 280px;
 }
@@ -127,6 +136,13 @@ input {
   background: #fff;
   color: var(--ink);
   padding: 0 10px;
+}
+
+.checkbox-field input {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  accent-color: var(--brand);
 }
 
 textarea {
@@ -324,8 +340,41 @@ button:focus-visible {
 .edge-human {
   fill: none;
   stroke-width: 2.7;
-  stroke-dasharray: 7 5;
   stroke-linecap: round;
+}
+
+.edge-implicit {
+  fill: none;
+  stroke-width: 1.9;
+  stroke-dasharray: 5 7;
+  stroke-linecap: round;
+  stroke-opacity: 0.42;
+  pointer-events: none;
+}
+
+.edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  cursor: pointer;
+  pointer-events: stroke;
+}
+
+.edge-hit:focus-visible {
+  outline: none;
+  stroke: rgba(15, 118, 110, 0.18);
+}
+
+.edge-implicit-hit {
+  cursor: pointer;
+}
+
+.edge-resting {
+  stroke-opacity: 0.18;
+}
+
+.edge-human.edge-resting {
+  stroke-opacity: 0.34;
 }
 
 .edge-active {
@@ -335,6 +384,10 @@ button:focus-visible {
 
 .edge-human.edge-active {
   stroke-width: 3.2;
+}
+
+.edge-implicit.edge-active {
+  stroke-width: 2.8;
 }
 
 .edge-muted {
@@ -450,6 +503,33 @@ button:focus-visible {
 
 .panel h2 {
   font-size: 14px;
+}
+
+.edge-dialog {
+  width: min(440px, calc(100vw - 48px));
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.edge-dialog::backdrop {
+  background: rgba(13, 25, 24, 0.26);
+}
+
+.edge-dialog-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.edge-context {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #eef7f4;
+  color: var(--brand-dark);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .empty-panel,

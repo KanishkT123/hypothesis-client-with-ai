@@ -21,7 +21,6 @@ import SidebarView from './SidebarView';
 import StreamView from './StreamView';
 import ToastMessages from './ToastMessages';
 import TopBar from './TopBar';
-import NodeLinkPanel from './node-link/NodeLinkPanel';
 import AISearchPanel from './search/AISearchPanel';
 import EmptyPanel from './search/EmptyPanel';
 import SearchPanel from './search/SearchPanel';
@@ -188,7 +187,6 @@ function HypothesisApp({
         <HelpPanel />
         <SearchPanel />
         <AISearchPanel />
-        <NodeLinkPanel />
         <EmptyPanel />
         <SharePanel shareTab={!isThirdParty} />
 

@@ -110,40 +110,18 @@
               <option value="all">All documents</option>
             </select>
           </label>
-        </section>
-
-        <section id="edgeEditor" class="panel" hidden>
-          <div class="panel-heading">
-            <h2>Add Tag Edge</h2>
-            <button id="cancelEdgeBtn" class="ghost-button">Cancel</button>
-          </div>
-          <label class="field">
-            <span>Source tag</span>
-            <select id="edgeSource"></select>
+          <label class="checkbox-field">
+            <input id="tagOnlyToggle" type="checkbox" disabled />
+            <span>Tag-only view</span>
           </label>
-          <label class="field">
-            <span>Target tag</span>
-            <select id="edgeTarget"></select>
+          <label class="checkbox-field">
+            <input id="implicitConnectionsToggle" type="checkbox" disabled />
+            <span>Implicit connections</span>
           </label>
-          <label class="field">
-            <span>Label</span>
-            <input
-              id="edgeLabel"
-              type="text"
-              placeholder="supports, contrasts, explains..."
-            />
+          <label class="checkbox-field">
+            <input id="selectionFirstToggle" type="checkbox" checked disabled />
+            <span>Selection-first edges</span>
           </label>
-          <label class="field">
-            <span>Explanation</span>
-            <textarea
-              id="edgeExplanation"
-              rows="4"
-              placeholder="Why should these tags be connected?"
-            ></textarea>
-          </label>
-          <button id="saveEdgeBtn" class="button primary full-width">
-            Save Edge
-          </button>
         </section>
 
         <section class="panel">
@@ -163,6 +141,45 @@
         </section>
       </aside>
     </main>
+
+    <dialog id="edgeEditor" class="edge-dialog">
+      <section class="panel edge-dialog-panel">
+        <div class="panel-heading">
+          <h2>Add Tag Edge</h2>
+          <button id="cancelEdgeBtn" class="ghost-button" type="button">
+            Cancel
+          </button>
+        </div>
+        <div id="edgeContext" class="edge-context" hidden></div>
+        <label class="field">
+          <span>Source tag</span>
+          <select id="edgeSource"></select>
+        </label>
+        <label class="field">
+          <span>Target tag</span>
+          <select id="edgeTarget"></select>
+        </label>
+        <label class="field">
+          <span>Connection type</span>
+          <input
+            id="edgeLabel"
+            type="text"
+            placeholder="supports, contrasts, explains..."
+          />
+        </label>
+        <label class="field">
+          <span>Purpose</span>
+          <textarea
+            id="edgeExplanation"
+            rows="4"
+            placeholder="Why should these tags be connected?"
+          ></textarea>
+        </label>
+        <button id="saveEdgeBtn" class="button primary full-width">
+          Save Edge
+        </button>
+      </section>
+    </dialog>
 
     <script src="/app.js" type="module"></script>
   </body>

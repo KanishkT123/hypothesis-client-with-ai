@@ -1,4 +1,16 @@
-const SYSTEM_TAGS = new Set(['ai-pending', 'ai-user-approved']);
+import {
+  annotationDocumentId,
+  annotationDocumentLabel,
+  buildImplicitTagEdges,
+  contentTags,
+  documentLabelFromUrl,
+  documentOptionsForAnnotations,
+  edgeDisplayLabel,
+  edgeDisplayPurpose,
+  graphLayersForView,
+  tagPairKey,
+} from './graph-model.js';
+
 const LAYOUT_VERSION = 2;
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 1.35;
@@ -34,6 +46,11 @@ const els = {
   loginBtn: document.querySelector('#loginBtn'),
   colorModeSelect: document.querySelector('#colorModeSelect'),
   colorFocusSelect: document.querySelector('#colorFocusSelect'),
+  tagOnlyToggle: document.querySelector('#tagOnlyToggle'),
+  implicitConnectionsToggle: document.querySelector(
+    '#implicitConnectionsToggle',
+  ),
+  selectionFirstToggle: document.querySelector('#selectionFirstToggle'),
   graphTitle: document.querySelector('#graphTitle'),
   graphStats: document.querySelector('#graphStats'),
   saveState: document.querySelector('#saveState'),
@@ -51,6 +68,7 @@ const els = {
   edgeTarget: document.querySelector('#edgeTarget'),
   edgeLabel: document.querySelector('#edgeLabel'),
   edgeExplanation: document.querySelector('#edgeExplanation'),
+  edgeContext: document.querySelector('#edgeContext'),
   saveEdgeBtn: document.querySelector('#saveEdgeBtn'),
   selectionPanel: document.querySelector('#selectionPanel'),
   edgeList: document.querySelector('#edgeList'),
@@ -65,9 +83,13 @@ const state = {
   documentFilter: 'all',
   colorMode: 'tag',
   colorFocus: 'all',
+  showQuotes: true,
+  showImplicitConnections: false,
+  selectionFirstEdges: true,
   zoom: 0.82,
   userZoomed: false,
   selectedNodeId: null,
+  edgeDraft: null,
   dragging: null,
   saveTimer: null,
 };
@@ -177,64 +199,8 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function contentTags(tags = []) {
-  const seen = new Set();
-  const result = [];
-  for (const rawTag of tags) {
-    const tag = rawTag.trim();
-    if (!tag || SYSTEM_TAGS.has(tag) || seen.has(tag)) {
-      continue;
-    }
-    seen.add(tag);
-    result.push(tag);
-  }
-  return result;
-}
-
-function annotationDocumentId(annotation) {
-  return annotation?.uri || '';
-}
-
-function documentLabelFromUrl(uri) {
-  try {
-    const url = new URL(uri);
-    const file = url.pathname.split('/').filter(Boolean).pop();
-    if (file) {
-      return decodeURIComponent(file).replace(/[-_]+/g, ' ');
-    }
-    return url.hostname;
-  } catch {
-    return uri || 'Untitled document';
-  }
-}
-
-function annotationDocumentLabel(annotation) {
-  const title = annotation?.documentTitle || '';
-  if (title && title !== annotation?.uri) {
-    return title;
-  }
-  return documentLabelFromUrl(annotationDocumentId(annotation));
-}
-
 function documentOptions() {
-  const byUri = new Map();
-  for (const ann of state.snapshot?.annotations || []) {
-    if (ann.hidden || ann.isReply || !ann.quote) {
-      continue;
-    }
-    const uri = annotationDocumentId(ann);
-    if (!uri) {
-      continue;
-    }
-    const option = byUri.get(uri) || {
-      uri,
-      label: annotationDocumentLabel(ann),
-      count: 0,
-    };
-    option.count += 1;
-    byUri.set(uri, option);
-  }
-  return [...byUri.values()].sort((a, b) => a.label.localeCompare(b.label));
+  return documentOptionsForAnnotations(state.snapshot?.annotations || []);
 }
 
 function selectedDocumentLabel() {
@@ -465,11 +431,13 @@ function buildGraph() {
     cursorY += rowHeight + ROW_GAP;
   }
 
-  const width =
+  const quoteGraphWidth =
     LANE_START_X +
     lanes.length * LANE_WIDTH +
     Math.max(0, lanes.length - 1) * LANE_GAP +
     GRAPH_MARGIN_X;
+  const tagOnlyWidth = TAG_CENTER_X + TAG_WIDTH / 2 + GRAPH_MARGIN_X + 96;
+  const width = state.showQuotes ? quoteGraphWidth : tagOnlyWidth;
   const height = Math.max(620, cursorY + 36);
 
   const visibleTags = new Set(tagNodes.map(node => node.tag));
@@ -487,6 +455,11 @@ function buildGraph() {
 
   const nodes = [...tagNodes, ...quoteNodes];
   const nodeById = new Map(nodes.map(node => [node.id, node]));
+  const implicitEdges = buildImplicitTagEdges({
+    tagNodes,
+    tagEdges: humanEdges,
+    documentOptions: documentOptions(),
+  });
 
   state.graph = {
     width,
@@ -497,6 +470,7 @@ function buildGraph() {
     quoteNodes,
     autoEdges,
     humanEdges,
+    implicitEdges,
     lanes,
     rowBands,
     nodeById,
@@ -622,7 +596,8 @@ function quoteVisual(node) {
 
 function edgeVisual(edge, source, target) {
   const selected = edgeIsSelected(edge);
-  const selectionMuted = state.selectedNodeId && !selected;
+  const selectionMuted =
+    state.selectionFirstEdges && state.selectedNodeId && !selected;
   const sourceStyle = source.type === 'tag' ? tagVisual(source) : null;
   const targetStyle =
     target.type === 'quote' ? quoteVisual(target) : tagVisual(target);
@@ -635,6 +610,7 @@ function edgeVisual(edge, source, target) {
   return {
     color,
     muted: selectionMuted || colorMuted,
+    resting: state.selectionFirstEdges && !state.selectedNodeId,
     selected,
   };
 }
@@ -668,7 +644,11 @@ function edgeIsSelected(edge) {
   );
 }
 
-function renderEdges(group) {
+function renderAutoEdges(group, layers) {
+  if (!layers.showAutoEdges) {
+    return;
+  }
+
   for (const edge of state.graph.autoEdges) {
     const source = state.graph.nodeById.get(edge.source);
     const target = state.graph.nodeById.get(edge.target);
@@ -678,13 +658,15 @@ function renderEdges(group) {
     const visual = edgeVisual(edge, source, target);
     group.append(
       svgEl('path', {
-        class: `edge-auto ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
+        class: `edge-auto ${visual.resting ? 'edge-resting' : ''} ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
         d: autoEdgePath(source, target),
         stroke: visual.color,
       }),
     );
   }
+}
 
+function renderHumanEdges(group) {
   state.graph.humanEdges.forEach((edge, index) => {
     const source = state.graph.nodeById.get(edge.source);
     const target = state.graph.nodeById.get(edge.target);
@@ -695,24 +677,87 @@ function renderEdges(group) {
     const pathId = `path-${edge.id}`;
     const path = svgEl('path', {
       id: pathId,
-      class: `edge-human ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
+      class: `edge-human ${visual.resting ? 'edge-resting' : ''} ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
       d: humanEdgePath(source, target, index),
       stroke: visual.color,
     });
     group.append(path);
 
-    if (edge.label) {
+    const labelText = edgeDisplayLabel(edge);
+    if (labelText) {
       const label = svgEl('text', { class: 'edge-label' });
       const textPath = svgEl('textPath', {
         href: `#${pathId}`,
         startOffset: '50%',
         'text-anchor': 'middle',
       });
-      textPath.textContent = edge.label;
+      textPath.textContent = labelText;
       label.append(textPath);
       group.append(label);
     }
   });
+}
+
+function implicitEdgeSummary(edge) {
+  const documents = edge.documentLabels.join(', ');
+  return `Suggested by ${edge.generator.label.toLowerCase()} evidence: ${documents}.`;
+}
+
+function renderImplicitEdges(group, layers) {
+  if (!layers.showImplicitEdges) {
+    return;
+  }
+
+  const promoteImplicitEdge = edge => {
+    openEdgeEditor({
+      sourceTag: edge.sourceTag,
+      targetTag: edge.targetTag,
+      implicitEdge: edge,
+    });
+  };
+
+  state.graph.implicitEdges.forEach((edge, index) => {
+    const source = state.graph.nodeById.get(edge.source);
+    const target = state.graph.nodeById.get(edge.target);
+    if (!source || !target) {
+      return;
+    }
+    const visual = edgeVisual(edge, source, target);
+    const d = humanEdgePath(
+      source,
+      target,
+      index + state.graph.humanEdges.length,
+    );
+    const path = svgEl('path', {
+      class: `edge-implicit ${visual.resting ? 'edge-resting' : ''} ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
+      d,
+      stroke: visual.color,
+    });
+    const hitPath = svgEl('path', {
+      class: 'edge-hit edge-implicit-hit',
+      d,
+      tabindex: '0',
+      role: 'button',
+      'aria-label': `Promote implicit connection between ${edge.sourceTag} and ${edge.targetTag}`,
+    });
+    hitPath.addEventListener('click', event => {
+      event.stopPropagation();
+      promoteImplicitEdge(edge);
+    });
+    hitPath.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        promoteImplicitEdge(edge);
+      }
+    });
+    group.append(path, hitPath);
+  });
+}
+
+function renderEdges(group, layers) {
+  renderAutoEdges(group, layers);
+  renderImplicitEdges(group, layers);
+  renderHumanEdges(group);
 }
 
 function startDrag(event, node) {
@@ -897,6 +942,10 @@ function renderGuides(group) {
   tagLabel.textContent = 'Tags';
   group.append(tagLabel);
 
+  if (!state.showQuotes) {
+    return;
+  }
+
   for (const lane of state.graph.lanes) {
     const label = svgEl('text', {
       class: 'lane-label',
@@ -971,6 +1020,11 @@ function renderGraph() {
     buildGraph();
   }
 
+  const layers = graphLayersForView(state);
+  if (!layers.showQuoteNodes && state.selectedNodeId?.startsWith('quote:')) {
+    state.selectedNodeId = null;
+  }
+
   els.svg.replaceChildren();
   els.svg.setAttribute('width', state.graph.width);
   els.svg.setAttribute('height', state.graph.height);
@@ -983,8 +1037,11 @@ function renderGraph() {
   const edges = svgEl('g', { class: 'edges' });
   const nodes = svgEl('g', { class: 'nodes' });
   renderGuides(guides);
-  renderEdges(edges);
-  for (const node of state.graph.nodes) {
+  renderEdges(edges, layers);
+  const visibleNodes = layers.showQuoteNodes
+    ? state.graph.nodes
+    : state.graph.tagNodes;
+  for (const node of visibleNodes) {
     if (node.type === 'tag') {
       renderTagNode(nodes, node);
     } else {
@@ -1068,10 +1125,10 @@ function renderEdgeList() {
         <span>${escapeHtml(edge.sourceTag)}</span>
         <span>${escapeHtml(edge.targetTag)}</span>
       </div>
-      <input type="text" value="${escapeAttr(edge.label || '')}" aria-label="Edge label" />
-      <textarea aria-label="Edge explanation">${escapeHtml(edge.explanation || '')}</textarea>
+      <input type="text" value="${escapeAttr(edgeDisplayLabel(edge))}" aria-label="Connection type" />
+      <textarea aria-label="Edge purpose">${escapeHtml(edgeDisplayPurpose(edge))}</textarea>
       <div class="edge-actions">
-        <span>${isVisible ? 'Visible' : 'Hidden until both tags exist'}</span>
+        <span>${isVisible ? (edge.createdFrom === 'implicit' ? 'Promoted suggestion' : 'Visible') : 'Hidden until both tags exist'}</span>
         <button class="ghost-button danger" type="button">Delete</button>
       </div>
     `;
@@ -1079,14 +1136,16 @@ function renderEdgeList() {
     const textarea = item.querySelector('textarea');
     const deleteButton = item.querySelector('button');
     input.addEventListener('change', () => {
-      edge.label = input.value.trim();
+      edge.connectionType = input.value.trim();
+      edge.label = edge.connectionType;
       edge.updatedAt = new Date().toISOString();
       saveEditsNow();
       buildGraph();
       renderGraph();
     });
     textarea.addEventListener('change', () => {
-      edge.explanation = textarea.value.trim();
+      edge.purpose = textarea.value.trim();
+      edge.explanation = edge.purpose;
       edge.updatedAt = new Date().toISOString();
       saveEditsNow();
     });
@@ -1115,39 +1174,86 @@ function populateEdgeSelects() {
   }
 }
 
-function openEdgeEditor() {
+function openEdgeEditor({
+  sourceTag = '',
+  targetTag = '',
+  implicitEdge = null,
+} = {}) {
   populateEdgeSelects();
-  els.edgeEditor.hidden = false;
+  state.edgeDraft = implicitEdge ? { implicitEdge } : null;
+  if (sourceTag) {
+    els.edgeSource.value = sourceTag;
+  }
+  if (targetTag) {
+    els.edgeTarget.value = targetTag;
+  }
   els.edgeLabel.value = '';
   els.edgeExplanation.value = '';
+  if (implicitEdge) {
+    els.edgeContext.hidden = false;
+    els.edgeContext.textContent = implicitEdgeSummary(implicitEdge);
+  } else {
+    els.edgeContext.hidden = true;
+    els.edgeContext.textContent = '';
+  }
+  if (typeof els.edgeEditor.showModal === 'function') {
+    els.edgeEditor.showModal();
+  } else {
+    els.edgeEditor.setAttribute('open', '');
+  }
 }
 
 function closeEdgeEditor() {
-  els.edgeEditor.hidden = true;
+  state.edgeDraft = null;
+  if (typeof els.edgeEditor.close === 'function') {
+    els.edgeEditor.close();
+  } else {
+    els.edgeEditor.removeAttribute('open');
+  }
 }
 
 function saveNewEdge() {
   const sourceTag = els.edgeSource.value;
   const targetTag = els.edgeTarget.value;
-  const label = els.edgeLabel.value.trim();
-  const explanation = els.edgeExplanation.value.trim();
+  const connectionType = els.edgeLabel.value.trim();
+  const purpose = els.edgeExplanation.value.trim();
   if (!sourceTag || !targetTag || sourceTag === targetTag) {
     showNotice('Choose two different tags before saving the edge.');
+    return;
+  }
+  const newPairKey = tagPairKey(sourceTag, targetTag);
+  const duplicate = (state.edits.tagEdges || []).some(
+    edge => tagPairKey(edge.sourceTag, edge.targetTag) === newPairKey,
+  );
+  if (duplicate) {
+    showNotice('That tag connection already exists.');
     return;
   }
 
   showNotice('');
   const now = new Date().toISOString();
-  state.edits.tagEdges.push({
+  const promotedImplicit = state.edgeDraft?.implicitEdge || null;
+  const edge = {
     id: `edge:${Date.now()}:${Math.random().toString(16).slice(2)}`,
     sourceTag,
     targetTag,
-    label,
-    explanation,
+    connectionType,
+    purpose,
+    label: connectionType,
+    explanation: purpose,
     createdAt: now,
     updatedAt: now,
     createdBy: 'human',
-  });
+    createdFrom: promotedImplicit ? 'implicit' : 'manual',
+  };
+  if (promotedImplicit) {
+    edge.provenance = {
+      promotedFrom: promotedImplicit.id,
+      generator: promotedImplicit.generator,
+      evidence: promotedImplicit.evidence,
+    };
+  }
+  state.edits.tagEdges.push(edge);
   closeEdgeEditor();
   saveEditsNow();
   buildGraph();
@@ -1395,8 +1501,8 @@ function updateDocumentSelect() {
   const allOption = document.createElement('option');
   allOption.value = 'all';
   allOption.textContent = options.length
-    ? `All documents (${options.reduce((sum, option) => sum + option.count, 0)})`
-    : 'All documents';
+    ? `All Documents (${options.length})`
+    : 'All Documents';
   els.documentSelect.append(allOption);
 
   for (const option of options) {
@@ -1460,6 +1566,12 @@ function updateControls() {
     !state.graph || state.colorMode !== 'document';
   els.colorModeSelect.value = state.colorMode;
   els.colorFocusSelect.value = state.colorFocus;
+  els.tagOnlyToggle.disabled = !state.graph;
+  els.implicitConnectionsToggle.disabled = !state.graph;
+  els.selectionFirstToggle.disabled = !state.graph;
+  els.tagOnlyToggle.checked = !state.showQuotes;
+  els.implicitConnectionsToggle.checked = state.showImplicitConnections;
+  els.selectionFirstToggle.checked = state.selectionFirstEdges;
   els.refreshBtn.disabled = !authenticated || !els.groupSelect.value;
   els.newEdgeBtn.disabled = !state.graph?.tagNodes.length;
   els.zoomOutBtn.disabled = !state.graph;
@@ -1477,8 +1589,12 @@ function updateGraphHeader() {
   const tags = state.graph?.tagNodes.length || 0;
   const quotes = state.graph?.quoteNodes.length || 0;
   const humanEdges = state.graph?.humanEdges.length || 0;
+  const implicitEdges = state.graph?.implicitEdges.length || 0;
+  const implicitText = state.showImplicitConnections
+    ? ` / ${implicitEdges} implicit edges`
+    : '';
   els.graphTitle.textContent = groupName;
-  els.graphStats.textContent = `${selectedDocumentLabel()}: ${tags} tags / ${quotes} quotes / ${humanEdges} human edges. Refreshed ${refreshed}.`;
+  els.graphStats.textContent = `${selectedDocumentLabel()}: ${tags} tags / ${quotes} quotes / ${humanEdges} real edges${implicitText}. Refreshed ${refreshed}.`;
 }
 
 function formatDate(value) {
@@ -1546,6 +1662,23 @@ async function init() {
   });
   els.colorFocusSelect.addEventListener('change', () => {
     state.colorFocus = els.colorFocusSelect.value || 'all';
+    renderGraph();
+    updateControls();
+  });
+  els.tagOnlyToggle.addEventListener('change', () => {
+    state.showQuotes = !els.tagOnlyToggle.checked;
+    state.userZoomed = false;
+    buildGraph();
+    renderGraph();
+    updateControls();
+  });
+  els.implicitConnectionsToggle.addEventListener('change', () => {
+    state.showImplicitConnections = els.implicitConnectionsToggle.checked;
+    renderGraph();
+    updateControls();
+  });
+  els.selectionFirstToggle.addEventListener('change', () => {
+    state.selectionFirstEdges = els.selectionFirstToggle.checked;
     renderGraph();
     updateControls();
   });

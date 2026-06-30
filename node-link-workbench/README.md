@@ -34,11 +34,21 @@ The server uses the token directly as a bearer token and does not copy it into
 4. Use the document dropdown to show all documents or one source document.
 5. Use the color dropdown to view tag color, document focus, cross-document
    bridge tags, or density.
-6. Drag tag or quote nodes to arrange the graph.
-7. Use the zoom controls to inspect the full graph or fit it to the canvas.
-8. Add human-authored tag-to-tag edges with labels and explanations.
+6. Toggle tag-only view when you want to hide quote cards and inspect tag-tag
+   structure directly.
+7. Toggle implicit connections to show generated same-document tag suggestions.
+   Click a dashed implicit edge to promote it into a real human edge with a
+   connection type and purpose.
+8. Toggle selection-first edges to dim unrelated edges until a node is selected.
+9. Drag tag or quote nodes to arrange the graph.
+10. Use the zoom controls to inspect the full graph or fit it to the canvas.
+11. Add human-authored tag-to-tag edges with connection types and purposes.
 
-Tag-to-quote edges are regenerated from the latest annotation snapshot. Human tag-to-tag edges and node positions are saved separately. If a document filter hides either endpoint tag, that human edge is hidden until both tags are visible again.
+Tag-to-quote edges are regenerated from the latest annotation snapshot. Implicit
+tag-to-tag edges are generated from visible tags that appear in the same
+document. Human tag-to-tag edges and node positions are saved separately. If a
+document filter hides either endpoint tag, that human edge is hidden until both
+tags are visible again.
 
 The graph uses a versioned layout. `Reset` clears saved node positions for the current layout version without deleting annotations or human tag-to-tag edges.
 
@@ -70,7 +80,7 @@ Runtime data is stored under `node-link-workbench/data/` and ignored by git:
 - `auth.json`: local OAuth token cache.
 - `auth.debug.json`: local auth-flow diagnostics with codes and tokens redacted.
 - `annotations.snapshot.json`: latest pulled group annotation snapshot.
-- `graph.edits.json`: human graph layout and tag-to-tag edges.
+- `graph.edits.json`: human graph layout and promoted/manual tag-to-tag edges.
 
 If a later refresh no longer contains a tag used by a human edge, the edge remains in `graph.edits.json` but is hidden in the graph until both tags are present again.
 
