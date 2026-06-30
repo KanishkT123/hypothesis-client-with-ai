@@ -1,7 +1,20 @@
 const SYSTEM_TAGS = new Set(['ai-pending', 'ai-user-approved']);
-const TAG_NODE_RADIUS = 34;
-const QUOTE_WIDTH = 250;
-const QUOTE_HEIGHT = 86;
+const LAYOUT_VERSION = 2;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 1.35;
+const ZOOM_STEP = 0.12;
+const TAG_WIDTH = 190;
+const TAG_HEIGHT = 56;
+const QUOTE_WIDTH = 246;
+const QUOTE_HEIGHT = 82;
+const GRAPH_MARGIN_X = 34;
+const GRAPH_TOP = 72;
+const TAG_CENTER_X = 150;
+const LANE_START_X = 310;
+const LANE_WIDTH = 286;
+const LANE_GAP = 34;
+const QUOTE_GAP = 12;
+const ROW_GAP = 22;
 
 const els = {
   sessionLabel: document.querySelector('#sessionLabel'),
@@ -13,6 +26,11 @@ const els = {
   graphTitle: document.querySelector('#graphTitle'),
   graphStats: document.querySelector('#graphStats'),
   saveState: document.querySelector('#saveState'),
+  zoomOutBtn: document.querySelector('#zoomOutBtn'),
+  zoomInBtn: document.querySelector('#zoomInBtn'),
+  fitBtn: document.querySelector('#fitBtn'),
+  resetLayoutBtn: document.querySelector('#resetLayoutBtn'),
+  zoomLabel: document.querySelector('#zoomLabel'),
   notice: document.querySelector('#notice'),
   canvasScroll: document.querySelector('#canvasScroll'),
   svg: document.querySelector('#graphSvg'),
@@ -34,6 +52,8 @@ const state = {
   edits: null,
   graph: null,
   documentFilter: 'all',
+  zoom: 0.82,
+  userZoomed: false,
   selectedNodeId: null,
   dragging: null,
   saveTimer: null,
@@ -96,29 +116,52 @@ function setSaveState(message) {
 
 function shortText(text, max = 120) {
   const compact = (text || '').replace(/\s+/g, ' ').trim();
-  return compact.length > max ? `${compact.slice(0, max - 1)}...` : compact;
+  return compact.length > max
+    ? `${compact.slice(0, Math.max(0, max - 3))}...`
+    : compact;
 }
 
 function wrapLines(text, maxChars, maxLines) {
-  const words = shortText(text, maxChars * maxLines).split(/\s+/);
+  const compact = (text || '').replace(/\s+/g, ' ').trim();
+  const words = compact.split(/\s+/).filter(Boolean);
   const lines = [];
   let line = '';
-  for (const word of words) {
+  let truncated = false;
+
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
     const next = line ? `${line} ${word}` : word;
     if (next.length > maxChars && line) {
       lines.push(line);
       line = word;
+    } else if (word.length > maxChars) {
+      lines.push(shortText(word, maxChars));
+      line = '';
     } else {
       line = next;
     }
     if (lines.length === maxLines) {
+      truncated = index < words.length - 1 || Boolean(line);
       break;
     }
   }
   if (line && lines.length < maxLines) {
     lines.push(line);
   }
+  if (
+    lines.length === maxLines &&
+    words.join(' ').length > lines.join(' ').length
+  ) {
+    truncated = true;
+  }
+  if (truncated && lines.length) {
+    lines[lines.length - 1] = shortText(lines[lines.length - 1], maxChars);
+  }
   return lines;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function contentTags(tags = []) {
@@ -191,6 +234,45 @@ function selectedDocumentLabel() {
   );
 }
 
+function formatTagLabel(tag) {
+  const [scope, ...rest] = tag.split(':');
+  if (!rest.length) {
+    return {
+      scope: 'Tag',
+      name: tag.replace(/[-_]+/g, ' '),
+    };
+  }
+
+  const scopeLabel =
+    scope.toLowerCase() === 'hci'
+      ? 'HCI'
+      : scope.charAt(0).toUpperCase() + scope.slice(1);
+  return {
+    scope: scopeLabel,
+    name: rest.join(':').replace(/[-_]+/g, ' '),
+  };
+}
+
+function currentLayoutNodes() {
+  const layout = state.edits?.layout;
+  if (layout?.version !== LAYOUT_VERSION) {
+    return {};
+  }
+  return layout.nodes || {};
+}
+
+function ensureCurrentLayout() {
+  if (!state.edits) {
+    return;
+  }
+  if (state.edits.layout?.version !== LAYOUT_VERSION) {
+    state.edits.layout = {
+      version: LAYOUT_VERSION,
+      nodes: {},
+    };
+  }
+}
+
 function hashColor(text) {
   let hash = 0;
   for (let i = 0; i < text.length; i += 1) {
@@ -201,7 +283,7 @@ function hashColor(text) {
 }
 
 function nodePosition(id, fallbackX, fallbackY) {
-  const saved = state.edits?.layout?.nodes?.[id];
+  const saved = currentLayoutNodes()[id];
   return {
     x: Number.isFinite(saved?.x) ? saved.x : fallbackX,
     y: Number.isFinite(saved?.y) ? saved.y : fallbackY,
@@ -213,6 +295,7 @@ function buildGraph() {
   const tagMap = new Map();
   const quoteNodes = [];
   const autoEdges = [];
+  const laneMap = new Map();
 
   const annotations = (snapshot.annotations || []).filter(ann => {
     if (ann.hidden || ann.isReply) {
@@ -226,6 +309,14 @@ function buildGraph() {
 
   for (const ann of annotations) {
     const tags = contentTags(ann.tags);
+    const docUri = annotationDocumentId(ann);
+    if (ann.quote && docUri && !laneMap.has(docUri)) {
+      laneMap.set(docUri, {
+        uri: docUri,
+        label: annotationDocumentLabel(ann),
+      });
+    }
+
     for (const tag of tags) {
       if (!tagMap.has(tag)) {
         tagMap.set(tag, { id: `tag:${tag}`, type: 'tag', tag, count: 0 });
@@ -237,15 +328,16 @@ function buildGraph() {
       continue;
     }
 
-    const quoteNode = {
-      id: `quote:${ann.id}`,
-      type: 'quote',
-      annotation: ann,
-      tags,
-    };
-    quoteNodes.push(quoteNode);
-
     for (const tag of tags) {
+      const quoteNode = {
+        id: `quote:${tag}:${ann.id}`,
+        type: 'quote',
+        annotation: ann,
+        tags,
+        primaryTag: tag,
+        documentUri: docUri,
+      };
+      quoteNodes.push(quoteNode);
       autoEdges.push({
         id: `auto:${tag}:${ann.id}`,
         type: 'auto',
@@ -259,31 +351,93 @@ function buildGraph() {
     a.tag.localeCompare(b.tag),
   );
   quoteNodes.sort((a, b) => {
-    const tagA = a.tags[0] || '';
-    const tagB = b.tags[0] || '';
+    const tagA = a.primaryTag || '';
+    const tagB = b.primaryTag || '';
     return (
       tagA.localeCompare(tagB) ||
+      annotationDocumentLabel(a.annotation).localeCompare(
+        annotationDocumentLabel(b.annotation),
+      ) ||
       a.annotation.created.localeCompare(b.annotation.created)
     );
   });
 
-  const tagColumnHeight = Math.max(680, tagNodes.length * 92 + 120);
-  const quoteRows = Math.ceil(quoteNodes.length / 2);
-  const quoteColumnHeight = Math.max(680, quoteRows * 118 + 120);
-  const height = Math.max(tagColumnHeight, quoteColumnHeight);
-  const width = quoteNodes.length > 8 ? 1180 : 980;
-
-  tagNodes.forEach((node, index) => {
-    const pos = nodePosition(node.id, 120, 86 + index * 92);
-    Object.assign(node, pos, { color: hashColor(node.tag) });
+  const lanes = [...laneMap.values()].sort((a, b) =>
+    a.label.localeCompare(b.label),
+  );
+  if (!lanes.length) {
+    lanes.push({ uri: 'none', label: 'No quoted annotations' });
+  }
+  lanes.forEach((lane, index) => {
+    lane.index = index;
+    lane.x = LANE_START_X + index * (LANE_WIDTH + LANE_GAP);
   });
 
-  quoteNodes.forEach((node, index) => {
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    const pos = nodePosition(node.id, 430 + col * 300, 64 + row * 118);
-    Object.assign(node, pos);
-  });
+  const laneByUri = new Map(lanes.map(lane => [lane.uri, lane]));
+  const quoteNodesByTag = new Map();
+  for (const node of quoteNodes) {
+    const list = quoteNodesByTag.get(node.primaryTag) || [];
+    list.push(node);
+    quoteNodesByTag.set(node.primaryTag, list);
+  }
+
+  const rowBands = [];
+  let cursorY = GRAPH_TOP;
+  for (const tagNode of tagNodes) {
+    const rowQuotes = quoteNodesByTag.get(tagNode.tag) || [];
+    const laneCounts = new Map(lanes.map(lane => [lane.uri, 0]));
+    for (const quoteNode of rowQuotes) {
+      laneCounts.set(
+        quoteNode.documentUri,
+        (laneCounts.get(quoteNode.documentUri) || 0) + 1,
+      );
+    }
+    const maxLaneQuotes = Math.max(1, ...laneCounts.values());
+    const rowHeight = Math.max(
+      118,
+      maxLaneQuotes * QUOTE_HEIGHT + (maxLaneQuotes - 1) * QUOTE_GAP + 34,
+    );
+    const rowCenterY = cursorY + rowHeight / 2;
+    const tagPos = nodePosition(tagNode.id, TAG_CENTER_X, rowCenterY);
+    Object.assign(tagNode, tagPos, {
+      color: hashColor(tagNode.tag),
+      rowY: cursorY,
+      rowHeight,
+    });
+
+    rowBands.push({
+      tag: tagNode.tag,
+      y: cursorY,
+      height: rowHeight,
+    });
+
+    const quoteLaneIndex = new Map();
+    for (const quoteNode of rowQuotes) {
+      const lane = laneByUri.get(quoteNode.documentUri) || lanes[0];
+      const index = quoteLaneIndex.get(lane.uri) || 0;
+      quoteLaneIndex.set(lane.uri, index + 1);
+      const laneQuoteCount = laneCounts.get(lane.uri) || 1;
+      const laneBlockHeight =
+        laneQuoteCount * QUOTE_HEIGHT + (laneQuoteCount - 1) * QUOTE_GAP;
+      const fallbackX = lane.x + LANE_WIDTH / 2;
+      const fallbackY =
+        cursorY +
+        (rowHeight - laneBlockHeight) / 2 +
+        index * (QUOTE_HEIGHT + QUOTE_GAP) +
+        QUOTE_HEIGHT / 2;
+      const pos = nodePosition(quoteNode.id, fallbackX, fallbackY);
+      Object.assign(quoteNode, pos, { laneIndex: lane.index });
+    }
+
+    cursorY += rowHeight + ROW_GAP;
+  }
+
+  const width =
+    LANE_START_X +
+    lanes.length * LANE_WIDTH +
+    Math.max(0, lanes.length - 1) * LANE_GAP +
+    GRAPH_MARGIN_X;
+  const height = Math.max(620, cursorY + 36);
 
   const visibleTags = new Set(tagNodes.map(node => node.tag));
   const humanEdges = (state.edits?.tagEdges || [])
@@ -310,24 +464,50 @@ function buildGraph() {
     quoteNodes,
     autoEdges,
     humanEdges,
+    lanes,
+    rowBands,
     nodeById,
     visibleTags,
   };
 }
 
-function edgePath(source, target) {
-  const startX =
-    source.type === 'quote'
-      ? source.x - QUOTE_WIDTH / 2
-      : source.x + TAG_NODE_RADIUS;
-  const endX =
-    target.type === 'quote'
-      ? target.x - QUOTE_WIDTH / 2
-      : target.x - TAG_NODE_RADIUS;
+function nodeLeft(node) {
+  return node.type === 'quote'
+    ? node.x - QUOTE_WIDTH / 2
+    : node.x - TAG_WIDTH / 2;
+}
+
+function nodeRight(node) {
+  return node.type === 'quote'
+    ? node.x + QUOTE_WIDTH / 2
+    : node.x + TAG_WIDTH / 2;
+}
+
+function autoEdgePath(source, target) {
+  const startX = nodeRight(source);
+  const endX = nodeLeft(target);
   const startY = source.y;
   const endY = target.y;
-  const dx = Math.max(80, Math.abs(endX - startX) * 0.42);
+  const dx = Math.max(42, Math.abs(endX - startX) * 0.34);
   return `M ${startX} ${startY} C ${startX + dx} ${startY}, ${endX - dx} ${endY}, ${endX} ${endY}`;
+}
+
+function humanEdgePath(source, target, index) {
+  const railX = GRAPH_MARGIN_X + (index % 4) * 12;
+  const sourceX = nodeLeft(source);
+  const targetX = nodeLeft(target);
+  const sourceY = source.y;
+  const targetY = target.y;
+  const midY = (sourceY + targetY) / 2;
+  return `M ${sourceX} ${sourceY} C ${railX} ${sourceY}, ${railX} ${midY}, ${railX} ${midY} C ${railX} ${midY}, ${railX} ${targetY}, ${targetX} ${targetY}`;
+}
+
+function edgeIsSelected(edge) {
+  return (
+    Boolean(state.selectedNodeId) &&
+    (edge.source === state.selectedNodeId ||
+      edge.target === state.selectedNodeId)
+  );
 }
 
 function renderEdges(group) {
@@ -339,23 +519,24 @@ function renderEdges(group) {
     }
     group.append(
       svgEl('path', {
-        class: 'edge-auto',
-        d: edgePath(source, target),
+        class: `edge-auto ${state.selectedNodeId && !edgeIsSelected(edge) ? 'edge-muted' : ''} ${edgeIsSelected(edge) ? 'edge-active' : ''}`,
+        d: autoEdgePath(source, target),
+        stroke: source.color,
       }),
     );
   }
 
-  for (const edge of state.graph.humanEdges) {
+  state.graph.humanEdges.forEach((edge, index) => {
     const source = state.graph.nodeById.get(edge.source);
     const target = state.graph.nodeById.get(edge.target);
     if (!source || !target) {
-      continue;
+      return;
     }
     const pathId = `path-${edge.id}`;
     const path = svgEl('path', {
       id: pathId,
-      class: 'edge-human',
-      d: edgePath(source, target),
+      class: `edge-human ${state.selectedNodeId && !edgeIsSelected(edge) ? 'edge-muted' : ''} ${edgeIsSelected(edge) ? 'edge-active' : ''}`,
+      d: humanEdgePath(source, target, index),
     });
     group.append(path);
 
@@ -370,7 +551,7 @@ function renderEdges(group) {
       label.append(textPath);
       group.append(label);
     }
-  }
+  });
 }
 
 function startDrag(event, node) {
@@ -406,6 +587,7 @@ function handleDrag(event) {
   node.x = point.x - state.dragging.offsetX;
   node.y = point.y - state.dragging.offsetY;
 
+  ensureCurrentLayout();
   state.edits.layout.nodes[node.id] = {
     x: Math.round(node.x),
     y: Math.round(node.y),
@@ -419,16 +601,46 @@ function stopDrag() {
 }
 
 function renderTagNode(group, node) {
+  const x = node.x - TAG_WIDTH / 2;
+  const y = node.y - TAG_HEIGHT / 2;
+  const label = formatTagLabel(node.tag);
   const g = svgEl('g', {
     class: `node tag-node ${node.id === state.selectedNodeId ? 'selected-node' : ''}`,
-    transform: `translate(${node.x} ${node.y})`,
+    transform: `translate(${x} ${y})`,
   });
-  g.append(svgEl('circle', { r: TAG_NODE_RADIUS, fill: node.color }));
+  g.append(
+    svgEl('rect', {
+      width: TAG_WIDTH,
+      height: TAG_HEIGHT,
+      rx: 8,
+      ry: 8,
+      fill: node.color,
+    }),
+  );
 
-  const text = svgEl('text');
-  const label = shortText(node.tag, 18);
-  text.textContent = label;
-  g.append(text);
+  const scope = svgEl('text', {
+    class: 'tag-scope',
+    x: 14,
+    y: 19,
+  });
+  scope.textContent = shortText(label.scope, 18);
+  g.append(scope);
+
+  const name = svgEl('text', {
+    class: 'tag-name',
+    x: 14,
+    y: 39,
+  });
+  name.textContent = shortText(label.name, 23);
+  g.append(name);
+
+  const count = svgEl('text', {
+    class: 'tag-count',
+    x: TAG_WIDTH - 18,
+    y: 20,
+  });
+  count.textContent = String(node.count);
+  g.append(count);
 
   g.addEventListener('pointerdown', event => startDrag(event, node));
   g.addEventListener('click', () => selectNode(node.id));
@@ -456,14 +668,14 @@ function renderQuoteNode(group, node) {
     x: 12,
     y: 18,
   });
-  title.textContent = shortText(annotationDocumentLabel(node.annotation), 34);
+  title.textContent = shortText(annotationDocumentLabel(node.annotation), 30);
   g.append(title);
 
-  const lines = wrapLines(node.annotation.quote, 34, 3);
+  const lines = wrapLines(node.annotation.quote, 32, 3);
   lines.forEach((line, index) => {
     const text = svgEl('text', {
       x: 12,
-      y: 40 + index * 15,
+      y: 38 + index * 14,
     });
     text.textContent = line;
     g.append(text);
@@ -472,6 +684,98 @@ function renderQuoteNode(group, node) {
   g.addEventListener('pointerdown', event => startDrag(event, node));
   g.addEventListener('click', () => selectNode(node.id));
   group.append(g);
+}
+
+function renderGuides(group) {
+  for (const [index, band] of state.graph.rowBands.entries()) {
+    group.append(
+      svgEl('rect', {
+        class: `row-band ${index % 2 ? 'row-band-alt' : ''}`,
+        x: GRAPH_MARGIN_X,
+        y: band.y,
+        width: state.graph.width - GRAPH_MARGIN_X * 2,
+        height: band.height,
+        rx: 10,
+        ry: 10,
+      }),
+    );
+  }
+
+  const tagLabel = svgEl('text', {
+    class: 'lane-label',
+    x: TAG_CENTER_X - TAG_WIDTH / 2,
+    y: 34,
+  });
+  tagLabel.textContent = 'Tags';
+  group.append(tagLabel);
+
+  for (const lane of state.graph.lanes) {
+    const label = svgEl('text', {
+      class: 'lane-label',
+      x: lane.x,
+      y: 34,
+    });
+    label.textContent = shortText(lane.label, 34);
+    group.append(label);
+
+    group.append(
+      svgEl('line', {
+        class: 'lane-rule',
+        x1: lane.x,
+        x2: lane.x,
+        y1: 48,
+        y2: state.graph.height - 24,
+      }),
+    );
+  }
+}
+
+function applyZoom() {
+  if (!state.graph) {
+    return;
+  }
+  const zoom = clamp(state.zoom, MIN_ZOOM, MAX_ZOOM);
+  els.svg.style.width = `${Math.round(state.graph.width * zoom)}px`;
+  els.svg.style.height = `${Math.round(state.graph.height * zoom)}px`;
+  els.zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function setZoom(zoom, userInitiated = true) {
+  state.zoom = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+  if (userInitiated) {
+    state.userZoomed = true;
+  }
+  applyZoom();
+}
+
+function fitGraphToWidth(userInitiated = true) {
+  if (!state.graph) {
+    return;
+  }
+  const availableWidth = Math.max(320, els.canvasScroll.clientWidth - 36);
+  const maxFitZoom = userInitiated ? 1 : 0.9;
+  setZoom(
+    Math.min(maxFitZoom, availableWidth / state.graph.width),
+    userInitiated,
+  );
+}
+
+function maybeFitGraph() {
+  if (!state.userZoomed) {
+    fitGraphToWidth(false);
+  } else {
+    applyZoom();
+  }
+}
+
+function resetLayout() {
+  ensureCurrentLayout();
+  state.edits.layout.nodes = {};
+  state.userZoomed = false;
+  buildGraph();
+  maybeFitGraph();
+  renderGraph();
+  saveEditsNow().catch(err => showNotice(err.message));
 }
 
 function renderGraph() {
@@ -487,8 +791,10 @@ function renderGraph() {
     `0 0 ${state.graph.width} ${state.graph.height}`,
   );
 
+  const guides = svgEl('g', { class: 'guides' });
   const edges = svgEl('g', { class: 'edges' });
   const nodes = svgEl('g', { class: 'nodes' });
+  renderGuides(guides);
   renderEdges(edges);
   for (const node of state.graph.nodes) {
     if (node.type === 'tag') {
@@ -497,10 +803,11 @@ function renderGraph() {
       renderQuoteNode(nodes, node);
     }
   }
-  els.svg.append(edges, nodes);
+  els.svg.append(guides, edges, nodes);
   renderSelection();
   renderEdgeList();
   updateGraphHeader();
+  maybeFitGraph();
 }
 
 function selectNode(id) {
@@ -822,6 +1129,7 @@ async function loadGraph() {
   const { snapshot, edits } = await api('/api/graph');
   state.snapshot = snapshot;
   state.edits = edits;
+  ensureCurrentLayout();
   updateGroupSelect();
   updateDocumentSelect();
   buildGraph();
@@ -848,6 +1156,7 @@ async function refreshSnapshot() {
     });
     const { edits } = await api('/api/graph');
     state.edits = edits;
+    ensureCurrentLayout();
     updateDocumentSelect();
     buildGraph();
     renderGraph();
@@ -933,6 +1242,10 @@ function updateControls() {
   els.documentSelect.disabled = !state.snapshot?.annotations?.length;
   els.refreshBtn.disabled = !authenticated || !els.groupSelect.value;
   els.newEdgeBtn.disabled = !state.graph?.tagNodes.length;
+  els.zoomOutBtn.disabled = !state.graph;
+  els.zoomInBtn.disabled = !state.graph;
+  els.fitBtn.disabled = !state.graph;
+  els.resetLayoutBtn.disabled = !state.graph;
 }
 
 function updateGraphHeader() {
@@ -985,6 +1298,19 @@ async function init() {
   els.newEdgeBtn.addEventListener('click', openEdgeEditor);
   els.cancelEdgeBtn.addEventListener('click', closeEdgeEditor);
   els.saveEdgeBtn.addEventListener('click', saveNewEdge);
+  els.zoomOutBtn.addEventListener('click', () => {
+    setZoom(state.zoom - ZOOM_STEP);
+  });
+  els.zoomInBtn.addEventListener('click', () => {
+    setZoom(state.zoom + ZOOM_STEP);
+  });
+  els.fitBtn.addEventListener('click', () => {
+    state.userZoomed = true;
+    fitGraphToWidth();
+  });
+  els.resetLayoutBtn.addEventListener('click', () => {
+    resetLayout();
+  });
   els.groupSelect.addEventListener('change', () => {
     state.edits.selectedGroupId = els.groupSelect.value || null;
     saveEditsNow().catch(err => showNotice(err.message));
@@ -1005,6 +1331,11 @@ async function init() {
   els.svg.addEventListener('pointermove', handleDrag);
   els.svg.addEventListener('pointerup', stopDrag);
   els.svg.addEventListener('pointerleave', stopDrag);
+  window.addEventListener('resize', () => {
+    if (!state.userZoomed) {
+      maybeFitGraph();
+    }
+  });
 
   try {
     await loadStatus();

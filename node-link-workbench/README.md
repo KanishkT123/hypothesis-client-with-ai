@@ -33,9 +33,12 @@ The server uses the token directly as a bearer token and does not copy it into
 3. Click `Refresh` to pull that group's annotations from Hypothesis.
 4. Use the document dropdown to show all documents or one source document.
 5. Drag tag or quote nodes to arrange the graph.
-6. Add human-authored tag-to-tag edges with labels and explanations.
+6. Use the zoom controls to inspect the full graph or fit it to the canvas.
+7. Add human-authored tag-to-tag edges with labels and explanations.
 
 Tag-to-quote edges are regenerated from the latest annotation snapshot. Human tag-to-tag edges and node positions are saved separately. If a document filter hides either endpoint tag, that human edge is hidden until both tags are visible again.
+
+The graph uses a versioned layout. `Reset` clears saved node positions for the current layout version without deleting annotations or human tag-to-tag edges.
 
 ## Seed Test Annotations
 

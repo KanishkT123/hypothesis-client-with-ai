@@ -31,7 +31,7 @@
           </select>
         </label>
         <button id="refreshBtn" class="button primary" disabled>Refresh</button>
-        <button id="newEdgeBtn" class="button" disabled>New Tag Edge</button>
+        <button id="newEdgeBtn" class="button" disabled>New Edge</button>
         <button id="loginBtn" class="button">Log in</button>
       </div>
     </header>
@@ -43,7 +43,41 @@
             <strong id="graphTitle">No snapshot loaded</strong>
             <span id="graphStats">Log in, choose a group, then refresh.</span>
           </div>
-          <span id="saveState" class="save-state">Idle</span>
+          <div class="canvas-actions" aria-label="Graph view controls">
+            <button
+              id="zoomOutBtn"
+              class="icon-button"
+              type="button"
+              title="Zoom out"
+              aria-label="Zoom out"
+              disabled
+            >
+              -
+            </button>
+            <span id="zoomLabel" class="zoom-label">82%</span>
+            <button
+              id="zoomInBtn"
+              class="icon-button"
+              type="button"
+              title="Zoom in"
+              aria-label="Zoom in"
+              disabled
+            >
+              +
+            </button>
+            <button id="fitBtn" class="button compact" type="button" disabled>
+              Fit
+            </button>
+            <button
+              id="resetLayoutBtn"
+              class="button compact"
+              type="button"
+              disabled
+            >
+              Reset
+            </button>
+            <span id="saveState" class="save-state">Idle</span>
+          </div>
         </div>
         <div id="notice" class="notice" hidden></div>
         <div id="canvasScroll" class="canvas-scroll">

@@ -1,19 +1,19 @@
 :root {
   color-scheme: light;
-  --bg: #f6f4ef;
-  --surface: #fffdf9;
-  --surface-2: #f0f7f4;
-  --ink: #24211d;
-  --muted: #6f6a61;
-  --line: #d9d2c7;
-  --line-strong: #9a9286;
-  --brand: #116b5f;
-  --brand-dark: #0b4d45;
-  --brand-soft: #d9eee8;
-  --quote: #fff8df;
-  --quote-line: #e2b84f;
-  --danger: #9d342c;
-  --shadow: 0 12px 34px rgba(50, 42, 30, 0.13);
+  --bg: #eef2f3;
+  --surface: #ffffff;
+  --surface-2: #e6f3ef;
+  --ink: #17201f;
+  --muted: #60706d;
+  --line: #ccd8d6;
+  --line-strong: #8fa29e;
+  --brand: #0f766e;
+  --brand-dark: #0b554f;
+  --brand-soft: #d8efea;
+  --quote: #fffaf0;
+  --quote-line: #d7a940;
+  --danger: #a43a31;
+  --shadow: 0 10px 28px rgba(30, 48, 48, 0.12);
   --radius: 8px;
   font-family:
     Inter,
@@ -51,7 +51,7 @@ textarea {
   height: 76px;
   padding: 12px 18px;
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 253, 249, 0.95);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .brand {
@@ -144,7 +144,8 @@ button:focus-visible {
 }
 
 .button,
-.ghost-button {
+.ghost-button,
+.icon-button {
   height: 34px;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
@@ -155,11 +156,13 @@ button:focus-visible {
 }
 
 .button:hover,
-.ghost-button:hover {
+.ghost-button:hover,
+.icon-button:hover {
   border-color: var(--brand);
 }
 
-.button:disabled {
+.button:disabled,
+.icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -179,6 +182,19 @@ button:focus-visible {
   background: transparent;
   color: var(--muted);
   padding: 0 4px;
+}
+
+.button.compact {
+  height: 30px;
+  padding: 0 9px;
+}
+
+.icon-button {
+  width: 30px;
+  padding: 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .full-width {
@@ -209,10 +225,23 @@ button:focus-visible {
   background: var(--surface);
 }
 
+.canvas-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
 .canvas-status strong {
   display: block;
   margin-bottom: 2px;
   font-size: 14px;
+}
+
+.zoom-label {
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .save-state {
@@ -237,28 +266,67 @@ button:focus-visible {
   overflow: auto;
   min-height: 0;
   background:
-    linear-gradient(#e8e1d6 1px, transparent 1px),
-    linear-gradient(90deg, #e8e1d6 1px, transparent 1px);
-  background-size: 28px 28px;
+    linear-gradient(#dce6e5 1px, transparent 1px),
+    linear-gradient(90deg, #dce6e5 1px, transparent 1px);
+  background-color: #f7f9f9;
+  background-size: 32px 32px;
 }
 
 .graph-svg {
   display: block;
   min-width: 100%;
   min-height: 100%;
+  transform-origin: 0 0;
+}
+
+.row-band {
+  fill: rgba(255, 255, 255, 0.74);
+  stroke: rgba(174, 190, 187, 0.55);
+  stroke-width: 1;
+}
+
+.row-band-alt {
+  fill: rgba(231, 241, 238, 0.76);
+}
+
+.lane-label {
+  fill: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.lane-rule {
+  stroke: rgba(116, 138, 134, 0.24);
+  stroke-dasharray: 4 7;
 }
 
 .edge-auto {
   fill: none;
-  stroke: #b7aca0;
-  stroke-width: 1.2;
-  stroke-opacity: 0.72;
+  stroke-width: 1.35;
+  stroke-opacity: 0.38;
 }
 
 .edge-human {
   fill: none;
   stroke: var(--brand);
-  stroke-width: 2.6;
+  stroke-width: 2.7;
+  stroke-dasharray: 7 5;
+  stroke-linecap: round;
+}
+
+.edge-active {
+  stroke-opacity: 0.92;
+  stroke-width: 2.4;
+}
+
+.edge-human.edge-active {
+  stroke-width: 3.2;
+}
+
+.edge-muted {
+  stroke-opacity: 0.08;
 }
 
 .edge-label {
@@ -278,42 +346,58 @@ button:focus-visible {
   cursor: grabbing;
 }
 
-.tag-node circle {
-  stroke: rgba(0, 0, 0, 0.18);
-  stroke-width: 2;
+.tag-node rect {
+  stroke: rgba(10, 32, 30, 0.18);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 7px 12px rgba(19, 48, 45, 0.12));
 }
 
 .tag-node text {
   fill: #fff;
-  font-size: 13px;
-  font-weight: 700;
   pointer-events: none;
+}
+
+.tag-scope {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.tag-name {
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.tag-count {
+  font-size: 12px;
+  font-weight: 800;
   text-anchor: middle;
-  dominant-baseline: middle;
 }
 
 .quote-node rect {
   fill: var(--quote);
   stroke: var(--quote-line);
-  stroke-width: 1.4;
-  filter: drop-shadow(0 8px 14px rgba(63, 49, 20, 0.12));
+  stroke-width: 1.1;
+  filter: drop-shadow(0 7px 12px rgba(70, 58, 28, 0.1));
 }
 
 .quote-node text {
   fill: var(--ink);
-  font-size: 12px;
+  font-size: 11.5px;
   pointer-events: none;
 }
 
 .quote-node .quote-title {
   fill: var(--muted);
-  font-size: 11px;
+  font-size: 10.5px;
+  font-weight: 720;
 }
 
-.selected-node circle,
 .selected-node rect {
-  stroke: #29231b;
-  stroke-width: 3;
+  stroke: #111918;
+  stroke-width: 2.8;
 }
 
 .inspector {
@@ -322,7 +406,7 @@ button:focus-visible {
   gap: 12px;
   overflow: auto;
   padding: 12px;
-  background: #ebe5dc;
+  background: #e4ebeb;
 }
 
 .panel {

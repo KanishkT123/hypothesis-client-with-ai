@@ -28,7 +28,8 @@ const origin = `http://${host}:${port}`;
 
 const serviceUrl = process.env.HYPOTHESIS_SERVICE_URL || 'https://hypothes.is/';
 const apiUrl = process.env.HYPOTHESIS_API_URL || 'https://hypothes.is/api/';
-const apiToken = process.env.HYPOTHESIS_API_TOKEN || process.env.API_TOKEN || '';
+const apiToken =
+  process.env.HYPOTHESIS_API_TOKEN || process.env.API_TOKEN || '';
 const apiTokenSource = process.env.HYPOTHESIS_API_TOKEN
   ? 'HYPOTHESIS_API_TOKEN'
   : process.env.API_TOKEN
@@ -78,6 +79,7 @@ function emptyEdits() {
     updatedAt: null,
     selectedGroupId: null,
     layout: {
+      version: 2,
       nodes: {},
     },
     tagEdges: [],
@@ -692,7 +694,10 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'POST' && url.pathname === '/api/debug/auth-event') {
     const body = await readRequestBody(req);
-    await recordAuthEvent(`browser.${body.event || 'event'}`, body.details || {});
+    await recordAuthEvent(
+      `browser.${body.event || 'event'}`,
+      body.details || {},
+    );
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -739,7 +744,9 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'POST' && url.pathname === '/api/oauth/exchange') {
     const body = await readRequestBody(req);
-    const stateKnown = Boolean(body.state && pendingOAuthStates.has(body.state));
+    const stateKnown = Boolean(
+      body.state && pendingOAuthStates.has(body.state),
+    );
     await recordAuthEvent('server.oauth.exchange_received', {
       hasCode: Boolean(body.code),
       state: body.state,
@@ -806,6 +813,7 @@ async function handleApi(req, res, url) {
       updatedAt: new Date().toISOString(),
       selectedGroupId: body.selectedGroupId || null,
       layout: {
+        version: body.layout?.version || 1,
         nodes: body.layout?.nodes || {},
       },
       tagEdges: Array.isArray(body.tagEdges) ? body.tagEdges : [],
