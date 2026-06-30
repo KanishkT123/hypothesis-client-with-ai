@@ -11,6 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, 'public');
 const dataDir = path.join(__dirname, 'data');
 const authPath = path.join(dataDir, 'auth.json');
+const authDebugPath = path.join(dataDir, 'auth.debug.json');
 const snapshotPath = path.join(dataDir, 'annotations.snapshot.json');
 const editsPath = path.join(dataDir, 'graph.edits.json');
 
@@ -27,10 +28,13 @@ const oauthClientId =
 const GROUP_ANNOTATIONS_PAGE_SIZE = 100;
 const MAX_GROUP_ANNOTATION_PAGES = 1000;
 const TOKEN_REFRESH_SLOP_MS = 30_000;
+const OAUTH_STATE_TTL_MS = 5 * 60_000;
+const MAX_AUTH_DEBUG_EVENTS = 150;
 
 const pendingOAuthStates = new Set();
 let routeMapPromise = null;
 let linksPromise = null;
+let authDebugWritePromise = Promise.resolve();
 
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -67,6 +71,13 @@ function emptyEdits() {
   };
 }
 
+function emptyAuthDebug() {
+  return {
+    schemaVersion: 1,
+    events: [],
+  };
+}
+
 async function ensureDataFiles() {
   await fs.mkdir(dataDir, { recursive: true });
   await ensureJsonFile(snapshotPath, emptySnapshot());
@@ -98,6 +109,76 @@ async function writeJson(filePath, data) {
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await fs.writeFile(tmpPath, `${JSON.stringify(data, null, 2)}\n`);
   await fs.rename(tmpPath, filePath);
+}
+
+function shortId(value) {
+  if (!value) {
+    return null;
+  }
+  const text = String(value);
+  return text.length > 12 ? `${text.slice(0, 8)}...${text.slice(-4)}` : text;
+}
+
+function sanitizeForDebug(value) {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeForDebug);
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const sanitized = {};
+  for (const [key, item] of Object.entries(value)) {
+    const lowerKey = key.toLowerCase();
+    if (
+      lowerKey.includes('token') ||
+      lowerKey === 'code' ||
+      lowerKey === 'authorization'
+    ) {
+      sanitized[key] = item ? '[redacted]' : item;
+    } else if (lowerKey === 'state') {
+      sanitized[key] = shortId(item);
+    } else {
+      sanitized[key] = sanitizeForDebug(item);
+    }
+  }
+  return sanitized;
+}
+
+function errorDetails(err) {
+  return sanitizeForDebug({
+    message: err?.message || String(err),
+    status: err?.status || null,
+    body: err?.body || null,
+  });
+}
+
+async function readAuthDebug() {
+  try {
+    return await readJson(authDebugPath, emptyAuthDebug());
+  } catch (err) {
+    console.warn('Unable to read auth debug log; starting a fresh log', err);
+    return emptyAuthDebug();
+  }
+}
+
+function recordAuthEvent(event, details = {}) {
+  authDebugWritePromise = authDebugWritePromise
+    .catch(() => {})
+    .then(async () => {
+      const debug = await readAuthDebug();
+      debug.events.push({
+        at: new Date().toISOString(),
+        event,
+        details: sanitizeForDebug(details),
+      });
+      debug.events = debug.events.slice(-MAX_AUTH_DEBUG_EVENTS);
+      await writeJson(authDebugPath, debug);
+    })
+    .catch(err => {
+      console.warn('Unable to write auth debug event', err);
+    });
+  return authDebugWritePromise;
 }
 
 async function readRequestBody(req) {
@@ -288,22 +369,40 @@ async function formPost(url, data) {
 }
 
 async function exchangeAuthCode(code) {
-  const tokenInfo = await formPost(await tokenEndpoint(), {
-    client_id: oauthClientId,
-    code,
-    grant_type: 'authorization_code',
-  });
-  await saveAuth(tokenInfo);
-  return tokenInfo;
+  try {
+    const tokenInfo = await formPost(await tokenEndpoint(), {
+      client_id: oauthClientId,
+      code,
+      grant_type: 'authorization_code',
+    });
+    await saveAuth(tokenInfo);
+    await recordAuthEvent('server.oauth.token_saved', {
+      expiresAt: tokenInfo.expiresAt,
+      hasRefreshToken: Boolean(tokenInfo.refreshToken),
+    });
+    return tokenInfo;
+  } catch (err) {
+    await recordAuthEvent('server.oauth.token_error', errorDetails(err));
+    throw err;
+  }
 }
 
 async function refreshToken(auth) {
-  const tokenInfo = await formPost(await tokenEndpoint(), {
-    grant_type: 'refresh_token',
-    refresh_token: auth.refreshToken,
-  });
-  await saveAuth(tokenInfo);
-  return tokenInfo;
+  try {
+    const tokenInfo = await formPost(await tokenEndpoint(), {
+      grant_type: 'refresh_token',
+      refresh_token: auth.refreshToken,
+    });
+    await saveAuth(tokenInfo);
+    await recordAuthEvent('server.oauth.token_refreshed', {
+      expiresAt: tokenInfo.expiresAt,
+      hasRefreshToken: Boolean(tokenInfo.refreshToken),
+    });
+    return tokenInfo;
+  } catch (err) {
+    await recordAuthEvent('server.oauth.refresh_error', errorDetails(err));
+    throw err;
+  }
 }
 
 async function accessToken() {
@@ -477,6 +576,10 @@ async function apiStatus() {
 
   try {
     const profile = await authorizedApiCall('profile.read');
+    await recordAuthEvent('server.profile.loaded', {
+      userid: profile.userid,
+      hasDisplayName: Boolean(profile.user_info?.display_name),
+    });
     return {
       authenticated: true,
       profile: {
@@ -484,12 +587,49 @@ async function apiStatus() {
         displayName: profile.user_info?.display_name || profile.userid,
       },
     };
-  } catch {
+  } catch (err) {
+    await recordAuthEvent('server.profile.error', errorDetails(err));
     return { authenticated: false, profile: null };
   }
 }
 
 async function handleApi(req, res, url) {
+  if (req.method === 'GET' && url.pathname === '/api/debug/auth') {
+    const auth = await readAuth();
+    await authDebugWritePromise.catch(() => {});
+    const debug = await readAuthDebug();
+    sendJson(res, 200, {
+      authenticatedCache: {
+        hasAuthFile: Boolean(auth),
+        hasAccessToken: Boolean(auth?.accessToken),
+        hasRefreshToken: Boolean(auth?.refreshToken),
+        expiresAt: auth?.expiresAt || null,
+      },
+      settings: {
+        serviceUrl,
+        apiUrl,
+        oauthClientId,
+      },
+      pendingOAuthStateCount: pendingOAuthStates.size,
+      events: debug.events || [],
+    });
+    return;
+  }
+
+  if (req.method === 'DELETE' && url.pathname === '/api/debug/auth') {
+    pendingOAuthStates.clear();
+    await writeJson(authDebugPath, emptyAuthDebug());
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/debug/auth-event') {
+    const body = await readRequestBody(req);
+    await recordAuthEvent(`browser.${body.event || 'event'}`, body.details || {});
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/status') {
     sendJson(res, 200, await apiStatus());
     return;
@@ -499,6 +639,9 @@ async function handleApi(req, res, url) {
     const links = await getLinks();
     const state = crypto.randomBytes(16).toString('hex');
     pendingOAuthStates.add(state);
+    setTimeout(() => {
+      pendingOAuthStates.delete(state);
+    }, OAUTH_STATE_TTL_MS).unref();
     const oauthOrigin = requestOrigin(req);
 
     const authUrl = new URL(links['oauth.authorize']);
@@ -512,6 +655,13 @@ async function handleApi(req, res, url) {
       url.searchParams.get('action') || 'login',
     );
 
+    await recordAuthEvent('server.oauth.start', {
+      origin: oauthOrigin,
+      clientId: oauthClientId,
+      state,
+      authEndpoint: links['oauth.authorize'],
+    });
+
     sendJson(res, 200, {
       authUrl: authUrl.toString(),
       origin: oauthOrigin,
@@ -522,7 +672,13 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'POST' && url.pathname === '/api/oauth/exchange') {
     const body = await readRequestBody(req);
-    if (!body.code || !body.state || !pendingOAuthStates.has(body.state)) {
+    const stateKnown = Boolean(body.state && pendingOAuthStates.has(body.state));
+    await recordAuthEvent('server.oauth.exchange_received', {
+      hasCode: Boolean(body.code),
+      state: body.state,
+      stateKnown,
+    });
+    if (!body.code || !body.state || !stateKnown) {
       sendError(res, 400, 'Invalid OAuth response');
       return;
     }
@@ -540,8 +696,17 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/groups') {
-    const groups = await authorizedApiCall('profile.groups.read', {
-      expand: ['organization', 'scopes'],
+    let groups;
+    try {
+      groups = await authorizedApiCall('profile.groups.read', {
+        expand: ['organization', 'scopes'],
+      });
+    } catch (err) {
+      await recordAuthEvent('server.groups.error', errorDetails(err));
+      throw err;
+    }
+    await recordAuthEvent('server.groups.loaded', {
+      count: groups.length,
     });
     groups.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
     sendJson(

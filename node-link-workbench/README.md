@@ -25,7 +25,14 @@ Tag-to-quote edges are regenerated from the latest annotation snapshot. Human ta
 Runtime data is stored under `node-link-workbench/data/` and ignored by git:
 
 - `auth.json`: local OAuth token cache.
+- `auth.debug.json`: local auth-flow diagnostics with codes and tokens redacted.
 - `annotations.snapshot.json`: latest pulled group annotation snapshot.
 - `graph.edits.json`: human graph layout and tag-to-tag edges.
 
 If a later refresh no longer contains a tag used by a human edge, the edge remains in `graph.edits.json` but is hidden in the graph until both tags are present again.
+
+## Auth Troubleshooting
+
+- `GET /api/debug/auth` shows the local OAuth settings, token-cache presence,
+  pending OAuth state count, and recent browser/server auth events.
+- `DELETE /api/debug/auth` clears the diagnostics log.

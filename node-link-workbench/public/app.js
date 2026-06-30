@@ -55,9 +55,26 @@ async function api(path, options = {}) {
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || `Request failed: ${response.status}`);
+    const detail =
+      typeof data.details === 'string'
+        ? data.details
+        : data.details?.reason || data.details?.message || '';
+    const message = data.error || `Request failed: ${response.status}`;
+    throw new Error(
+      detail && detail !== message ? `${message}: ${detail}` : message,
+    );
   }
   return data;
+}
+
+function debugAuth(event, details = {}) {
+  fetch('/api/debug/auth-event', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ event, details }),
+  }).catch(() => {});
 }
 
 function showNotice(message) {
@@ -590,17 +607,33 @@ async function saveEditsNow() {
 
 async function login() {
   showNotice('');
+  debugAuth('login.started', { origin: window.location.origin });
   const popup = window.open(
     'about:blank',
     'Hypothesis Login',
     'width=475,height=630',
   );
   if (!popup) {
+    debugAuth('login.popup_blocked');
     showNotice('The login popup was blocked.');
     return;
   }
+  debugAuth('login.popup_opened');
 
-  const { authUrl, state: oauthState } = await api('/api/oauth/start');
+  let authStart;
+  try {
+    authStart = await api('/api/oauth/start');
+  } catch (err) {
+    debugAuth('login.start_error', { message: err.message });
+    popup.close();
+    throw err;
+  }
+
+  const { authUrl, state: oauthState, origin: oauthOrigin } = authStart;
+  debugAuth('login.auth_url_loaded', {
+    oauthOrigin,
+    state: oauthState,
+  });
   const code = await new Promise((resolve, reject) => {
     let settled = false;
     let timeout = null;
@@ -620,29 +653,71 @@ async function login() {
     }
 
     timeout = setTimeout(() => {
+      debugAuth('login.timeout', { state: oauthState });
       finish(reject, new Error('Login timed out.'));
     }, 180_000);
 
     function listener(event) {
-      if (!event.data || event.data.state !== oauthState) {
+      const data =
+        event.data && typeof event.data === 'object' ? event.data : null;
+      debugAuth('login.message_received', {
+        origin: event.origin,
+        sourceMatchesPopup: event.source === popup,
+        dataType: typeof event.data,
+        messageType: data?.type || null,
+        state: data?.state || null,
+        stateMatches: data?.state === oauthState,
+        keys: data ? Object.keys(data) : [],
+        hasCode: Boolean(data?.code),
+      });
+
+      if (!data || data.state !== oauthState) {
         return;
       }
-      if (event.data.type === 'authorization_response') {
-        finish(resolve, event.data.code);
-      } else if (event.data.type === 'authorization_canceled') {
+      if (data.type === 'authorization_response') {
+        finish(resolve, data.code);
+      } else if (data.type === 'authorization_canceled') {
         finish(reject, new Error('Login was canceled.'));
       }
     }
 
     window.addEventListener('message', listener);
     popup.location.href = authUrl;
+    debugAuth('login.popup_navigated', { state: oauthState });
   });
 
-  state.session = await api('/api/oauth/exchange', {
-    method: 'POST',
-    body: { code, state: oauthState },
+  debugAuth('login.code_received', {
+    hasCode: Boolean(code),
+    state: oauthState,
   });
-  await loadGroups();
+  try {
+    state.session = await api('/api/oauth/exchange', {
+      method: 'POST',
+      body: { code, state: oauthState },
+    });
+  } catch (err) {
+    debugAuth('login.exchange_error', { message: err.message });
+    throw err;
+  }
+  debugAuth('login.exchange_completed', {
+    authenticated: Boolean(state.session?.authenticated),
+    userid: state.session?.profile?.userid || null,
+  });
+  updateControls();
+
+  if (!state.session?.authenticated) {
+    showNotice('Login returned, but the profile request did not authenticate.');
+    return;
+  }
+
+  try {
+    await loadGroups();
+  } catch (err) {
+    state.groups = [];
+    updateGroupSelect();
+    showNotice(`Signed in, but groups did not load: ${err.message}`);
+    debugAuth('groups.load_error', { message: err.message });
+  }
   updateControls();
 }
 
@@ -663,6 +738,7 @@ async function loadGroups() {
     return;
   }
   state.groups = await api('/api/groups');
+  debugAuth('groups.loaded', { count: state.groups.length });
   updateGroupSelect();
 }
 
