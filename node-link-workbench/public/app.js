@@ -812,10 +812,18 @@ function updateGroupSelect() {
 
 function updateControls() {
   const authenticated = Boolean(state.session?.authenticated);
+  const tokenAuth = state.session?.authMethod === 'apiToken';
   els.sessionLabel.textContent = authenticated
-    ? `Signed in as ${state.session.profile?.displayName || state.session.profile?.userid}`
+    ? tokenAuth
+      ? `API token: ${state.session.profile?.displayName || state.session.profile?.userid}`
+      : `Signed in as ${state.session.profile?.displayName || state.session.profile?.userid}`
     : 'Not signed in';
-  els.loginBtn.textContent = authenticated ? 'Log out' : 'Log in';
+  els.loginBtn.textContent = tokenAuth
+    ? 'API token'
+    : authenticated
+      ? 'Log out'
+      : 'Log in';
+  els.loginBtn.disabled = tokenAuth;
   els.groupSelect.disabled = !authenticated || !state.groups.length;
   els.refreshBtn.disabled = !authenticated || !els.groupSelect.value;
   els.newEdgeBtn.disabled = !state.graph?.tagNodes.length;

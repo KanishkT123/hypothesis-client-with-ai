@@ -10,6 +10,22 @@ npm run node-link
 
 Open `http://127.0.0.1:8787`.
 
+For local token auth, add one of these variables to `../.env` or this repo's
+`.env` before starting the server:
+
+```sh
+API_TOKEN=your-hypothesis-api-token
+```
+
+or:
+
+```sh
+HYPOTHESIS_API_TOKEN=your-hypothesis-api-token
+```
+
+The server uses the token directly as a bearer token and does not copy it into
+`node-link-workbench/data/auth.json`.
+
 ## Flow
 
 1. Log in with Hypothesis OAuth.
@@ -34,5 +50,10 @@ If a later refresh no longer contains a tag used by a human edge, the edge remai
 ## Auth Troubleshooting
 
 - `GET /api/debug/auth` shows the local OAuth settings, token-cache presence,
-  pending OAuth state count, and recent browser/server auth events.
+  API-token presence, pending OAuth state count, and recent browser/server auth
+  events.
 - `DELETE /api/debug/auth` clears the diagnostics log.
+
+OAuth is still present, but the standalone workbench needs a Hypothesis OAuth
+client registered for its local origin. The browser extension client ID is not
+enough for `http://127.0.0.1:8787`.

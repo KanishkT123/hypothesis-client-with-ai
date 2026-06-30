@@ -3,6 +3,7 @@
 Runtime files are written here by `node-link-workbench/server.mjs`.
 
 - `auth.json` stores local OAuth tokens.
+- API tokens are read from `.env` and are not copied here.
 - `annotations.snapshot.json` stores the latest pulled Hypothesis annotations for the selected group.
 - `graph.edits.json` stores human-authored graph layout and tag-to-tag edges.
 

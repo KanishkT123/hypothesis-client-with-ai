@@ -15,12 +15,25 @@ const authDebugPath = path.join(dataDir, 'auth.debug.json');
 const snapshotPath = path.join(dataDir, 'annotations.snapshot.json');
 const editsPath = path.join(dataDir, 'graph.edits.json');
 
+const loadedEnvFiles = [];
+
+await loadEnvFiles([
+  path.resolve(__dirname, '..', '..', '.env'),
+  path.resolve(__dirname, '..', '.env'),
+]);
+
 const host = process.env.NODE_LINK_HOST || '127.0.0.1';
 const port = Number(process.env.NODE_LINK_PORT || 8787);
 const origin = `http://${host}:${port}`;
 
 const serviceUrl = process.env.HYPOTHESIS_SERVICE_URL || 'https://hypothes.is/';
 const apiUrl = process.env.HYPOTHESIS_API_URL || 'https://hypothes.is/api/';
+const apiToken = process.env.HYPOTHESIS_API_TOKEN || process.env.API_TOKEN || '';
+const apiTokenSource = process.env.HYPOTHESIS_API_TOKEN
+  ? 'HYPOTHESIS_API_TOKEN'
+  : process.env.API_TOKEN
+    ? 'API_TOKEN'
+    : null;
 const oauthClientId =
   process.env.HYPOTHESIS_OAUTH_CLIENT_ID ||
   'fd23fe2e-7792-11e7-8e16-23e47a1799d4';
@@ -76,6 +89,43 @@ function emptyAuthDebug() {
     schemaVersion: 1,
     events: [],
   };
+}
+
+function parseEnvValue(value) {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+async function loadEnvFiles(filePaths) {
+  for (const filePath of filePaths) {
+    let text;
+    try {
+      text = await fs.readFile(filePath, 'utf8');
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        throw err;
+      }
+      continue;
+    }
+
+    loadedEnvFiles.push(filePath);
+    for (const line of text.split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (!match) {
+        continue;
+      }
+      const [, key, rawValue] = match;
+      if (process.env[key] === undefined) {
+        process.env[key] = parseEnvValue(rawValue);
+      }
+    }
+  }
 }
 
 async function ensureDataFiles() {
@@ -406,6 +456,10 @@ async function refreshToken(auth) {
 }
 
 async function accessToken() {
+  if (apiToken) {
+    return apiToken;
+  }
+
   let auth = await readAuth();
   if (!auth?.accessToken) {
     return null;
@@ -571,7 +625,11 @@ async function fetchAllGroupAnnotations(pubid, groupInfo) {
 async function apiStatus() {
   const token = await accessToken().catch(() => null);
   if (!token) {
-    return { authenticated: false, profile: null };
+    return {
+      authenticated: false,
+      authMethod: null,
+      profile: null,
+    };
   }
 
   try {
@@ -579,9 +637,11 @@ async function apiStatus() {
     await recordAuthEvent('server.profile.loaded', {
       userid: profile.userid,
       hasDisplayName: Boolean(profile.user_info?.display_name),
+      authMethod: apiToken ? 'apiToken' : 'oauth',
     });
     return {
       authenticated: true,
+      authMethod: apiToken ? 'apiToken' : 'oauth',
       profile: {
         userid: profile.userid,
         displayName: profile.user_info?.display_name || profile.userid,
@@ -589,7 +649,11 @@ async function apiStatus() {
     };
   } catch (err) {
     await recordAuthEvent('server.profile.error', errorDetails(err));
-    return { authenticated: false, profile: null };
+    return {
+      authenticated: false,
+      authMethod: apiToken ? 'apiToken' : null,
+      profile: null,
+    };
   }
 }
 
@@ -609,6 +673,9 @@ async function handleApi(req, res, url) {
         serviceUrl,
         apiUrl,
         oauthClientId,
+        hasApiToken: Boolean(apiToken),
+        apiTokenSource,
+        loadedEnvFiles,
       },
       pendingOAuthStateCount: pendingOAuthStates.size,
       events: debug.events || [],
