@@ -145,6 +145,20 @@ input {
   accent-color: var(--brand);
 }
 
+.control-group {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.control-group > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 720;
+}
+
 textarea {
   min-height: 94px;
   resize: vertical;
@@ -341,6 +355,7 @@ button:focus-visible {
   fill: none;
   stroke-width: 2.7;
   stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .edge-implicit {
@@ -348,7 +363,17 @@ button:focus-visible {
   stroke-width: 1.9;
   stroke-dasharray: 5 7;
   stroke-linecap: round;
+  stroke-linejoin: round;
   stroke-opacity: 0.42;
+  pointer-events: none;
+}
+
+.edge-evidence {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-opacity: 0.42;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   pointer-events: none;
 }
 
@@ -357,6 +382,7 @@ button:focus-visible {
   stroke: transparent;
   stroke-width: 14;
   cursor: pointer;
+  outline: none;
   pointer-events: stroke;
 }
 
@@ -390,8 +416,52 @@ button:focus-visible {
   stroke-width: 2.8;
 }
 
+.edge-interactive:hover .edge-human,
+.edge-interactive:focus-within .edge-human {
+  stroke-opacity: 0.86;
+  stroke-width: 3.2;
+}
+
+.edge-interactive:hover .edge-implicit,
+.edge-interactive:focus-within .edge-implicit {
+  stroke-opacity: 0.78;
+  stroke-width: 2.8;
+}
+
+.edge-interactive:hover .edge-auto,
+.edge-interactive:focus-within .edge-auto {
+  stroke-opacity: 0.82;
+  stroke-width: 2.4;
+}
+
+.edge-interactive:hover .edge-evidence,
+.edge-interactive:focus-within .edge-evidence {
+  stroke-opacity: 0.82;
+  stroke-width: 2.5;
+}
+
 .edge-muted {
   stroke-opacity: 0.08;
+}
+
+.edge-human.edge-hovered {
+  stroke-opacity: 0.9;
+  stroke-width: 3.3;
+}
+
+.edge-implicit.edge-hovered {
+  stroke-opacity: 0.8;
+  stroke-width: 2.9;
+}
+
+.edge-auto.edge-hovered {
+  stroke-opacity: 0.84;
+  stroke-width: 2.4;
+}
+
+.edge-evidence.edge-hovered {
+  stroke-opacity: 0.84;
+  stroke-width: 2.5;
 }
 
 .edge-label {
@@ -404,10 +474,14 @@ button:focus-visible {
 }
 
 .node {
+  cursor: pointer;
+}
+
+.draggable-node {
   cursor: grab;
 }
 
-.node:active {
+.draggable-node:active {
   cursor: grabbing;
 }
 
@@ -441,6 +515,29 @@ button:focus-visible {
   text-anchor: middle;
 }
 
+.expand-button {
+  cursor: pointer;
+}
+
+.expand-button circle {
+  fill: #fff;
+  stroke: rgba(10, 32, 30, 0.24);
+  stroke-width: 1.4;
+}
+
+.expand-button text {
+  fill: var(--brand-dark);
+  font-size: 15px;
+  font-weight: 850;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.expand-button:focus-visible circle {
+  stroke: #111918;
+  stroke-width: 2.2;
+}
+
 .node-port {
   stroke-width: 2;
   pointer-events: none;
@@ -469,6 +566,31 @@ button:focus-visible {
   fill: var(--muted);
   font-size: 10.5px;
   font-weight: 720;
+}
+
+.document-node rect {
+  stroke-width: 1.2;
+  filter: drop-shadow(0 7px 12px rgba(19, 48, 45, 0.1));
+}
+
+.document-node text {
+  fill: var(--ink);
+  pointer-events: none;
+}
+
+.document-title {
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.document-count {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.document-port {
+  stroke-width: 2.1;
 }
 
 .selected-node rect {
@@ -583,6 +705,213 @@ button:focus-visible {
   padding: 3px 8px;
   font-size: 12px;
   font-weight: 650;
+}
+
+.quote-details {
+  margin-top: 10px;
+}
+
+.quote-details summary {
+  cursor: pointer;
+  color: var(--brand-dark);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.quote-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  margin-top: 8px;
+  overflow: auto;
+  padding-right: 3px;
+}
+
+.quote-item {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fffaf0;
+  padding: 8px;
+}
+
+.quote-item-source {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  margin-bottom: 5px;
+}
+
+.quote-item-text {
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.quote-item-link {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--brand-dark);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.quote-item-link:hover {
+  text-decoration: underline;
+}
+
+.evidence-list {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0;
+}
+
+.evidence-item {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f7fbfa;
+  color: var(--brand-dark);
+  padding: 8px;
+  text-decoration: none;
+}
+
+.evidence-item span {
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.evidence-item small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.evidence-item:hover {
+  border-color: var(--brand);
+}
+
+.rank-list {
+  display: grid;
+  gap: 7px;
+}
+
+.rank-item {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rank-item:hover,
+.rank-item-selected {
+  border-color: var(--brand);
+  background: #eef7f4;
+}
+
+.rank-number,
+.rank-score {
+  color: var(--brand-dark);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.rank-main {
+  display: grid;
+  min-width: 0;
+}
+
+.rank-main strong,
+.rank-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank-main strong {
+  font-size: 12px;
+}
+
+.rank-main small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.comparison-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.comparison-docs,
+.comparison-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.comparison-docs span {
+  flex: 1;
+  border-radius: 7px;
+  padding: 6px 8px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.comparison-docs .doc-a {
+  background: #2563eb;
+}
+
+.comparison-docs .doc-b {
+  background: #b45309;
+}
+
+.comparison-row {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.comparison-tags {
+  margin: 0 0 4px;
+}
+
+.tag-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--brand-dark);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tag-pill:hover {
+  border-color: var(--brand);
+}
+
+.tag-pill-shared {
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.tag-pill-a {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.tag-pill-b {
+  background: #fff7ed;
+  color: #b45309;
 }
 
 .edge-list {

@@ -122,6 +122,33 @@
             <input id="selectionFirstToggle" type="checkbox" checked disabled />
             <span>Selection-first edges</span>
           </label>
+          <div class="control-group">
+            <span>Edge filters</span>
+            <label class="checkbox-field">
+              <input id="edgeEvidenceToggle" type="checkbox" checked disabled />
+              <span>Evidence</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="edgeHumanToggle" type="checkbox" checked disabled />
+              <span>Real tag-tag</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="edgeImplicitToggle" type="checkbox" checked disabled />
+              <span>Suggested tag-tag</span>
+            </label>
+          </div>
+          <label class="checkbox-field">
+            <input id="documentComparisonToggle" type="checkbox" disabled />
+            <span>Document comparison</span>
+          </label>
+          <label class="field">
+            <span>Document A</span>
+            <select id="compareDocASelect" disabled></select>
+          </label>
+          <label class="field">
+            <span>Document B</span>
+            <select id="compareDocBSelect" disabled></select>
+          </label>
         </section>
 
         <section class="panel">
@@ -130,6 +157,28 @@
           </div>
           <div id="selectionPanel" class="empty-panel">
             Select a tag or quote node.
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Bridge Ranking</h2>
+          </div>
+          <div id="bridgeRanking" class="rank-list">
+            <div class="empty-panel">
+              Refresh annotations to rank bridge tags.
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Document Comparison</h2>
+          </div>
+          <div id="comparisonPanel" class="comparison-panel">
+            <div class="empty-panel">
+              Enable document comparison and choose two documents.
+            </div>
           </div>
         </section>
 
