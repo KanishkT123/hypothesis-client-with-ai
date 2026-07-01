@@ -66,6 +66,10 @@ export type TextQuoteSelector = {
   suffix?: string;
   /** Space-normalized version of `exact` for display; set when it differs from `exact`. */
   displayExact?: string;
+  /**
+   * PDF line-break hyphen cases pending Claude resolution; stripped before API persist.
+   */
+  pdfLineBreakHyphens?: Array<{ before: string; after: string }>;
 };
 
 /**

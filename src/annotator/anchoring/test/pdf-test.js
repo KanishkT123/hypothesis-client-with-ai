@@ -382,8 +382,81 @@ describe('annotator/anchoring/pdf', () => {
       assert.equal(quote.displayExact, 'NODE A NODE B');
     });
 
+    it('keeps a lexical hyphen when rejoining a compound split across lines', async () => {
+      viewer.pdfViewer.setCurrentPage(4);
+
+      const textLayerDivs = Array.from(
+        container.querySelectorAll('.textLayer div'),
+      ).filter(el => el.textContent.length > 0);
+
+      const lineHeight = 20;
+      sinon.stub(textLayerDivs[0], 'getBoundingClientRect').returns({
+        top: 100,
+        left: 0,
+        right: 60,
+        bottom: 120,
+        height: lineHeight,
+        width: 60,
+      });
+      sinon.stub(textLayerDivs[1], 'getBoundingClientRect').returns({
+        top: 125,
+        left: 0,
+        right: 60,
+        bottom: 145,
+        height: lineHeight,
+        width: 60,
+      });
+
+      textLayerDivs[0].textContent = 'Theory-';
+      textLayerDivs[1].textContent = 'based methods';
+
+      const range = findText(container, 'Theory-based methods');
+      const selectors = await pdfAnchoring.describe(range);
+      const quote = selectors.find(s => s.type === 'TextQuoteSelector');
+
+      assert.equal(quote.exact, 'Theory-based methods');
+      assert.equal(quote.displayExact, 'Theory-based methods');
+    });
+
+    it('removes a syllable hyphen when rejoining a word split across lines', async () => {
+      viewer.pdfViewer.setCurrentPage(4);
+
+      const textLayerDivs = Array.from(
+        container.querySelectorAll('.textLayer div'),
+      ).filter(el => el.textContent.length > 0);
+
+      const lineHeight = 20;
+      sinon.stub(textLayerDivs[0], 'getBoundingClientRect').returns({
+        top: 100,
+        left: 0,
+        right: 60,
+        bottom: 120,
+        height: lineHeight,
+        width: 60,
+      });
+      sinon.stub(textLayerDivs[1], 'getBoundingClientRect').returns({
+        top: 125,
+        left: 0,
+        right: 60,
+        bottom: 145,
+        height: lineHeight,
+        width: 60,
+      });
+
+      textLayerDivs[0].textContent = 'analy-';
+      textLayerDivs[1].textContent = 'sis of';
+
+      const range = findText(container, 'analysis of');
+      const selectors = await pdfAnchoring.describe(range);
+      const quote = selectors.find(s => s.type === 'TextQuoteSelector');
+
+      assert.equal(quote.exact, 'analy-sis of');
+      assert.equal(quote.displayExact, 'analy-sis of');
+      assert.deepEqual(quote.pdfLineBreakHyphens, [{ before: 'analy', after: 'sis' }]);
+    });
+
     it('does not insert a space between cross-line spans when previous span ends with a hyphen', async () => {
-      // Page 4 has 'NODE A-\nNODE B': first div ends with '-', second is on
+      // Page 4 has 'ITEM A-\nITEM B': first div ends with '-', second is on
       // the next line. No space should be inserted after the hyphen.
       viewer.pdfViewer.setCurrentPage(4);
 

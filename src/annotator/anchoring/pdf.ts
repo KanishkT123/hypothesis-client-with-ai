@@ -20,6 +20,12 @@ import { matchQuote } from './match-quote';
 import { createPlaceholder } from './placeholder';
 import { textInDOMRect } from './text-in-rect';
 import { TextPosition, TextRange } from './text-range';
+import {
+  firstWordOfSpan,
+  pdfLineBreakHyphensInRange,
+  wordFragmentBeforeLineBreakHyphen,
+} from './pdf-line-break-hyphen';
+import type { PdfLineBreakHyphenCase } from './pdf-line-break-hyphen';
 
 type PDFTextRange = {
   pageIndex: number;
@@ -783,6 +789,7 @@ const WORD_GAP_EM_RATIO = 0.15;
 function buildSpaceAwareTextLayerText(textLayer: Element): {
   text: string;
   fromOrigOffset: (offset: number) => number;
+  lineBreakHyphens: PdfLineBreakHyphenCase[];
 } {
   // Real pdfjs renders text items as <span> elements; the test fake uses <div>.
   // Filter to elements that carry text directly (no child elements with text),
@@ -799,6 +806,7 @@ function buildSpaceAwareTextLayerText(textLayer: Element): {
 
   let text = '';
   const origToSpaceAware: number[] = [];
+  const lineBreakHyphens: PdfLineBreakHyphenCase[] = [];
   let origOffset = 0;
 
   for (let i = 0; i < spans.length; i++) {
@@ -818,11 +826,19 @@ function buildSpaceAwareTextLayerText(textLayer: Element): {
           text += ' ';
         }
       } else {
-        // Cross-line boundary: insert a space unless the previous span ends
-        // with a hyphen, which indicates a soft line-break (e.g. "Theory-" /
-        // "based" → "Theory-based", not "Theory- based").
+        // Cross-line boundary: insert a space, or record a line-break hyphen case.
         const prevText = spans[i - 1].textContent ?? '';
-        if (!prevText.trimEnd().endsWith('-')) {
+        if (prevText.trimEnd().endsWith('-')) {
+          const broken = wordFragmentBeforeLineBreakHyphen(prevText);
+          const nextWord = firstWordOfSpan(spanText);
+          if (broken && nextWord && text.endsWith('-')) {
+            lineBreakHyphens.push({
+              before: broken.fragment,
+              after: nextWord.word,
+              hyphenIndex: text.length - 1,
+            });
+          }
+        } else {
           text += ' ';
         }
       }
@@ -839,6 +855,7 @@ function buildSpaceAwareTextLayerText(textLayer: Element): {
   return {
     text,
     fromOrigOffset: (n: number) => origToSpaceAware[n] ?? text.length,
+    lineBreakHyphens,
   };
 }
 
@@ -881,11 +898,19 @@ export async function describe(range: Range): Promise<Selector[]> {
   // separate absolutely-positioned spans with no text-node space between them,
   // so `textContent` concatenates adjacent words. Insert spaces where visible
   // gaps exist so the quote reads naturally in the sidebar.
-  const { text: layerText, fromOrigOffset } =
+  const { text: layerText, fromOrigOffset, lineBreakHyphens } =
     buildSpaceAwareTextLayerText(textLayer);
   const saStart = fromOrigOffset(startPos.offset);
   const saEnd = fromOrigOffset(endPos.offset);
   const displayExact = layerText.slice(saStart, saEnd).replace(/\s+/g, ' ').trim();
+  const hyphenCases = pdfLineBreakHyphensInRange(
+    lineBreakHyphens,
+    saStart,
+    saEnd,
+  );
+  if (hyphenCases.length > 0) {
+    quote.pdfLineBreakHyphens = hyphenCases;
+  }
   if (displayExact !== quote.exact) {
     quote.displayExact = displayExact;
   }
