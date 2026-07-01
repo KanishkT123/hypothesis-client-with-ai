@@ -277,7 +277,6 @@ export function buildDocumentComparison({
 export function graphLayersForView({
   showQuotes = true,
   showImplicitConnections = false,
-  selectionFirstEdges = true,
   edgeFilters = {},
 } = {}) {
   return {
@@ -287,7 +286,6 @@ export function graphLayersForView({
     showHumanEdges: edgeFilters.human !== false,
     showImplicitEdges:
       Boolean(showImplicitConnections) && edgeFilters.implicit !== false,
-    selectionFirstEdges: Boolean(selectionFirstEdges),
   };
 }
 

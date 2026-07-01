@@ -51,7 +51,6 @@ const els = {
   colorModeSelect: document.querySelector('#colorModeSelect'),
   colorFocusSelect: document.querySelector('#colorFocusSelect'),
   tagOnlyToggle: document.querySelector('#tagOnlyToggle'),
-  selectionFirstToggle: document.querySelector('#selectionFirstToggle'),
   edgeEvidenceToggle: document.querySelector('#edgeEvidenceToggle'),
   edgeHumanToggle: document.querySelector('#edgeHumanToggle'),
   edgeImplicitToggle: document.querySelector('#edgeImplicitToggle'),
@@ -92,9 +91,8 @@ const state = {
   documentFilter: 'all',
   colorMode: 'tag',
   colorFocus: 'all',
-  showQuotes: true,
+  showQuotes: false,
   showImplicitConnections: false,
-  selectionFirstEdges: true,
   edgeFilters: {
     evidence: true,
     human: true,
@@ -1016,8 +1014,6 @@ function tagFocusOpacity(node) {
 
 function edgeVisual(edge, source, target) {
   const selected = edgeIsSelected(edge);
-  const hasSelection = Boolean(state.selectedNodeId || state.selectedEdgeId);
-  const selectionMuted = state.selectionFirstEdges && hasSelection && !selected;
   const sourceStyle = visualForEdgeNode(source);
   const targetStyle = visualForEdgeNode(target);
   const color =
@@ -1029,8 +1025,7 @@ function edgeVisual(edge, source, target) {
     (sourceStyle?.opacity ?? 1) < 1 || (targetStyle?.opacity ?? 1) < 1;
   return {
     color,
-    muted: selectionMuted || colorMuted,
-    resting: state.selectionFirstEdges && !state.selectedNodeId,
+    muted: colorMuted,
     selected,
   };
 }
@@ -1126,7 +1121,7 @@ function renderAutoEdges(group, layers) {
       class: 'edge-interactive edge-auto-group',
     });
     const path = svgEl('path', {
-      class: `edge-auto ${visual.resting ? 'edge-resting' : ''} ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
+      class: `edge-auto ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
       d,
       stroke: visual.color,
     });
@@ -1175,7 +1170,7 @@ function renderEvidenceEdges(group, layers) {
       class: 'edge-interactive edge-evidence-group',
     });
     const path = svgEl('path', {
-      class: `edge-evidence ${visual.resting ? 'edge-resting' : ''} ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
+      class: `edge-evidence ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
       d,
       stroke: visual.color,
     });
@@ -1213,7 +1208,7 @@ function renderHumanEdges(group, layers) {
       class: 'edge-interactive edge-human-group',
     });
     const path = svgEl('path', {
-      class: `edge-human ${visual.resting ? 'edge-resting' : ''} ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
+      class: `edge-human ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
       d,
       stroke: visual.color,
     });
@@ -1262,7 +1257,7 @@ function renderImplicitEdges(group, layers) {
       class: 'edge-interactive edge-implicit-group',
     });
     const path = svgEl('path', {
-      class: `edge-implicit ${visual.resting ? 'edge-resting' : ''} ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
+      class: `edge-implicit ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
       d,
       stroke: visual.color,
     });
@@ -2623,7 +2618,6 @@ function updateControls() {
   els.colorModeSelect.value = state.colorMode;
   els.colorFocusSelect.value = state.colorFocus;
   els.tagOnlyToggle.disabled = !state.graph;
-  els.selectionFirstToggle.disabled = !state.graph;
   els.edgeEvidenceToggle.disabled = !state.graph;
   els.edgeHumanToggle.disabled = !state.graph;
   els.edgeImplicitToggle.disabled = !state.graph;
@@ -2634,7 +2628,6 @@ function updateControls() {
   els.compareDocBSelect.disabled =
     !state.graph || !state.documentComparisonEnabled;
   els.tagOnlyToggle.checked = !state.showQuotes;
-  els.selectionFirstToggle.checked = state.selectionFirstEdges;
   els.edgeEvidenceToggle.checked = state.edgeFilters.evidence;
   els.edgeHumanToggle.checked = state.edgeFilters.human;
   els.edgeImplicitToggle.checked = state.showImplicitConnections;
@@ -2738,11 +2731,6 @@ async function init() {
     state.showQuotes = !els.tagOnlyToggle.checked;
     state.userZoomed = false;
     buildGraph();
-    renderGraph();
-    updateControls();
-  });
-  els.selectionFirstToggle.addEventListener('change', () => {
-    state.selectionFirstEdges = els.selectionFirstToggle.checked;
     renderGraph();
     updateControls();
   });

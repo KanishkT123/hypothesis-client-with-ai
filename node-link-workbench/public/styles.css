@@ -447,14 +447,6 @@ button:focus-visible {
   cursor: pointer;
 }
 
-.edge-resting {
-  stroke-opacity: 0.18;
-}
-
-.edge-human.edge-resting {
-  stroke-opacity: 0.34;
-}
-
 .edge-active {
   stroke-opacity: 0.92;
   stroke-width: 2.4;
@@ -732,17 +724,27 @@ button:focus-visible {
 }
 
 .edge-sentence-readout {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  max-width: 100%;
+  gap: 6px;
   margin: 2px 0 12px;
+  white-space: nowrap;
 }
 
 .edge-sentence-readout strong {
   color: var(--ink);
   font-size: 14px;
   font-weight: 800;
+  min-width: max-content;
+}
+
+.edge-sentence-readout .tag-chip {
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .selection-actions {

@@ -122,26 +122,22 @@ describe('node-link workbench graph model', () => {
     assert.deepEqual(implicitEdges, []);
   });
 
-  it('exposes graph layers for quote, implicit, and selection-first toggles', () => {
+  it('exposes graph layers for quote and suggested tag-edge toggles', () => {
     for (const showQuotes of [false, true]) {
       for (const showImplicitConnections of [false, true]) {
-        for (const selectionFirstEdges of [false, true]) {
-          assert.deepEqual(
-            graphLayersForView({
-              showQuotes,
-              showImplicitConnections,
-              selectionFirstEdges,
-            }),
-            {
-              showQuoteNodes: showQuotes,
-              showAutoEdges: showQuotes,
-              showEvidenceEdges: true,
-              showHumanEdges: true,
-              showImplicitEdges: showImplicitConnections,
-              selectionFirstEdges,
-            },
-          );
-        }
+        assert.deepEqual(
+          graphLayersForView({
+            showQuotes,
+            showImplicitConnections,
+          }),
+          {
+            showQuoteNodes: showQuotes,
+            showAutoEdges: showQuotes,
+            showEvidenceEdges: true,
+            showHumanEdges: true,
+            showImplicitEdges: showImplicitConnections,
+          },
+        );
       }
     }
   });
@@ -163,7 +159,6 @@ describe('node-link workbench graph model', () => {
         showEvidenceEdges: false,
         showHumanEdges: false,
         showImplicitEdges: false,
-        selectionFirstEdges: true,
       },
     );
   });
