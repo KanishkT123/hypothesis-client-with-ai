@@ -51,9 +51,6 @@ const els = {
   colorModeSelect: document.querySelector('#colorModeSelect'),
   colorFocusSelect: document.querySelector('#colorFocusSelect'),
   tagOnlyToggle: document.querySelector('#tagOnlyToggle'),
-  implicitConnectionsToggle: document.querySelector(
-    '#implicitConnectionsToggle',
-  ),
   selectionFirstToggle: document.querySelector('#selectionFirstToggle'),
   edgeEvidenceToggle: document.querySelector('#edgeEvidenceToggle'),
   edgeHumanToggle: document.querySelector('#edgeHumanToggle'),
@@ -2626,7 +2623,6 @@ function updateControls() {
   els.colorModeSelect.value = state.colorMode;
   els.colorFocusSelect.value = state.colorFocus;
   els.tagOnlyToggle.disabled = !state.graph;
-  els.implicitConnectionsToggle.disabled = !state.graph;
   els.selectionFirstToggle.disabled = !state.graph;
   els.edgeEvidenceToggle.disabled = !state.graph;
   els.edgeHumanToggle.disabled = !state.graph;
@@ -2638,11 +2634,10 @@ function updateControls() {
   els.compareDocBSelect.disabled =
     !state.graph || !state.documentComparisonEnabled;
   els.tagOnlyToggle.checked = !state.showQuotes;
-  els.implicitConnectionsToggle.checked = state.showImplicitConnections;
   els.selectionFirstToggle.checked = state.selectionFirstEdges;
   els.edgeEvidenceToggle.checked = state.edgeFilters.evidence;
   els.edgeHumanToggle.checked = state.edgeFilters.human;
-  els.edgeImplicitToggle.checked = state.edgeFilters.implicit;
+  els.edgeImplicitToggle.checked = state.showImplicitConnections;
   els.documentComparisonToggle.checked = state.documentComparisonEnabled;
   els.compareDocASelect.value = state.compareDocumentA;
   els.compareDocBSelect.value = state.compareDocumentB;
@@ -2665,10 +2660,10 @@ function updateGraphHeader() {
   const humanEdges = state.graph?.humanEdges.length || 0;
   const implicitEdges = state.graph?.implicitEdges.length || 0;
   const implicitText = state.showImplicitConnections
-    ? ` / ${implicitEdges} implicit edges`
+    ? ` / ${implicitEdges} suggested tag-tag edges`
     : '';
   els.graphTitle.textContent = groupName;
-  els.graphStats.textContent = `${selectedDocumentLabel()}: ${tags} tags / ${quotes} quotes / ${humanEdges} real edges${implicitText}. Refreshed ${refreshed}.`;
+  els.graphStats.textContent = `${selectedDocumentLabel()}: ${tags} tags / ${quotes} quotes / ${humanEdges} manual tag-tag edges${implicitText}. Refreshed ${refreshed}.`;
 }
 
 function formatDate(value) {
@@ -2746,11 +2741,6 @@ async function init() {
     renderGraph();
     updateControls();
   });
-  els.implicitConnectionsToggle.addEventListener('change', () => {
-    state.showImplicitConnections = els.implicitConnectionsToggle.checked;
-    renderGraph();
-    updateControls();
-  });
   els.selectionFirstToggle.addEventListener('change', () => {
     state.selectionFirstEdges = els.selectionFirstToggle.checked;
     renderGraph();
@@ -2767,7 +2757,8 @@ async function init() {
     updateControls();
   });
   els.edgeImplicitToggle.addEventListener('change', () => {
-    state.edgeFilters.implicit = els.edgeImplicitToggle.checked;
+    state.showImplicitConnections = els.edgeImplicitToggle.checked;
+    state.edgeFilters.implicit = state.showImplicitConnections;
     renderGraph();
     updateControls();
   });

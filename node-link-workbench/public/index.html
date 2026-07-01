@@ -115,10 +115,6 @@
             <span>Tag-only view</span>
           </label>
           <label class="checkbox-field">
-            <input id="implicitConnectionsToggle" type="checkbox" disabled />
-            <span>Implicit connections</span>
-          </label>
-          <label class="checkbox-field">
             <input id="selectionFirstToggle" type="checkbox" checked disabled />
             <span>Selection-first edges</span>
           </label>
@@ -126,12 +122,12 @@
             <span>Edge filters</span>
             <label class="checkbox-field">
               <input id="edgeEvidenceToggle" type="checkbox" checked disabled />
-              <span>Evidence</span>
+              <span>Tag-Quote Edges</span>
               <span class="filter-help">
                 <span
                   class="help-icon"
                   tabindex="0"
-                  aria-label="Evidence edge help"
+                  aria-label="Tag-quote edge help"
                   >?</span
                 >
                 <span class="help-popout" role="tooltip">
@@ -141,22 +137,22 @@
             </label>
             <label class="checkbox-field">
               <input id="edgeHumanToggle" type="checkbox" checked disabled />
-              <span>Real tag-tag</span>
+              <span>Manual Tag-Tag</span>
               <span class="filter-help">
                 <span
                   class="help-icon"
                   tabindex="0"
-                  aria-label="Real tag-tag edge help"
+                  aria-label="Manual tag-tag edge help"
                   >?</span
                 >
                 <span class="help-popout" role="tooltip">
-                  Shows tag-to-tag connections created by a person.
+                  Shows tag-to-tag connections created manually.
                 </span>
               </span>
             </label>
             <label class="checkbox-field">
               <input id="edgeImplicitToggle" type="checkbox" checked disabled />
-              <span>Suggested tag-tag</span>
+              <span>Suggested Tag-Tag</span>
               <span class="filter-help">
                 <span
                   class="help-icon"
@@ -165,8 +161,8 @@
                   >?</span
                 >
                 <span class="help-popout" role="tooltip">
-                  Shows dashed suggestions inferred from tags in the same
-                  document.
+                  Shows generated tag-to-tag suggestions inferred from tags in
+                  the same document.
                 </span>
               </span>
             </label>
