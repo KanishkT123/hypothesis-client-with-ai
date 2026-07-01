@@ -429,7 +429,7 @@ export class Guest
       if (!anchor.highlights?.length) {
         continue;
       }
-      const hidden = this._hiddenAnnotationIds.has(anchor.annotation.id ?? '');
+      const hidden = this._hiddenAnnotationIds.has(anchor.annotation.$tag);
       setHighlightsHidden(anchor.highlights, hidden);
     }
   }
@@ -1087,7 +1087,7 @@ export class Guest
       if (this._hoveredAnnotations.has(anchor.annotation.$tag)) {
         this._highlighter.setHighlightsFocused(highlights, true);
       }
-      if (this._hiddenAnnotationIds.has(anchor.annotation.id ?? '')) {
+      if (this._hiddenAnnotationIds.has(anchor.annotation.$tag)) {
         setHighlightsHidden(highlights, true);
       }
     };

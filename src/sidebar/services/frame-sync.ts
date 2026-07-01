@@ -22,6 +22,7 @@ import type {
   RenderToBitmapOptions,
 } from '../../types/annotator';
 import type { Annotation } from '../../types/api';
+import { mapHiddenAnnotationIdsToGuestTags } from '../helpers/hidden-annotation-guest-tags';
 import type {
   SidebarToHostCalls,
   HostToSidebarCalls,
@@ -141,7 +142,7 @@ export class FrameSyncService {
   private _highlightsVisible: boolean;
   /** Latest tag highlight palette to replay to newly connected guests. */
   private _tagHighlightPalette: Record<string, string>;
-  /** Latest hidden annotation IDs to replay to newly connected guests. */
+  /** Latest hidden annotation `$tag`s to replay to newly connected guests. */
   private _hiddenAnnotationIds: string[];
 
   /**
@@ -750,21 +751,25 @@ export class FrameSyncService {
     palette: Record<string, string>,
     hiddenAnnotationIds: string[] = [],
   ): void {
+    const hiddenGuestTags = mapHiddenAnnotationIdsToGuestTags(
+      this._store.allAnnotations(),
+      hiddenAnnotationIds,
+    );
     const paletteUnchanged =
       Object.keys(palette).length === Object.keys(this._tagHighlightPalette).length &&
       Object.entries(palette).every(
         ([tag, color]) => this._tagHighlightPalette[tag] === color,
       );
     const hiddenUnchanged =
-      hiddenAnnotationIds.length === this._hiddenAnnotationIds.length &&
-      hiddenAnnotationIds.every(
-        (id, index) => id === this._hiddenAnnotationIds[index],
+      hiddenGuestTags.length === this._hiddenAnnotationIds.length &&
+      hiddenGuestTags.every(
+        (tag, index) => tag === this._hiddenAnnotationIds[index],
       );
     if (paletteUnchanged && hiddenUnchanged) {
       return;
     }
     this._tagHighlightPalette = { ...palette };
-    this._hiddenAnnotationIds = hiddenAnnotationIds;
+    this._hiddenAnnotationIds = hiddenGuestTags;
     this._guestRPC.forEach(rpc =>
       rpc.call(
         'setTagHighlightPalette',

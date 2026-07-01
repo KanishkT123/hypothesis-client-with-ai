@@ -1438,7 +1438,13 @@ describe('FrameSyncService', () => {
       assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette, []);
     });
 
-    it('forwards hidden annotation IDs to connected guests', async () => {
+    it('forwards hidden annotation tags to connected guests', async () => {
+      fakeStore.setState({
+        annotations: [
+          { id: 'ann-1', $tag: 'guest-tag-1' },
+          { id: 'ann-2', $tag: 'guest-tag-2' },
+        ],
+      });
       await connectGuest();
       guestRPC().call.resetHistory();
 
@@ -1448,7 +1454,7 @@ describe('FrameSyncService', () => {
         guestRPC().call,
         'setTagHighlightPalette',
         palette,
-        ['ann-1', 'ann-2'],
+        ['guest-tag-1', 'guest-tag-2'],
       );
     });
 

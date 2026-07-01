@@ -3,6 +3,7 @@ import {
   computeTagInventoryHighlightState,
   mergeVisibleTagHighlightPalette,
 } from '../tag-palette';
+import { mapHiddenAnnotationIdsToGuestTags } from '../hidden-annotation-guest-tags';
 
 describe('sidebar/helpers/tag-palette', () => {
   it('keeps defaults and excludes tags from hidden-only rows', () => {
@@ -76,5 +77,16 @@ describe('sidebar/helpers/tag-palette', () => {
     );
 
     assert.deepEqual(state.hiddenAnnotationIds, ['ann-hidden-only']);
+  });
+
+  it('maps server annotation ids to guest $tags', () => {
+    const tags = mapHiddenAnnotationIdsToGuestTags(
+      [
+        { id: 'ann-1', $tag: 'tag-1' },
+        { id: 'ann-2', $tag: 'tag-2' },
+      ],
+      ['ann-2', 'ann-missing'],
+    );
+    assert.deepEqual(tags, ['tag-2']);
   });
 });
