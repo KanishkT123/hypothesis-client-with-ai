@@ -338,22 +338,14 @@ describe('sidebar/helpers/thread-annotations', () => {
         );
       });
 
-      it('hides annotations matching hidden AI search rows', () => {
+      it('hides annotations whose IDs are in hiddenAnnotationIds', () => {
         const hiddenAnn = annotationFixtures.defaultAnnotation();
+        hiddenAnn.id = 'hidden-ann-id';
         hiddenAnn.uri = 'http://example.com/doc.pdf';
         hiddenAnn.tags = ['methods', 'ai-user-approved'];
         hiddenAnn.text = 'find it';
-        hiddenAnn.target = [
-          {
-            source: hiddenAnn.uri,
-            selector: [{ type: 'TextQuoteSelector', exact: 'quote text' }],
-          },
-        ];
 
-        fakeThreadState.hiddenTagInventoryRows = [
-          { schemaTag: 'methods', query: 'find it' },
-        ];
-        fakeThreadState.documentUri = 'http://example.com/doc.pdf';
+        fakeThreadState.hiddenAnnotationIds = new Set(['hidden-ann-id']);
 
         threadAnnotations(fakeThreadState);
 
@@ -362,22 +354,14 @@ describe('sidebar/helpers/thread-annotations', () => {
         assert.isFalse(filterFn(hiddenAnn));
       });
 
-      it('does not hide annotations when hidden row tag differs', () => {
+      it('does not hide annotations when ID is not in hiddenAnnotationIds', () => {
         const ann = annotationFixtures.defaultAnnotation();
+        ann.id = 'visible-ann-id';
         ann.uri = 'http://example.com/doc.pdf';
         ann.tags = ['results', 'ai-user-approved'];
         ann.text = 'find it';
-        ann.target = [
-          {
-            source: ann.uri,
-            selector: [{ type: 'TextQuoteSelector', exact: 'quote text' }],
-          },
-        ];
 
-        fakeThreadState.hiddenTagInventoryRows = [
-          { schemaTag: 'methods', query: 'find it' },
-        ];
-        fakeThreadState.documentUri = 'http://example.com/doc.pdf';
+        fakeThreadState.hiddenAnnotationIds = new Set(['other-ann-id']);
 
         threadAnnotations(fakeThreadState);
 

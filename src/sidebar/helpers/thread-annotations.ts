@@ -1,9 +1,7 @@
-import type { Annotation, SavedAnnotation } from '../../types/api';
+import type { Annotation } from '../../types/api';
 import type { TabName } from '../../types/sidebar';
 import { memoize } from '../util/memoize';
 import { isWaitingToAnchor } from './annotation-metadata';
-import type { HiddenTagInventoryRowMatch } from './claude-ai-search-user-message';
-import { annotationMatchesHiddenTagInventoryRow } from './claude-ai-search-user-message';
 import { buildThread } from './build-thread';
 import type { Thread, BuildThreadOptions } from './build-thread';
 import { filterAnnotations } from './filter-annotations';
@@ -26,14 +24,8 @@ export type ThreadState = {
     selectedTab: 'annotation' | 'note' | 'orphan';
   };
 
-  /** Hidden AI search rows visible in the focused group (thread-list filter). */
-  hiddenTagInventoryRows?: HiddenTagInventoryRowMatch[];
-
-  /** Current document URI for hidden-row matching. */
-  documentUri?: string | null;
-
-  /** URI aliases for hidden-row document matching (e.g. URN + HTTPS). */
-  documentUriAliases?: readonly string[];
+  /** Annotation IDs from hidden inventory rows (thread-list filter). */
+  hiddenAnnotationIds?: ReadonlySet<string>;
 };
 
 export type ThreadAnnotationsResult = {
@@ -104,20 +96,11 @@ function threadAnnotationsImpl(
     }
   }
 
-  const hiddenRows = threadState.hiddenTagInventoryRows ?? [];
-  const documentUri = threadState.documentUri;
-  const documentUriAliases = threadState.documentUriAliases ?? [];
-  if (hiddenRows.length > 0 && documentUri) {
+  const hiddenIds = threadState.hiddenAnnotationIds;
+  if (hiddenIds && hiddenIds.size > 0) {
     const priorFilterFn = options.filterFn;
     options.filterFn = ann => {
-      if (
-        annotationMatchesHiddenTagInventoryRow(
-          ann as SavedAnnotation,
-          documentUri,
-          hiddenRows,
-          documentUriAliases,
-        )
-      ) {
+      if (ann.id && hiddenIds.has(ann.id)) {
         return false;
       }
       return priorFilterFn ? priorFilterFn(ann) : true;

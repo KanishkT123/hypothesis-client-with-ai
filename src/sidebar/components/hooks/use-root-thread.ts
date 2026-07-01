@@ -1,7 +1,7 @@
 import { useMemo } from 'preact/hooks';
 
-import { currentDocumentUri, documentUriAliases } from '../../helpers/document-uri';
-import { isTagInventoryRowVisibleInScope } from '../../helpers/tag-inventory-group';
+import { resolveDocumentUriFromCandidates, documentUriAliases } from '../../helpers/document-uri';
+import { computeTagInventoryHighlightState } from '../../helpers/tag-palette';
 import { threadAnnotations } from '../../helpers/thread-annotations';
 import type {
   ThreadAnnotationsResult,
@@ -23,34 +23,25 @@ export function useRootThread(): ThreadAnnotationsResult {
   const showTabs = route === 'sidebar';
   const focusedGroupId = store.focusedGroupId();
   const tagInventoryRows = store.tagInventoryRows();
-  const documentUri = currentDocumentUri(store);
   const uriAliases = documentUriAliases(store);
+  const documentUri = resolveDocumentUriFromCandidates(store, [...uriAliases]);
 
   const threadState = useMemo((): ThreadState => {
     const selection = { ...selectionState, filterQuery: query, filters };
-    const hiddenTagInventoryRows = focusedGroupId
-      ? tagInventoryRows
-          .filter(
-            row =>
-              row.hidden &&
-              isTagInventoryRowVisibleInScope(row, {
-                focusedGroupId,
-                currentDocumentUri: documentUri,
-                documentUriAliases: uriAliases,
-              }),
-          )
-          .map(row => ({
-            schemaTag: row.schemaTag,
-            query: row.query,
-          }))
-      : [];
+    const hiddenAnnotationIds = focusedGroupId
+      ? new Set(
+          computeTagInventoryHighlightState(tagInventoryRows, {
+            focusedGroupId,
+            currentDocumentUri: documentUri,
+            documentUriAliases: uriAliases,
+          }).hiddenAnnotationIds,
+        )
+      : new Set<string>();
     return {
       annotations,
       selection,
       showTabs,
-      hiddenTagInventoryRows,
-      documentUri,
-      documentUriAliases: uriAliases,
+      hiddenAnnotationIds,
     };
   }, [
     selectionState,
