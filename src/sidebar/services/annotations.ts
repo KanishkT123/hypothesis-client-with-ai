@@ -13,8 +13,15 @@ import {
   retagAllPositiveSchemaTagsAsNegative,
   retagOneNegativeSchemaTagAsPositive,
   retagOnePositiveSchemaTagAsNegative,
+  positiveSchemaTags,
 } from '../helpers/tag-inventory-group';
 import * as metadata from '../helpers/annotation-metadata';
+import {
+  enrichPdfQuoteDisplayExact,
+  hasPendingPdfLineBreakHyphens,
+  preserveClientPdfQuoteDisplay,
+  stripClientOnlyPdfQuoteFields,
+} from '../helpers/pdf-quote-display';
 import type { UserItem } from '../helpers/mention-suggestions';
 import { wrapDisplayNameMentions, wrapMentions } from '../helpers/mentions';
 import {
@@ -27,6 +34,7 @@ import type { SidebarStore } from '../store';
 import type { AnnotationActivityService } from './annotation-activity';
 import type { TagInventoryGroupSyncService } from './tag-inventory-group-sync';
 import type { APIService } from './api';
+import type { ClaudeService } from './claude';
 import type { ExperimentLogService } from './experiment-log';
 
 export type MentionsOptions =
@@ -51,6 +59,7 @@ export class AnnotationsService {
   private _activity: AnnotationActivityService;
   private _tagInventoryGroupSync: TagInventoryGroupSyncService;
   private _api: APIService;
+  private _claude: ClaudeService;
   private _experimentLog: ExperimentLogService;
   private _settings: SidebarSettings;
   private _store: SidebarStore;
@@ -59,6 +68,7 @@ export class AnnotationsService {
     annotationActivity: AnnotationActivityService,
     tagInventoryGroupSync: TagInventoryGroupSyncService,
     api: APIService,
+    claude: ClaudeService,
     experimentLog: ExperimentLogService,
     settings: SidebarSettings,
     store: SidebarStore,
@@ -66,6 +76,7 @@ export class AnnotationsService {
     this._activity = annotationActivity;
     this._tagInventoryGroupSync = tagInventoryGroupSync;
     this._api = api;
+    this._claude = claude;
     this._experimentLog = experimentLog;
     this._settings = settings;
     this._store = store;
@@ -252,12 +263,20 @@ export class AnnotationsService {
    */
   async delete(
     annotation: SavedAnnotation,
-    opts?: { skipExperimentLog?: boolean },
+    opts?: {
+      skipExperimentLog?: boolean;
+      skipInventorySync?: boolean;
+      deferStoreUpdate?: boolean;
+    },
   ) {
     await this._api.annotation.delete({ id: annotation.id });
     this._activity.reportActivity('delete', annotation);
-    this._store.removeAnnotations([annotation]);
-    void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
+    if (!opts?.deferStoreUpdate) {
+      this._store.removeAnnotations([annotation]);
+    }
+    if (!opts?.skipInventorySync) {
+      void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
+    }
 
     if (!opts?.skipExperimentLog) {
       const tags = annotation.tags ?? [];
@@ -319,6 +338,55 @@ export class AnnotationsService {
       mentionsOptions,
     );
 
+    const pendingHyphens = hasPendingPdfLineBreakHyphens(annotationWithChanges);
+    const hasClaudeKey = this._claude.apiKey().trim().length > 0;
+
+    if (pendingHyphens && hasClaudeKey) {
+      await enrichPdfQuoteDisplayExact(
+        annotationWithChanges,
+        this._claude,
+      );
+    }
+    stripClientOnlyPdfQuoteFields(annotationWithChanges);
+
+    const AI_PENDING = 'ai-pending';
+    const AI_USER_APPROVED = 'ai-user-approved';
+    const norm = (value: string) => value.trim();
+
+    let reclassifyLog:
+      | {
+          reason: 'text-change' | 'schema-tag-removed';
+          removedSchemaTags?: string[];
+        }
+      | undefined;
+
+    if (metadata.isSaved(annotation)) {
+      const preTags = annotation.tags ?? [];
+      const hadAiTag =
+        preTags.includes(AI_PENDING) || preTags.includes(AI_USER_APPROVED);
+      if (hadAiTag) {
+        const prePositive = positiveSchemaTags(preTags);
+        const postPositive = positiveSchemaTags(annotationWithChanges.tags ?? []);
+        const textChanged =
+          norm(annotation.text ?? '') !== norm(annotationWithChanges.text ?? '');
+        const removedSchemaTags = prePositive.filter(
+          tag => !postPositive.includes(tag),
+        );
+        const schemaTagRemoved = removedSchemaTags.length > 0;
+
+        if (textChanged || schemaTagRemoved) {
+          const postTags = annotationWithChanges.tags ?? [];
+          annotationWithChanges.tags = postTags.filter(
+            t => t !== AI_PENDING && t !== AI_USER_APPROVED,
+          );
+          reclassifyLog = {
+            reason: textChanged ? 'text-change' : 'schema-tag-removed',
+            ...(schemaTagRemoved ? { removedSchemaTags } : {}),
+          };
+        }
+      }
+    }
+
     if (!metadata.isSaved(annotation)) {
       saved = this._api.annotation.create({}, annotationWithChanges);
       eventType = 'create';
@@ -339,6 +407,8 @@ export class AnnotationsService {
       this._store.annotationSaveFinished(annotation);
     }
 
+    preserveClientPdfQuoteDisplay(savedAnnotation, annotationWithChanges);
+
     // Copy local/internal fields from the original annotation to the saved
     // version.
     for (const [key, value] of Object.entries(annotation)) {
@@ -353,6 +423,25 @@ export class AnnotationsService {
 
     // Add (or, in effect, update) the annotation to the store's collection
     this._store.addAnnotations([savedAnnotation]);
+
+    if (reclassifyLog && metadata.isSaved(savedAnnotation) && savedAnnotation.id) {
+      const preTags = annotation.tags ?? [];
+      const schemaTag =
+        positiveSchemaTags(preTags)[0] ??
+        positiveSchemaTags(savedAnnotation.tags ?? [])[0] ??
+        '';
+      this._experimentLog.logReclassifyAsManual({
+        annotationId: savedAnnotation.id,
+        documentUri: savedAnnotation.uri,
+        schemaTag,
+        originalQuery: norm(annotation.text ?? ''),
+        newText: norm(savedAnnotation.text ?? ''),
+        quoteText: metadata.quote(savedAnnotation) ?? '',
+        reason: reclassifyLog.reason,
+        removedSchemaTags: reclassifyLog.removedSchemaTags,
+      });
+    }
+
     void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
     return savedAnnotation;
   }
