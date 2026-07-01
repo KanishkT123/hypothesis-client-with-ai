@@ -11,12 +11,18 @@ const runs = new Map<string, RunEntry>();
 
 /**
  * Register a Claude run immediately before AISearchDocument; call `finish` in `finally` after await.
+ *
+ * Returns `null` when another Claude request is already in flight.
  */
 export function registerClaudeRun(): {
   runId: string;
   signal: AbortSignal;
   finish: () => void;
-} {
+} | null {
+  if (runs.size > 0) {
+    return null;
+  }
+
   const runId = crypto.randomUUID();
   const controller = new AbortController();
   runs.set(runId, { controller });

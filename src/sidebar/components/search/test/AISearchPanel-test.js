@@ -7,6 +7,7 @@ import AISearchPanel, { $imports } from '../AISearchPanel';
 describe('AISearchPanel', () => {
   let fakeStore;
   let fakeTagInventoryGroupSync;
+  let fakePersistedTagInventory;
 
   beforeEach(() => {
     fakeStore = {
@@ -31,6 +32,11 @@ describe('AISearchPanel', () => {
 
     fakeTagInventoryGroupSync = {
       getGroupAnnotations: sinon.stub().resolves([]),
+      runWithDeferredInventorySync: sinon.stub().callsFake(work => work()),
+    };
+
+    fakePersistedTagInventory = {
+      runWithDeferredPersist: sinon.stub().callsFake(work => work()),
     };
 
     $imports.$mock(mockImportedComponents());
@@ -55,6 +61,7 @@ describe('AISearchPanel', () => {
         api={{}}
         toastMessenger={{}}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
       />,
     );
   }
@@ -174,6 +181,7 @@ describe('AISearchPanel', () => {
         api={{}}
         toastMessenger={fakeToastMessenger}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
       />,
     );
 
@@ -210,6 +218,7 @@ describe('AISearchPanel', () => {
         api={{}}
         toastMessenger={fakeToastMessenger}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
       />,
     );
 
@@ -217,7 +226,102 @@ describe('AISearchPanel', () => {
 
     assert.calledWith(
       fakeClaude.AISearchDocument,
-      sinon.match({ documentUri: 'http://example.com/paper.pdf' }),
+      sinon.match({ documentUri: 'https://example.com/paper.pdf' }),
+    );
+  });
+
+  it('retries with PDF bytes when Claude cannot download the document URL', async () => {
+    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.mainFrame = sinon.stub().returns({ uri: 'urn:x-pdf:abc' });
+    fakeStore.searchUris = sinon
+      .stub()
+      .returns(['urn:x-pdf:abc', 'https://dl.acm.org/doi/pdf/10.1145/example']);
+    fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+    const downloadError = new Error(
+      'Failed to extract quotes from document: 400 {"error":{"message":"Unable to download the file. Please verify the URL and try again."}}',
+    );
+    const fakeClaude = {
+      apiKey: sinon.stub().returns('test-key'),
+      AISearchDocument: sinon
+        .stub()
+        .onFirstCall()
+        .rejects(downloadError)
+        .onSecondCall()
+        .rejects(new Error('stop after retry')),
+    };
+    const fakeFrameSync = {
+      setTagHighlightPalette: sinon.stub(),
+      getPdfBytes: sinon.stub().resolves('base64-pdf-bytes'),
+    };
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={{}}
+        experimentLog={{}}
+        frameSync={fakeFrameSync}
+        claude={fakeClaude}
+        api={{}}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
+      />,
+    );
+
+    await wrapper.find('SearchField').props().onSearch('find methods');
+
+    assert.calledTwice(fakeClaude.AISearchDocument);
+    assert.calledWith(
+      fakeClaude.AISearchDocument.firstCall,
+      sinon.match({
+        documentUri: 'https://dl.acm.org/doi/pdf/10.1145/example',
+      }),
+    );
+    assert.calledWith(
+      fakeClaude.AISearchDocument.secondCall,
+      sinon.match({ documentPdfBase64: 'base64-pdf-bytes' }),
+    );
+    assert.calledOnce(fakeFrameSync.getPdfBytes);
+  });
+
+  it('passes the HTTPS PDF alias to Claude when the frame URI is a URN', async () => {
+    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.mainFrame = sinon.stub().returns({ uri: 'urn:x-pdf:abc' });
+    fakeStore.searchUris = sinon
+      .stub()
+      .returns(['urn:x-pdf:abc', 'https://example.com/paper.pdf']);
+    fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+    const fakeClaude = {
+      AISearchDocument: sinon.stub().rejects(new Error('stop after claude')),
+    };
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={{}}
+        experimentLog={{}}
+        frameSync={{ setTagHighlightPalette: sinon.stub() }}
+        claude={fakeClaude}
+        api={{}}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
+      />,
+    );
+
+    await wrapper.find('SearchField').props().onSearch('find methods');
+
+    assert.calledWith(
+      fakeClaude.AISearchDocument,
+      sinon.match({ documentUri: 'https://example.com/paper.pdf' }),
     );
   });
 
@@ -260,6 +364,7 @@ describe('AISearchPanel', () => {
         api={{}}
         toastMessenger={fakeToastMessenger}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
       />,
     );
 

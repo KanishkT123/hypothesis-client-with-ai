@@ -25,37 +25,43 @@ import {
   collectPositiveExamplesFromAnnotations,
   countAiSearchQuotesSkippedAsDuplicates,
   countTagInventoryRowPendingAnnotations,
-  countTagInventoryRowTotalAnnotations,
   deleteAllActionForTagInventoryRowMatch,
   expectedTagsForStrictAISearchPending,
   filterAiSearchQuotesAgainstExisting,
-  listSavedAnnotationsMatchingTagInventoryRow,
   listStrictTagInventoryRowPendingAnnotations,
   tagsAfterRemovingTagInventoryRowSchemaTag,
 } from '../../helpers/claude-ai-search-user-message';
 import { quote as annotationQuote } from '../../helpers/annotation-metadata';
-import { currentDocumentUri, documentUriAliases } from '../../helpers/document-uri';
-import { mergeVisibleTagHighlightPalette } from '../../helpers/tag-palette';
 import {
+  claudeAccessibleDocumentUri,
+  documentUriAliases,
+  filterSavedAnnotationsForDocument,
+  resolveDocumentUriFromCandidates,
+} from '../../helpers/document-uri';
+import { pushTagPalette } from '../../services/tag-palette-sync';
+import {
+  countAnnotationsForTagInventoryRow,
+  isNegativeSchemaTag,
   isTagInventoryRowVisibleInScope,
+  listAnnotationsForTagInventoryRow,
   sortTagInventoryRows,
 } from '../../helpers/tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../../helpers/groups';
 import { formatSidebarTagFilter } from '../../helpers/filter-query-for-tag';
 import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
-import {
-  savedAnnotationsForCurrentDocument,
-  type TagInventoryGroupSyncService,
-} from '../../services/tag-inventory-group-sync';
+import type { TagInventoryGroupSyncService } from '../../services/tag-inventory-group-sync';
+import { savedAnnotationsForCurrentDocument } from '../../services/tag-inventory-group-sync';
+import type { PersistedTagInventoryService } from '../../services/persisted-tag-inventory';
 import type { ExperimentLogService } from '../../services/experiment-log';
 import type { SavedAnnotation } from '../../../types/api';
 import type { AnnotationsService } from '../../services/annotations';
 import type { APIService } from '../../services/api';
 import type { FrameSyncService } from '../../services/frame-sync';
-import type {
-  ClaudeSearchResult,
-  ClaudeService,
+import {
+  isClaudeDocumentDownloadError,
+  type ClaudeSearchResult,
+  type ClaudeService,
 } from '../../services/claude';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
@@ -66,6 +72,11 @@ import {
 import SidebarPanel from '../SidebarPanel';
 import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
 import SearchField from './SearchField';
+import {
+  createRateLimitCoordinator,
+  isRateLimitFetchError,
+  retryOnRateLimit,
+} from '../../util/retry-on-rate-limit';
 
 function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
@@ -88,6 +99,39 @@ function emitThrottledProgress(
   }
 }
 
+/**
+ * Parallel H API delete/update requests during delete-all. Store updates are
+ * deferred until API work finishes so frame-sync does not block the event loop.
+ */
+const DELETE_ALL_MAX_CONCURRENCY = 20;
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) {
+        return;
+      }
+      results[index] = await fn(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+  return results;
+}
+
 function formatClaudeWaitElapsed(anchorMs: number, nowMs: number): string {
   const elapsedSec = Math.max(0, Math.floor((nowMs - anchorMs) / 1000));
   const m = Math.floor(elapsedSec / 60);
@@ -102,6 +146,24 @@ const aiSearchHistoryActionButtonClass =
 const aiSearchRerunButtonHelpText =
   'Delete all pending suggestions for this tag and query, then re-run the AI search using updated positive and negative annotation examples from all tags on this document.';
 
+function deleteAllConfirmMessage(row: TagInventoryRow): string {
+  const tag = row.schemaTag.trim();
+  const query = row.query.trim();
+  const patchNote =
+    'Annotations with other tags keep those tags; annotations that only have this row’s tag (plus ai-pending / ai-user-approved) are deleted entirely.';
+
+  if (tag && isNegativeSchemaTag(tag)) {
+    return `Deletes or untags negative examples for ${tag} on this document (same set as the Total column). ${patchNote}`;
+  }
+  if (query) {
+    return `Deletes or untags pending and approved AI annotations for this search query on this document (same set as the Total column). Manual highlights tagged ${tag} are not affected. ${patchNote}`;
+  }
+  if (tag) {
+    return `Deletes or untags manual highlights tagged ${tag} on this document (same set as the Total column). AI pending/approved suggestions for specific queries are not affected. ${patchNote}`;
+  }
+  return `Matching annotations on this document are deleted entirely (same set as the Total column).`;
+}
+
 type AISearchPanelProps = {
   annotationsService: AnnotationsService;
   experimentLog: ExperimentLogService;
@@ -110,6 +172,7 @@ type AISearchPanelProps = {
   api: APIService;
   toastMessenger: ToastMessengerService;
   tagInventoryGroupSync: TagInventoryGroupSyncService;
+  persistedTagInventory: PersistedTagInventoryService;
 };
 
 function AISearchPanel({
@@ -120,6 +183,7 @@ function AISearchPanel({
   api,
   toastMessenger,
   tagInventoryGroupSync,
+  persistedTagInventory,
 }: AISearchPanelProps) {
   const store = useSidebarStore();
   /** AI prompt text only; not the global sidebar filter query (see setFilterQuery). */
@@ -130,8 +194,15 @@ function AISearchPanel({
   const schemaTag = store.aiSearchPanelSchemaTagInput();
   const annotateManually = store.aiSearchPanelAnnotateManually();
   const [deletingRowId, setDeletingRowId] = useState<string | null>(null);
+  /** Live Total column during delete-all without per-delete store dispatches. */
+  const [deleteAllRemaining, setDeleteAllRemaining] = useState<{
+    rowId: string;
+    remaining: number;
+  } | null>(null);
   const [rerunningRowId, setRerunningRowId] = useState<string | null>(null);
   const rerunLockRef = useRef(false);
+  /** Synchronous guard against overlapping runAISearch calls (state updates are async). */
+  const searchInFlightRef = useRef(false);
   /** Wall time when the current Claude API request started; drives panel timer + Stop. */
   const [claudeRunStartedAt, setClaudeRunStartedAt] = useState<number | null>(
     null,
@@ -146,8 +217,10 @@ function AISearchPanel({
   const focusedGroupId = store.focusedGroupId();
   const savedAnnotations = store.savedAnnotations();
   const schemaTagColors = store.tagInventorySchemaTagColors();
-  const documentUri = currentDocumentUri(store);
   const uriAliases = documentUriAliases(store);
+  const claudeDocumentUri = claudeAccessibleDocumentUri(store);
+  /** Stable URI for inventory scope, counts, and palette (ignores stray frame URIs). */
+  const documentUri = resolveDocumentUriFromCandidates(store, [...uriAliases]);
 
   const globalRowLock =
     runAISearchInFlight ||
@@ -175,11 +248,40 @@ function AISearchPanel({
       ),
     [scopedRows, showHiddenRows],
   );
+  const isPublicGroup = focusedGroupId === PUBLIC_GROUP_ID;
+  const annotationsForInventoryCount = useMemo(() => {
+    if (!focusedGroupId) {
+      return savedAnnotations;
+    }
+    if (isPublicGroup) {
+      return filterSavedAnnotationsForDocument(
+        savedAnnotations,
+        focusedGroupId,
+        uriAliases,
+      );
+    }
+    const cached = tagInventoryGroupSync.cachedGroupAnnotations(focusedGroupId);
+    if (!cached) {
+      return savedAnnotations;
+    }
+    const byId = new Map<string, SavedAnnotation>();
+    for (const ann of savedAnnotations) {
+      if (ann.id) {
+        byId.set(ann.id, ann);
+      }
+    }
+    for (const ann of cached) {
+      if (ann.id && !byId.has(ann.id)) {
+        byId.set(ann.id, ann);
+      }
+    }
+    return [...byId.values()];
+  }, [savedAnnotations, focusedGroupId, isPublicGroup, tagInventoryGroupSync]);
   const hasAnyHiddenRows = useMemo(
     () => scopedRows.some(r => r.hidden === true),
     [scopedRows],
   );
-  const isPublicGroup = focusedGroupId === PUBLIC_GROUP_ID;
+
   /** Private groups can always refresh, even before any rows exist. */
   const canRefreshGroupTags = !isPublicGroup && !!focusedGroupId;
   const showHistorySection = scopedRows.length > 0;
@@ -249,7 +351,15 @@ function AISearchPanel({
     query: string,
     options?: { isRerun?: boolean },
   ) {
-    setRunAISearchInFlight(true);
+    const ownedByRerun = searchInFlightRef.current && !!options?.isRerun;
+    if (searchInFlightRef.current && !ownedByRerun) {
+      return;
+    }
+    const acquiredLockHere = !searchInFlightRef.current;
+    if (acquiredLockHere) {
+      searchInFlightRef.current = true;
+      setRunAISearchInFlight(true);
+    }
     try {
       const userid = store.profile().userid;
       const groupId = store.focusedGroupId();
@@ -265,6 +375,12 @@ function AISearchPanel({
       if (!documentUri) {
         toastMessenger.error(
           'No document URL — Hypothesis may not be connected to this page.',
+        );
+        return;
+      }
+      if (!claudeDocumentUri) {
+        toastMessenger.error(
+          'No downloadable document URL found for AI search.',
         );
         return;
       }
@@ -305,18 +421,49 @@ function AISearchPanel({
         negativeExamples,
       });
 
-      const { signal, finish } = registerClaudeRun();
+      const claudeRun = registerClaudeRun();
+      if (!claudeRun) {
+        toastMessenger.notice('AI search already in progress.');
+        return;
+      }
+      const { signal, finish } = claudeRun;
       setClaudeRunStartedAt(Date.now());
       let claudeResult: ClaudeSearchResult;
+      const isPdfDocument = uriAliases.some(u => u.startsWith('urn:x-pdf:'));
+      const claudeRequestBase = {
+        query: fullUserMessage,
+        apiKey: claude.apiKey(),
+        signal,
+      };
       try {
         toastMessenger.notice('Waiting on model');
-        // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
-        claudeResult = await claude.AISearchDocument({
-          query: fullUserMessage,
-          documentUri: documentUri ?? '',
-          apiKey: claudeAPIKey,
-          signal,
-        });
+        try {
+          // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
+          claudeResult = await claude.AISearchDocument({
+            ...claudeRequestBase,
+            documentUri: claudeDocumentUri,
+          });
+        } catch (urlError) {
+          if (!isPdfDocument || !isClaudeDocumentDownloadError(urlError)) {
+            throw urlError;
+          }
+          toastMessenger.notice('Uploading PDF from browser…');
+          let documentPdfBase64: string;
+          try {
+            documentPdfBase64 = await frameSync.getPdfBytes();
+          } catch (bytesError) {
+            console.warn(
+              '[AISearch] Claude could not download URL and guest PDF read failed',
+              bytesError,
+            );
+            throw urlError;
+          }
+          // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
+          claudeResult = await claude.AISearchDocument({
+            ...claudeRequestBase,
+            documentPdfBase64,
+          });
+        }
       } finally {
         finish();
         setClaudeRunStartedAt(null);
@@ -402,6 +549,8 @@ function AISearchPanel({
         quoteTexts: created.map(a => annotationQuote(a) ?? ''),
       });
 
+      void tagInventoryGroupSync.applyStoreAnnotationsToInventory();
+
       let successMsg = `Created ${created.length} annotation(s) from AI results.`;
       if (skippedDuplicate > 0) {
         successMsg += ` Skipped ${skippedDuplicate} already covered.`;
@@ -418,11 +567,17 @@ function AISearchPanel({
           : 'Failed to create annotations from AI results.';
       toastMessenger.error(message);
     } finally {
-      setRunAISearchInFlight(false);
+      if (acquiredLockHere) {
+        searchInFlightRef.current = false;
+        setRunAISearchInFlight(false);
+      }
     }
   }
 
   async function onAISearch(query: string) {
+    if (searchInFlightRef.current || rerunLockRef.current) {
+      return;
+    }
     const docUri = focusedGroupId === PUBLIC_GROUP_ID ? documentUri : undefined;
     const targetId = tagInventoryRowId(schemaTag, query, focusedGroupId ?? undefined, docUri ?? undefined);
     const matchingRow = aiRows.find(r => r.id === targetId);
@@ -434,14 +589,18 @@ function AISearchPanel({
   }
 
   async function onRerunRow(row: TagInventoryRow) {
-    if (rerunLockRef.current) {
+    if (rerunLockRef.current || searchInFlightRef.current) {
       return;
     }
     rerunLockRef.current = true;
+    searchInFlightRef.current = true;
+    setRunAISearchInFlight(true);
     try {
       const userid = store.profile().userid;
       const groupId = store.focusedGroupId();
-      const documentUri = currentDocumentUri(store);
+      const documentUri = resolveDocumentUriFromCandidates(store, [
+        ...documentUriAliases(store),
+      ]);
 
       if (!userid) {
         toastMessenger.error('Not signed in — please sign in to use AI search.');
@@ -504,6 +663,8 @@ function AISearchPanel({
       }
     } finally {
       rerunLockRef.current = false;
+      searchInFlightRef.current = false;
+      setRunAISearchInFlight(false);
     }
   }
 
@@ -560,81 +721,171 @@ function AISearchPanel({
   }
 
   async function onDeleteAll(row: TagInventoryRow) {
-    if (!documentUri) {
+    if (!documentUri || !focusedGroupId) {
       toastMessenger.error('Missing PDF URL');
       return;
     }
 
     const confirmed = await confirm({
       title: 'Delete all for this tag and query?',
-      message:
-        'This removes this row’s schema tag from annotations that still have other tags, or fully deletes annotations that only have this tag (plus ai-pending / ai-user-approved). For rows with no schema tag, matching annotations are deleted entirely. This affects pending, user-approved, and other matching annotations on this document.',
+      message: deleteAllConfirmMessage(row),
       confirmAction: 'Delete all',
     });
     if (!confirmed) {
       return;
     }
 
-    setDeletingRowId(row.id);
-    try {
-      const matches = listSavedAnnotationsMatchingTagInventoryRow(
-        savedAnnotations as SavedAnnotation[],
+    const matches = listAnnotationsForTagInventoryRow(
+      annotationsForInventoryCount,
+      row,
+      {
+        focusedGroupId,
         documentUri,
-        row.schemaTag,
-        row.query,
-        uriAliases,
-      );
+        documentUriAliases: uriAliases,
+      },
+    );
+
+    setDeletingRowId(row.id);
+    setDeleteAllRemaining(null);
+    try {
       const schemaTrim = row.schemaTag.trim();
-      const touchedIds: string[] = [];
       let skippedOrFailedCount = 0;
+      let rateLimitedCount = 0;
+      let deletedCount = 0;
+      const expectedCount = matches.filter(m => m.id).length;
+      const rateLimitCoordinator = createRateLimitCoordinator();
+      const batchRemoved: SavedAnnotation[] = [];
+      const batchUpdated: SavedAnnotation[] = [];
+      const batchRowIds: string[] = [];
 
-      for (const ann of matches) {
-        if (!ann.id) {
-          continue;
-        }
-        const action = deleteAllActionForTagInventoryRowMatch(ann, schemaTrim);
-        try {
-          if (action === 'removeRowTag') {
-            const newTags = tagsAfterRemovingTagInventoryRowSchemaTag(
-              ann.tags,
-              schemaTrim,
-            );
-            let updated = await api.annotation.update(
-              { id: ann.id },
-              { tags: newTags },
-            );
-            for (const [key, value] of Object.entries(ann)) {
-              if (key.startsWith('$')) {
-                updated = { ...updated, [key]: value };
-              }
-            }
-            store.addAnnotations([updated]);
-            touchedIds.push(ann.id);
-          } else {
-            await annotationsService.delete(ann as SavedAnnotation);
-            touchedIds.push(ann.id);
-          }
-        } catch (err) {
-          skippedOrFailedCount += 1;
-          console.error('Failed to apply delete-all action for annotation:', err);
-        }
+      if (expectedCount > 0) {
+        setDeleteAllRemaining({ rowId: row.id, remaining: expectedCount });
       }
 
-      if (touchedIds.length) {
-        store.removeAnnotationIdsFromTagInventoryRows(touchedIds);
-      }
-      store.removeTagInventoryRow(row.id);
+      const flushDeleteAllStoreBatch = () => {
+        if (
+          batchRemoved.length === 0 &&
+          batchUpdated.length === 0 &&
+          batchRowIds.length === 0
+        ) {
+          return;
+        }
+        if (batchUpdated.length) {
+          store.addAnnotations(batchUpdated.splice(0));
+        }
+        if (batchRemoved.length) {
+          store.removeAnnotations(batchRemoved.splice(0));
+        }
+        if (batchRowIds.length) {
+          store.removeAnnotationIdsFromTagInventoryRows(batchRowIds.splice(0));
+        }
+      };
 
-      experimentLog.logDeleteAll({
-        searchRowId: row.id,
-        query: row.query,
-        schemaTag: row.schemaTag,
-        documentUri: documentUri,
-      });
-
-      if (skippedOrFailedCount > 0) {
+      if (matches.length > 0) {
         toastMessenger.notice(
-          `Removed row. Skipped ${skippedOrFailedCount} matching annotation(s) that could not be modified.`,
+          `Deleting ${matches.length} annotation${matches.length === 1 ? '' : 's'}…`,
+        );
+      }
+
+      await persistedTagInventory.runWithDeferredPersist(() =>
+        tagInventoryGroupSync.runWithDeferredInventorySync(async () => {
+          await mapWithConcurrency(
+            matches,
+            Math.min(DELETE_ALL_MAX_CONCURRENCY, matches.length),
+            async ann => {
+              if (!ann.id) {
+                return false;
+              }
+              const action = deleteAllActionForTagInventoryRowMatch(
+                ann,
+                schemaTrim,
+              );
+              const retryOpts = { coordinator: rateLimitCoordinator };
+              try {
+                if (action === 'removeRowTag') {
+                  const newTags = tagsAfterRemovingTagInventoryRowSchemaTag(
+                    ann.tags,
+                    schemaTrim,
+                  );
+                  let updated = await retryOnRateLimit(
+                    () =>
+                      api.annotation.update(
+                        { id: ann.id },
+                        { tags: newTags },
+                      ),
+                    retryOpts,
+                  );
+                  for (const [key, value] of Object.entries(ann)) {
+                    if (key.startsWith('$')) {
+                      updated = { ...updated, [key]: value };
+                    }
+                  }
+                  batchUpdated.push(updated as SavedAnnotation);
+                } else {
+                  await retryOnRateLimit(
+                    () => api.annotation.delete({ id: ann.id }),
+                    retryOpts,
+                  );
+                  batchRemoved.push(ann as SavedAnnotation);
+                }
+                batchRowIds.push(ann.id);
+                deletedCount += 1;
+                const remaining = expectedCount - deletedCount;
+                if (
+                  deletedCount === 1 ||
+                  deletedCount === expectedCount ||
+                  deletedCount % 8 === 0
+                ) {
+                  setDeleteAllRemaining({ rowId: row.id, remaining });
+                }
+                return true;
+              } catch (err) {
+                if (isRateLimitFetchError(err)) {
+                  rateLimitedCount += 1;
+                } else {
+                  skippedOrFailedCount += 1;
+                }
+                console.error(
+                  'Failed to apply delete-all action for annotation:',
+                  err,
+                );
+                return false;
+              }
+            },
+          );
+
+          flushDeleteAllStoreBatch();
+
+          const allSucceeded = deletedCount === expectedCount;
+          if (allSucceeded) {
+            store.removeTagInventoryRow(row.id);
+          }
+        }),
+      );
+
+      const allSucceeded = deletedCount === expectedCount;
+
+      if (allSucceeded) {
+        experimentLog.logDeleteAll({
+          searchRowId: row.id,
+          query: row.query,
+          schemaTag: row.schemaTag,
+          documentUri: documentUri,
+        });
+      }
+
+      if (rateLimitedCount > 0) {
+        toastMessenger.error(
+          'Rate limited — some annotations were not deleted. Wait a minute and try again.',
+        );
+        if (deletedCount > 0) {
+          toastMessenger.notice(
+            `Deleted ${deletedCount} of ${expectedCount} annotation(s). The row was kept.`,
+          );
+        }
+      } else if (skippedOrFailedCount > 0) {
+        toastMessenger.notice(
+          `Deleted ${deletedCount} of ${expectedCount} annotation(s). ${skippedOrFailedCount} could not be modified. The row was kept.`,
         );
       } else {
         toastMessenger.success('AI search row removed.');
@@ -644,6 +895,7 @@ function AISearchPanel({
       toastMessenger.error('Failed to complete delete all.');
     } finally {
       setDeletingRowId(null);
+      setDeleteAllRemaining(null);
     }
   }
 
@@ -667,12 +919,7 @@ function AISearchPanel({
           store.setFilterQuery(null);
           store.setAISearchPanelQueryInput(null);
         } else {
-          frameSync.setTagHighlightPalette(
-            mergeVisibleTagHighlightPalette(
-              store.tagInventoryRows(),
-              store.tagInventorySchemaTagColors(),
-            ),
-          );
+          pushTagPalette(frameSync, store);
         }
       }}
     >
@@ -688,9 +935,11 @@ function AISearchPanel({
               placeholder="CLAUDE_API_KEY"
               type="password"
               value={claudeAPIKey}
-              onInput={(e: Event) =>
-                setClaudeAPIKey((e.target as HTMLInputElement).value)
-              }
+              onInput={(e: Event) => {
+                const value = (e.target as HTMLInputElement).value;
+                setClaudeAPIKey(value);
+                claude.setApiKey(value);
+              }}
             />
             <Input
               aria-label="schema tag"
@@ -863,15 +1112,21 @@ function AISearchPanel({
                             uriAliases,
                           )
                         : 0;
-                      const totalCount = documentUri
-                        ? countTagInventoryRowTotalAnnotations(
-                            savedAnnotations,
-                            documentUri,
-                            row.schemaTag,
-                            row.query,
-                            uriAliases,
+                      const totalCountFromStore = focusedGroupId
+                        ? countAnnotationsForTagInventoryRow(
+                            annotationsForInventoryCount,
+                            row,
+                            {
+                              focusedGroupId,
+                              documentUri: documentUri,
+                              documentUriAliases: uriAliases,
+                            },
                           )
                         : 0;
+                      const totalCount =
+                        deleteAllRemaining?.rowId === row.id
+                          ? deleteAllRemaining.remaining
+                          : totalCountFromStore;
                       const rerunDisabled =
                         globalRowLock || !documentUri;
                       const deletePendingDisabled =
@@ -936,9 +1191,13 @@ function AISearchPanel({
                                   }
                                   const v = (e.target as HTMLInputElement)
                                     .value;
+                                  const nextRgba = hexColorInputToRgba(
+                                    v,
+                                    TAG_HIGHLIGHT_ALPHA,
+                                  );
                                   store.setTagInventorySchemaTagColor(
                                     tagKey,
-                                    hexColorInputToRgba(v, TAG_HIGHLIGHT_ALPHA),
+                                    nextRgba,
                                   );
                                 }}
                               />
@@ -1011,11 +1270,12 @@ function AISearchPanel({
                                 title={aiSearchRerunButtonHelpText}
                                 aria-label={aiSearchRerunButtonHelpText}
                                 onClick={e => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
                                   if (rerunDisabled) {
-                                    e.preventDefault();
                                     return;
                                   }
-                                  onRerunRow(row);
+                                  void onRerunRow(row);
                                 }}
                               >
                                 <RedoIcon className="w-em h-em" />
@@ -1117,4 +1377,5 @@ export default withServices(AISearchPanel, [
   'api',
   'toastMessenger',
   'tagInventoryGroupSync',
+  'persistedTagInventory',
 ]);
