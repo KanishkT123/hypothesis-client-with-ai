@@ -165,6 +165,15 @@ export class LoadAnnotationsService {
       this._searchClient = null;
 
       if (uris && uris.length > 0) {
+        this._store.frames().forEach(frame => {
+          if (uris.indexOf(frame.uri) >= 0) {
+            this._store.updateFrameAnnotationFetchStatus(frame.uri, true);
+          }
+        });
+      }
+      this._store.annotationFetchFinished();
+
+      if (uris && uris.length > 0) {
         if (groupId === PUBLIC_GROUP_ID) {
           void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory({
             documentUris: uris,
@@ -180,15 +189,6 @@ export class LoadAnnotationsService {
             });
         }
       }
-
-      if (uris && uris.length > 0) {
-        this._store.frames().forEach(frame => {
-          if (uris.indexOf(frame.uri) >= 0) {
-            this._store.updateFrameAnnotationFetchStatus(frame.uri, true);
-          }
-        });
-      }
-      this._store.annotationFetchFinished();
     });
 
     this._store.annotationFetchStarted();
