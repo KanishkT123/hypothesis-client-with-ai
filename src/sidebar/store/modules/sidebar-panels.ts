@@ -132,6 +132,18 @@ export type ExperimentEvent =
       annotationId: string;
       quoteText: string;
       schemaTag: string;
+    }
+  | {
+      type: 'reclassify-as-manual';
+      timestamp: string;
+      documentUri: string;
+      annotationId: string;
+      schemaTag: string;
+      originalQuery: string;
+      newText: string;
+      quoteText: string;
+      reason: 'text-change' | 'schema-tag-removed';
+      removedSchemaTags?: string[];
     };
 
 export type ExperimentLogState = {
@@ -343,6 +355,14 @@ const reducers = {
     state: State,
     action: { rowId: string; annotationIds: string[] },
   ) {
+    const existing = state.tagInventory.rows.find(r => r.id === action.rowId);
+    const existingIds = existing?.annotationIds ?? [];
+    if (
+      existingIds.length === action.annotationIds.length &&
+      existingIds.every((id, i) => id === action.annotationIds[i])
+    ) {
+      return state;
+    }
     return {
       tagInventory: {
         ...state.tagInventory,

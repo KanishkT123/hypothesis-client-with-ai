@@ -184,6 +184,35 @@ export class ExperimentLogService {
     this._commit(log);
   }
 
+  logReclassifyAsManual(params: {
+    annotationId: string;
+    documentUri: string;
+    schemaTag: string;
+    originalQuery: string;
+    newText: string;
+    quoteText: string;
+    reason: 'text-change' | 'schema-tag-removed';
+    removedSchemaTags?: string[];
+  }): void {
+    const log = structuredClone(this._log());
+    const now = this._now();
+    log.events.push({
+      type: 'reclassify-as-manual',
+      timestamp: now,
+      documentUri: params.documentUri,
+      annotationId: params.annotationId,
+      schemaTag: params.schemaTag,
+      originalQuery: params.originalQuery,
+      newText: params.newText,
+      quoteText: params.quoteText,
+      reason: params.reason,
+      ...(params.removedSchemaTags?.length
+        ? { removedSchemaTags: params.removedSchemaTags }
+        : {}),
+    });
+    this._commit(log);
+  }
+
   /** Row-level only — no annotation id lists (see plan). */
   logRerunSearch(params: {
     searchRowId: string;
