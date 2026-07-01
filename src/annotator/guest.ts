@@ -35,7 +35,7 @@ import { DrawTool, DrawError } from './draw-tool';
 import { LayoutChangeEvent } from './events';
 import { FeatureFlags } from './features';
 import { HighlightClusterController } from './highlight-clusters';
-import { Highlighter } from './highlighter';
+import { Highlighter, setHighlightsHidden } from './highlighter';
 import { createIntegration } from './integrations';
 import { OutsideAssignmentNoticeController } from './outside-assignment-notice';
 import {
@@ -60,6 +60,15 @@ const NON_COLOR_TAGS = new Set(['ai-pending', 'ai-user-approved']);
 
 function tagsForHighlightColors(tags: string[] = []): string[] {
   return tags.filter(tag => !NON_COLOR_TAGS.has(tag));
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
 }
 
 /** Return all the annotations tags associated with the selected text. */
@@ -421,9 +430,7 @@ export class Guest
         continue;
       }
       const hidden = this._hiddenAnnotationIds.has(anchor.annotation.id ?? '');
-      for (const hl of anchor.highlights) {
-        (hl as HTMLElement).classList.toggle('h-row-hidden', hidden);
-      }
+      setHighlightsHidden(anchor.highlights, hidden);
     }
   }
 
@@ -795,6 +802,20 @@ export class Guest
         .catch(error => callback({ ok: false, error: error.message }));
     });
 
+    this._sidebarRPC.on('getPdfBytes', callback => {
+      const readPdfBytes = async () => {
+        if (!this._integration.getPdfBytes) {
+          throw new Error('PDF bytes not supported for document type');
+        }
+        const bytes = await this._integration.getPdfBytes();
+        return uint8ArrayToBase64(bytes);
+      };
+
+      readPdfBytes()
+        .then(data => callback({ ok: true, value: data }))
+        .catch(error => callback({ ok: false, error: error.message }));
+    });
+
     // Connect to sidebar and send document info/URIs to it.
     //
     // RPC calls are deferred until a connection is made, so these steps can
@@ -1067,9 +1088,7 @@ export class Guest
         this._highlighter.setHighlightsFocused(highlights, true);
       }
       if (this._hiddenAnnotationIds.has(anchor.annotation.id ?? '')) {
-        for (const hl of highlights) {
-          (hl as HTMLElement).classList.add('h-row-hidden');
-        }
+        setHighlightsHidden(highlights, true);
       }
     };
 

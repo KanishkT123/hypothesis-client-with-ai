@@ -534,6 +534,26 @@ function setHighlightsFocused(
   });
 }
 
+/**
+ * Show or hide highlights (e.g. when a tag inventory row is hidden).
+ *
+ * On PDFs the visible fill is drawn in SVG, so `h-row-hidden` must be applied
+ * to associated SVG elements as well as the text-layer wrappers.
+ */
+export function setHighlightsHidden(
+  highlights: HighlightElement[],
+  hidden: boolean,
+) {
+  for (const h of highlights) {
+    h.classList.toggle('h-row-hidden', hidden);
+    if (h.svgHighlight) {
+      for (const svgEl of associatedSVGHighlights(h.svgHighlight)) {
+        svgEl.classList.toggle('h-row-hidden', hidden);
+      }
+    }
+  }
+}
+
 /** Class set on root element to make highlights visible. */
 const showHighlightsClass = 'hypothesis-highlights-always-on';
 

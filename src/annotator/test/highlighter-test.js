@@ -3,6 +3,7 @@ import { render } from 'preact';
 import {
   getBoundingClientRect,
   Highlighter,
+  setHighlightsHidden,
   updateClusters,
 } from '../highlighter';
 
@@ -996,6 +997,37 @@ describe('annotator/highlighter', () => {
       } finally {
         container.remove();
       }
+    });
+  });
+
+  describe('setHighlightsHidden', () => {
+    it('applies h-row-hidden to PDF SVG highlights and overlays', () => {
+      const svgLayer = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'svg',
+      );
+      const textHighlight = document.createElement('hypothesis-highlight');
+      const baseRect = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'rect',
+      );
+      baseRect.setAttribute('data-highlight-id', 'h1');
+      const overlayRect = baseRect.cloneNode();
+      overlayRect.setAttribute('class', 'hypothesis-svg-highlight-overlay');
+      textHighlight.svgHighlight = baseRect;
+      svgLayer.append(baseRect, overlayRect);
+
+      setHighlightsHidden([textHighlight], true);
+
+      assert.isTrue(textHighlight.classList.contains('h-row-hidden'));
+      assert.isTrue(baseRect.classList.contains('h-row-hidden'));
+      assert.isTrue(overlayRect.classList.contains('h-row-hidden'));
+
+      setHighlightsHidden([textHighlight], false);
+
+      assert.isFalse(textHighlight.classList.contains('h-row-hidden'));
+      assert.isFalse(baseRect.classList.contains('h-row-hidden'));
+      assert.isFalse(overlayRect.classList.contains('h-row-hidden'));
     });
   });
 
