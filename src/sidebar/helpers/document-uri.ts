@@ -19,6 +19,69 @@ function preferredHttpUri(uris: string[]): string | null {
   );
 }
 
+function isPublicHttpUri(uri: string): boolean {
+  return /^https?:\/\//i.test(uri) && !uri.includes('chrome-extension');
+}
+
+/**
+ * Pick an HTTP(S) URL from document aliases that Anthropic can download.
+ * Mirrors the pre-refactor `ClaudeService.firstPDFURI` logic.
+ */
+function downloadableHttpUriFromAliases(uris: readonly string[]): string | null {
+  const list = [...uris];
+  for (const uri of list) {
+    if (isPublicHttpUri(uri) && uri.toLowerCase().endsWith('.pdf')) {
+      return uri;
+    }
+  }
+  if (list.some(u => u.startsWith('urn:x-pdf:'))) {
+    return preferredHttpUri(list);
+  }
+  return preferredHttpUri(list);
+}
+
+/**
+ * Returns an HTTP(S) URL suitable for Claude document-grounded AI search.
+ *
+ * Hypothesis's canonical `currentDocumentUri` may be a PDF fingerprint URN or
+ * extension URL that Anthropic cannot fetch; this helper prefers a public
+ * download link from `searchUris()` in that case.
+ */
+export function claudeAccessibleDocumentUri(
+  store: Pick<SidebarStore, 'mainFrame' | 'defaultContentFrame' | 'searchUris'>,
+): string | null {
+  const frameUri = contentFrameUri(store);
+  const aliases = store.searchUris();
+  const pdfContext = aliases.some(u => u.startsWith('urn:x-pdf:'));
+
+  if (frameUri && isPublicHttpUri(frameUri)) {
+    if (!pdfContext || frameUri.toLowerCase().endsWith('.pdf')) {
+      return frameUri;
+    }
+  }
+
+  return downloadableHttpUriFromAliases(aliases);
+}
+
+/** Hosts where Anthropic cannot fetch the PDF without the user's browser session. */
+const PAYWALL_PDF_HOSTS =
+  /^(dl\.acm\.org|ieeexplore\.ieee\.org|link\.springer\.com|www\.sciencedirect\.com|onlinelibrary\.wiley\.com)$/i;
+
+/**
+ * Heuristic: hosts where Anthropic often cannot fetch the PDF URL directly.
+ * AI search still tries the URL first and falls back to browser-uploaded bytes.
+ */
+export function pdfRequiresBrowserPdfUpload(documentUri: string | null): boolean {
+  if (!documentUri) {
+    return true;
+  }
+  try {
+    return PAYWALL_PDF_HOSTS.test(new URL(documentUri).hostname);
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Returns the canonical URI for the current document.
  *
@@ -80,21 +143,35 @@ export function filterSavedAnnotationsForDocument(
   );
 }
 
+/** True when `uri` refers to the current document alias set. */
+function uriBelongsToDocumentAliases(
+  uri: string,
+  aliases: readonly string[],
+): boolean {
+  if (aliases.includes(uri)) {
+    return true;
+  }
+  return aliases.some(alias => documentUriMatches(alias, uri, aliases));
+}
+
 /**
- * Resolve the document URI used when creating Public tag-inventory rows.
- * Prefers `currentDocumentUri(store)`; otherwise applies the same HTTP-first
- * fallback as `currentDocumentUri` to explicit `candidateUris`.
+ * Resolve the document URI used for tag inventory, palette sync, and counts.
+ *
+ * Uses the guest frame URI only when it belongs to the current `searchUris`
+ * alias set. Ignores transient frame URIs from other documents (a common cause
+ * of inventory/highlight flicker). Falls back to HTTP-first alias selection.
  */
 export function resolveDocumentUriFromCandidates(
   store: Pick<SidebarStore, 'mainFrame' | 'defaultContentFrame' | 'searchUris'>,
   candidateUris?: string[],
 ): string | null {
-  const fromStore = currentDocumentUri(store);
-  if (fromStore) {
-    return fromStore;
+  const aliases = candidateUris ?? store.searchUris();
+  const frameUri = contentFrameUri(store);
+  if (frameUri && uriBelongsToDocumentAliases(frameUri, aliases)) {
+    if (isPublicHttpUri(frameUri)) {
+      return frameUri;
+    }
+    return preferredHttpUri(aliases) ?? frameUri;
   }
-  if (candidateUris) {
-    return preferredHttpUri(candidateUris);
-  }
-  return null;
+  return preferredHttpUri(aliases) ?? aliases[0] ?? null;
 }
