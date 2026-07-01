@@ -46,6 +46,7 @@ const els = {
   groupSelect: document.querySelector('#groupSelect'),
   documentSelect: document.querySelector('#documentSelect'),
   refreshBtn: document.querySelector('#refreshBtn'),
+  newTagBtn: document.querySelector('#newTagBtn'),
   newEdgeBtn: document.querySelector('#newEdgeBtn'),
   loginBtn: document.querySelector('#loginBtn'),
   colorModeSelect: document.querySelector('#colorModeSelect'),
@@ -76,6 +77,11 @@ const els = {
   edgeLabel: document.querySelector('#edgeLabel'),
   edgeContext: document.querySelector('#edgeContext'),
   saveEdgeBtn: document.querySelector('#saveEdgeBtn'),
+  tagEditor: document.querySelector('#tagEditor'),
+  tagEditorTitle: document.querySelector('#tagEditorTitle'),
+  cancelTagBtn: document.querySelector('#cancelTagBtn'),
+  tagName: document.querySelector('#tagName'),
+  saveTagBtn: document.querySelector('#saveTagBtn'),
   selectionPanel: document.querySelector('#selectionPanel'),
   bridgeRanking: document.querySelector('#bridgeRanking'),
   comparisonPanel: document.querySelector('#comparisonPanel'),
@@ -105,6 +111,7 @@ const state = {
   userZoomed: false,
   selectedNodeId: null,
   selectedEdgeId: null,
+  tagDraft: null,
   expandedTags: new Set(),
   expandedDocuments: new Set(),
   edgeDraft: null,
@@ -273,11 +280,104 @@ function ensureCurrentLayout() {
   if (!state.edits) {
     return;
   }
+  if (!Array.isArray(state.edits.descriptiveTags)) {
+    state.edits.descriptiveTags = [];
+  }
+  if (!Array.isArray(state.edits.tagEdges)) {
+    state.edits.tagEdges = [];
+  }
   if (state.edits.layout?.version !== LAYOUT_VERSION) {
     state.edits.layout = {
       version: LAYOUT_VERSION,
       nodes: {},
     };
+  }
+}
+
+function normalizeEditableTag(value) {
+  return String(value || '').trim();
+}
+
+function descriptiveTags() {
+  return state.edits?.descriptiveTags || [];
+}
+
+function annotationTagSet() {
+  const tags = new Set();
+  for (const ann of state.snapshot?.annotations || []) {
+    if (ann.hidden || ann.isReply) {
+      continue;
+    }
+    for (const tag of contentTags(ann.tags)) {
+      tags.add(tag);
+    }
+  }
+  return tags;
+}
+
+function knownTagSet({ ignoreDescriptiveId = null } = {}) {
+  const tags = annotationTagSet();
+  for (const item of descriptiveTags()) {
+    if (item.id !== ignoreDescriptiveId) {
+      tags.add(item.tag);
+    }
+  }
+  return tags;
+}
+
+function descriptiveTagById(id) {
+  return descriptiveTags().find(item => item.id === id) || null;
+}
+
+function tagEdgeReferences(tag) {
+  return (state.edits?.tagEdges || []).filter(
+    edge => edge.sourceTag === tag || edge.targetTag === tag,
+  );
+}
+
+function validateDescriptiveTagName(tag, { ignoreDescriptiveId = null } = {}) {
+  if (!tag) {
+    return 'Enter a tag name.';
+  }
+  if (knownTagSet({ ignoreDescriptiveId }).has(tag)) {
+    return 'That tag already exists.';
+  }
+  return '';
+}
+
+function moveTagLayoutPosition(oldTag, newTag) {
+  ensureCurrentLayout();
+  const nodes = state.edits?.layout?.nodes;
+  if (!nodes) {
+    return;
+  }
+  const oldKey = `tag-only:tag:${oldTag}`;
+  const newKey = `tag-only:tag:${newTag}`;
+  if (nodes[oldKey] && !nodes[newKey]) {
+    nodes[newKey] = nodes[oldKey];
+  }
+  delete nodes[oldKey];
+}
+
+function deleteTagLayoutPosition(tag) {
+  ensureCurrentLayout();
+  const nodes = state.edits?.layout?.nodes;
+  if (nodes) {
+    delete nodes[`tag-only:tag:${tag}`];
+  }
+}
+
+function rewriteManualEdgesForTag(oldTag, newTag) {
+  for (const edge of state.edits?.tagEdges || []) {
+    if (edge.sourceTag === oldTag) {
+      edge.sourceTag = newTag;
+    }
+    if (edge.targetTag === oldTag) {
+      edge.targetTag = newTag;
+    }
+    if (edge.sourceTag === newTag || edge.targetTag === newTag) {
+      edge.updatedAt = new Date().toISOString();
+    }
   }
 }
 
@@ -494,6 +594,7 @@ function buildDrilldownGraph({ tagNodes, quoteNodes, lanes, width, height }) {
 }
 
 function buildGraph() {
+  ensureCurrentLayout();
   const snapshot = state.snapshot || { annotations: [] };
   const tagMap = new Map();
   const quoteNodes = [];
@@ -560,6 +661,24 @@ function buildGraph() {
         annotation: ann,
       });
     }
+  }
+
+  for (const item of descriptiveTags()) {
+    const tag = normalizeEditableTag(item.tag);
+    if (!tag || tagMap.has(tag)) {
+      continue;
+    }
+    tagMap.set(tag, {
+      id: `tag:${tag}`,
+      type: 'tag',
+      tag,
+      count: 0,
+      documentUris: new Set(),
+      descriptive: true,
+      descriptiveTagId: item.id,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    });
   }
 
   const tagNodes = [...tagMap.values()].sort((a, b) =>
@@ -1387,11 +1506,13 @@ function renderExpansionButton(group, { x, y, expanded, label, onToggle }) {
 function renderTagNode(group, node) {
   const x = node.x - TAG_WIDTH / 2;
   const y = node.y - TAG_HEIGHT / 2;
-  const label = formatTagLabel(node.tag);
+  const label = node.descriptive
+    ? { scope: 'Descriptive', name: node.tag }
+    : formatTagLabel(node.tag);
   const visual = tagVisual(node);
   const opacity = visual.opacity * tagFocusOpacity(node);
   const g = svgEl('g', {
-    class: `node tag-node ${state.showQuotes ? '' : 'draggable-node'} ${node.id === state.selectedNodeId ? 'selected-node' : ''}`,
+    class: `node tag-node ${node.descriptive ? 'descriptive-tag-node' : ''} ${state.showQuotes ? '' : 'draggable-node'} ${node.id === state.selectedNodeId ? 'selected-node' : ''}`,
     transform: `translate(${x} ${y})`,
     opacity,
   });
@@ -1426,10 +1547,10 @@ function renderTagNode(group, node) {
     x: TAG_WIDTH - 18,
     y: 20,
   });
-  count.textContent = String(node.count);
+  count.textContent = node.descriptive ? '' : String(node.count);
   g.append(count);
 
-  if (!state.showQuotes) {
+  if (!state.showQuotes && !node.descriptive && node.count > 0) {
     renderExpansionButton(g, {
       x: TAG_WIDTH - 18,
       y: TAG_HEIGHT - 14,
@@ -1873,6 +1994,116 @@ function deleteCreatedEdge(edgeId) {
   renderGraph();
 }
 
+function openTagEditor({ editTag = null } = {}) {
+  state.tagDraft = editTag ? { editingTagId: editTag.id } : null;
+  els.tagEditorTitle.textContent = editTag
+    ? 'Edit Descriptive Tag'
+    : 'Add Descriptive Tag';
+  els.saveTagBtn.textContent = editTag ? 'Save Changes' : 'Save Tag';
+  els.tagName.value = editTag?.tag || '';
+  if (typeof els.tagEditor.showModal === 'function') {
+    els.tagEditor.showModal();
+  } else {
+    els.tagEditor.setAttribute('open', '');
+  }
+  els.tagName.focus();
+  els.tagName.select();
+}
+
+function closeTagEditor() {
+  state.tagDraft = null;
+  els.tagEditorTitle.textContent = 'Add Descriptive Tag';
+  els.saveTagBtn.textContent = 'Save Tag';
+  els.tagName.value = '';
+  if (typeof els.tagEditor.close === 'function') {
+    els.tagEditor.close();
+  } else {
+    els.tagEditor.removeAttribute('open');
+  }
+}
+
+function deleteDescriptiveTag(tagId) {
+  const tag = descriptiveTagById(tagId);
+  if (!tag) {
+    showNotice('That descriptive tag no longer exists.');
+    buildGraph();
+    renderGraph();
+    return;
+  }
+  const references = tagEdgeReferences(tag.tag);
+  if (references.length) {
+    showNotice('Delete this tag after removing its manual tag-tag edges.');
+    return;
+  }
+
+  state.edits.descriptiveTags = descriptiveTags().filter(
+    item => item.id !== tagId,
+  );
+  state.expandedTags.delete(tag.tag);
+  deleteTagLayoutPosition(tag.tag);
+  if (state.selectedNodeId === `tag:${tag.tag}`) {
+    state.selectedNodeId = null;
+  }
+  showNotice('');
+  saveEditsNow();
+  buildGraph();
+  renderGraph();
+}
+
+function saveDescriptiveTag() {
+  const tagName = normalizeEditableTag(els.tagName.value);
+  const editingTagId = state.tagDraft?.editingTagId || null;
+  const existing = editingTagId ? descriptiveTagById(editingTagId) : null;
+  const validation = validateDescriptiveTagName(tagName, {
+    ignoreDescriptiveId: editingTagId,
+  });
+  if (validation) {
+    showNotice(validation);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  showNotice('');
+  ensureCurrentLayout();
+
+  if (editingTagId) {
+    if (!existing) {
+      showNotice('That descriptive tag no longer exists.');
+      closeTagEditor();
+      buildGraph();
+      renderGraph();
+      return;
+    }
+    const oldTag = existing.tag;
+    existing.tag = tagName;
+    existing.updatedAt = now;
+    if (oldTag !== tagName) {
+      rewriteManualEdgesForTag(oldTag, tagName);
+      moveTagLayoutPosition(oldTag, tagName);
+      if (state.selectedNodeId === `tag:${oldTag}`) {
+        state.selectedNodeId = `tag:${tagName}`;
+      }
+    }
+    closeTagEditor();
+    saveEditsNow();
+    buildGraph();
+    renderGraph();
+    return;
+  }
+
+  state.edits.descriptiveTags.push({
+    id: `descriptive-tag:${Date.now()}:${Math.random().toString(16).slice(2)}`,
+    tag: tagName,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: 'human',
+  });
+  closeTagEditor();
+  saveEditsNow();
+  buildGraph();
+  renderGraph();
+}
+
 function renderEdgeSelection(edge) {
   const source = state.graph.nodeById.get(edge.source);
   const target = state.graph.nodeById.get(edge.target);
@@ -1971,6 +2202,36 @@ function renderSelection() {
 
   els.selectionPanel.className = '';
   if (node.type === 'tag') {
+    if (node.descriptive) {
+      const references = tagEdgeReferences(node.tag);
+      const canDelete = references.length === 0;
+      els.selectionPanel.innerHTML = `
+        <div class="selection-title">${escapeHtml(node.tag)}</div>
+        <div class="selection-copy">Descriptive tag</div>
+        <div class="tag-chip-row">
+          <span class="tag-chip">${references.length} manual tag edge${references.length === 1 ? '' : 's'}</span>
+          <span class="tag-chip">No quote evidence</span>
+        </div>
+        <div class="selection-actions">
+          <button id="editSelectedTagBtn" class="button compact" type="button">Edit</button>
+          <button id="deleteSelectedTagBtn" class="ghost-button danger" type="button" ${canDelete ? '' : 'disabled'} title="${canDelete ? 'Delete descriptive tag' : 'Remove its manual tag-tag edges before deleting'}">Delete</button>
+        </div>
+      `;
+      document
+        .querySelector('#editSelectedTagBtn')
+        ?.addEventListener('click', () =>
+          openTagEditor({
+            editTag: descriptiveTagById(node.descriptiveTagId),
+          }),
+        );
+      document
+        .querySelector('#deleteSelectedTagBtn')
+        ?.addEventListener('click', () =>
+          deleteDescriptiveTag(node.descriptiveTagId),
+        );
+      return;
+    }
+
     const relatedQuotes = quotesForTag(node.tag);
     const neighborCount = state.graph.tagOnlyFocusedNeighbors?.size || 0;
     els.selectionPanel.innerHTML = `
@@ -2635,6 +2896,7 @@ function updateControls() {
   els.compareDocASelect.value = state.compareDocumentA;
   els.compareDocBSelect.value = state.compareDocumentB;
   els.refreshBtn.disabled = !authenticated || !els.groupSelect.value;
+  els.newTagBtn.disabled = !state.edits;
   els.newEdgeBtn.disabled = !state.graph?.tagNodes.length;
   els.zoomOutBtn.disabled = !state.graph;
   els.zoomInBtn.disabled = !state.graph;
@@ -2693,9 +2955,18 @@ async function init() {
   els.refreshBtn.addEventListener('click', () => {
     refreshSnapshot().catch(err => showNotice(err.message));
   });
+  els.newTagBtn.addEventListener('click', () => openTagEditor());
   els.newEdgeBtn.addEventListener('click', openEdgeEditor);
   els.cancelEdgeBtn.addEventListener('click', closeEdgeEditor);
   els.saveEdgeBtn.addEventListener('click', saveNewEdge);
+  els.cancelTagBtn.addEventListener('click', closeTagEditor);
+  els.saveTagBtn.addEventListener('click', saveDescriptiveTag);
+  els.tagName.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      saveDescriptiveTag();
+    }
+  });
   els.zoomOutBtn.addEventListener('click', () => {
     setZoom(state.zoom - ZOOM_STEP);
   });

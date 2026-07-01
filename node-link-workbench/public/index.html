@@ -31,6 +31,7 @@
           </select>
         </label>
         <button id="refreshBtn" class="button primary" disabled>Refresh</button>
+        <button id="newTagBtn" class="button" disabled>New Tag</button>
         <button id="newEdgeBtn" class="button" disabled>New Edge</button>
         <button id="loginBtn" class="button">Log in</button>
       </div>
@@ -238,6 +239,29 @@
         </div>
         <button id="saveEdgeBtn" class="button primary full-width">
           Save Edge
+        </button>
+      </section>
+    </dialog>
+
+    <dialog id="tagEditor" class="edge-dialog">
+      <section class="panel edge-dialog-panel">
+        <div class="panel-heading">
+          <h2 id="tagEditorTitle">Add Descriptive Tag</h2>
+          <button id="cancelTagBtn" class="ghost-button" type="button">
+            Cancel
+          </button>
+        </div>
+        <label class="field">
+          <span>Tag</span>
+          <input
+            id="tagName"
+            type="text"
+            aria-label="Descriptive tag"
+            placeholder="Enter tag"
+          />
+        </label>
+        <button id="saveTagBtn" class="button primary full-width">
+          Save Tag
         </button>
       </section>
     </dialog>

@@ -82,6 +82,7 @@ function emptyEdits() {
       version: 2,
       nodes: {},
     },
+    descriptiveTags: [],
     tagEdges: [],
   };
 }
@@ -816,6 +817,9 @@ async function handleApi(req, res, url) {
         version: body.layout?.version || 1,
         nodes: body.layout?.nodes || {},
       },
+      descriptiveTags: Array.isArray(body.descriptiveTags)
+        ? body.descriptiveTags
+        : [],
       tagEdges: Array.isArray(body.tagEdges) ? body.tagEdges : [],
     };
     await writeJson(editsPath, edits);
