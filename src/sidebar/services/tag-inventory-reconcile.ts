@@ -1,25 +1,47 @@
 import type { SavedAnnotation } from '../../types/api';
 import { resolveDocumentUriFromCandidates } from '../helpers/document-uri';
-import { deriveTagInventoryRowDescriptors } from '../helpers/tag-inventory-group';
+import {
+  deriveTagInventoryRowDescriptors,
+  isTagInventoryRowVisibleInScope,
+  listAnnotationsForTagInventoryRow,
+  countAnnotationsForTagInventoryRow,
+} from '../helpers/tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
 import { tagInventoryRowId } from '../store/modules/sidebar-panels';
 import type { SidebarStore } from '../store';
+import { isSaved } from '../helpers/annotation-metadata';
 
 export type ApplyDerivedTagInventoryRowsOptions = {
   groupId: string;
+  /** Annotations used to derive which rows exist. */
   annotations: SavedAnnotation[];
+  /** Annotations used to compute `annotationIds` (defaults to `annotations`). */
+  idSourceAnnotations?: SavedAnnotation[];
   /** Current document URI. Stored on Public group rows and included in their id. */
   documentUri?: string;
+  documentUriAliases?: readonly string[];
 };
 
+function norm(value: string): string {
+  return value.trim();
+}
+
 /**
- * Upsert inventory rows from derived descriptors.
- * For Public group rows, `documentUri` is stored on the row and included in its
- * id so that visibility is a plain URI equality check (no separate store slice).
+ * Upsert inventory rows from derived descriptors and set authoritative
+ * `annotationIds` per row via replace semantics.
  */
 export function applyDerivedTagInventoryRows(
-  store: Pick<SidebarStore, 'addTagInventoryRow'>,
-  { groupId, annotations, documentUri }: ApplyDerivedTagInventoryRowsOptions,
+  store: Pick<
+    SidebarStore,
+    'addTagInventoryRow' | 'setTagInventoryRowAnnotationIds' | 'tagInventoryRows'
+  >,
+  {
+    groupId,
+    annotations,
+    idSourceAnnotations,
+    documentUri,
+    documentUriAliases = [],
+  }: ApplyDerivedTagInventoryRowsOptions,
 ) {
   const isPublic = groupId === PUBLIC_GROUP_ID;
   const docUri = isPublic ? documentUri : undefined;
@@ -31,17 +53,67 @@ export function applyDerivedTagInventoryRows(
     return;
   }
 
+  const idSource = idSourceAnnotations ?? annotations;
+  const aliases = documentUriAliases;
   const descriptors = deriveTagInventoryRowDescriptors(annotations);
+  const descriptorKeys = new Set(
+    descriptors.map(d => `${d.schemaTag}\0${d.query}`),
+  );
 
   for (const { schemaTag, query } of descriptors) {
+    const rowId = tagInventoryRowId(schemaTag, query, groupId, docUri);
     store.addTagInventoryRow({
-      id: tagInventoryRowId(schemaTag, query, groupId, docUri),
+      id: rowId,
       groupId,
       schemaTag,
       query,
       annotationIds: [],
       ...(docUri !== undefined ? { documentUri: docUri } : {}),
     });
+    const rowRef = {
+      schemaTag,
+      query,
+      groupId,
+    };
+    const scope = {
+      focusedGroupId: groupId,
+      documentUri: docUri ?? null,
+      documentUriAliases: aliases,
+    };
+    const derivedIds = listAnnotationsForTagInventoryRow(idSource, rowRef, scope)
+      .map(ann => ann.id)
+      .filter((id): id is string => typeof id === 'string');
+    store.setTagInventoryRowAnnotationIds(rowId, derivedIds);
+  }
+
+  // Clear stale IDs on in-scope rows that still exist but have no descriptor
+  // (e.g. all annotations removed) or were not in this derive pass.
+  for (const row of store.tagInventoryRows()) {
+    if (row.groupId !== groupId) {
+      continue;
+    }
+    if (
+      !isTagInventoryRowVisibleInScope(row, {
+        focusedGroupId: groupId,
+        currentDocumentUri: docUri ?? documentUri,
+        documentUriAliases: aliases,
+      })
+    ) {
+      continue;
+    }
+    const key = `${row.schemaTag}\0${row.query}`;
+    if (descriptorKeys.has(key)) {
+      continue;
+    }
+    const liveCount = countAnnotationsForTagInventoryRow(idSource, row, {
+      focusedGroupId: groupId,
+      documentUri: docUri ?? null,
+      documentUriAliases: aliases,
+    });
+    if (liveCount > 0) {
+      continue;
+    }
+    store.setTagInventoryRowAnnotationIds(row.id, []);
   }
 }
 

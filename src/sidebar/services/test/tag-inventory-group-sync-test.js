@@ -38,6 +38,8 @@ describe('TagInventoryGroupSyncService', () => {
 
     fakeStore = {
       addTagInventoryRow: sinon.stub(),
+      setTagInventoryRowAnnotationIds: sinon.stub(),
+      tagInventoryRows: sinon.stub().returns([]),
       focusedGroupId: sinon.stub().returns('private-group'),
       hasFetchedProfile: sinon.stub().returns(true),
       mainFrame: sinon.stub().returns({ uri: 'http://example.com' }),
@@ -79,6 +81,11 @@ describe('TagInventoryGroupSyncService', () => {
       annotationIds: [],
       documentUri: 'http://example.com',
     });
+    assert.calledWith(
+      fakeStore.setTagInventoryRowAnnotationIds,
+      tagInventoryRowId('methods', '', PUBLIC_GROUP_ID, 'http://example.com'),
+      ['a1'],
+    );
   });
 
   it('prefers HTTP(S) over URN when resolving Public documentUri', async () => {
@@ -111,6 +118,16 @@ describe('TagInventoryGroupSyncService', () => {
       annotationIds: [],
       documentUri: 'https://example.com/paper.pdf',
     });
+    assert.calledWith(
+      fakeStore.setTagInventoryRowAnnotationIds,
+      tagInventoryRowId(
+        'methods',
+        '',
+        PUBLIC_GROUP_ID,
+        'https://example.com/paper.pdf',
+      ),
+      ['a1'],
+    );
   });
 
   it('re-syncs Public inventory when currentDocumentUri changes', async () => {
@@ -161,7 +178,34 @@ describe('TagInventoryGroupSyncService', () => {
       query: 'find it',
       annotationIds: [],
     });
+    assert.calledWith(
+      fakeStore.setTagInventoryRowAnnotationIds,
+      tagInventoryRowId('methods', 'find it', 'private-group'),
+      [],
+    );
     assert.calledOnce(fakeStore.pruneTagInventoryRowsForGroup);
+  });
+
+  it('sets annotationIds on document-scoped private group sync', async () => {
+    await svc.getGroupAnnotations('private-group');
+    groupAnnotationsRead.resetHistory();
+
+    fakeStore.savedAnnotations.returns([
+      {
+        id: 'doc-a1',
+        group: 'private-group',
+        uri: 'http://example.com',
+        tags: ['methods'],
+      },
+    ]);
+
+    await svc.applyStoreAnnotationsToInventory();
+
+    assert.calledWith(
+      fakeStore.setTagInventoryRowAnnotationIds,
+      tagInventoryRowId('methods', '', 'private-group'),
+      ['doc-a1'],
+    );
   });
 
   it('returns null from cachedGroupAnnotations before a full fetch', () => {
@@ -190,6 +234,23 @@ describe('TagInventoryGroupSyncService', () => {
 
     assert.isNull(svc.cachedGroupAnnotations('private-group'));
     assert.notCalled(groupAnnotationsRead);
+    assert.notCalled(fakeStore.setTagInventoryRowAnnotationIds);
+  });
+
+  it('skips document-scoped private sync until group cache is loaded', async () => {
+    fakeStore.savedAnnotations.returns([
+      {
+        id: 'doc-a1',
+        group: 'private-group',
+        uri: 'http://example.com',
+        tags: ['methods'],
+      },
+    ]);
+
+    await svc.applyStoreAnnotationsToInventory();
+
+    assert.notCalled(fakeStore.setTagInventoryRowAnnotationIds);
+    assert.notCalled(fakeStore.addTagInventoryRow);
   });
 
   it('savedAnnotationsForCurrentDocument filters by group and URIs', () => {
