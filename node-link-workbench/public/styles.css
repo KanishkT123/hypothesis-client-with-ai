@@ -36,6 +36,10 @@ body {
   color: var(--ink);
 }
 
+[hidden] {
+  display: none !important;
+}
+
 button,
 input,
 select,
@@ -157,6 +161,54 @@ input {
   color: var(--muted);
   font-size: 12px;
   font-weight: 720;
+}
+
+.filter-help {
+  position: relative;
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.help-icon {
+  display: inline-grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: help;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.help-icon:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.help-popout {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 7px);
+  z-index: 8;
+  display: none;
+  width: 220px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  padding: 8px 10px;
+}
+
+.filter-help:hover .help-popout,
+.filter-help:focus-within .help-popout {
+  display: block;
 }
 
 textarea {
@@ -380,7 +432,7 @@ button:focus-visible {
 .edge-hit {
   fill: none;
   stroke: transparent;
-  stroke-width: 14;
+  stroke-width: 22;
   cursor: pointer;
   outline: none;
   pointer-events: stroke;
@@ -462,15 +514,6 @@ button:focus-visible {
 .edge-evidence.edge-hovered {
   stroke-opacity: 0.84;
   stroke-width: 2.5;
-}
-
-.edge-label {
-  fill: var(--brand-dark);
-  font-size: 12px;
-  font-weight: 650;
-  paint-order: stroke;
-  stroke: var(--surface);
-  stroke-width: 4px;
 }
 
 .node {
@@ -628,7 +671,7 @@ button:focus-visible {
 }
 
 .edge-dialog {
-  width: min(440px, calc(100vw - 48px));
+  width: min(720px, calc(100vw - 48px));
   border: 0;
   padding: 0;
   background: transparent;
@@ -642,6 +685,21 @@ button:focus-visible {
   display: grid;
   gap: 10px;
   margin: 0;
+}
+
+.edge-sentence-editor {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(170px, 1.1fr) minmax(
+      160px,
+      1fr
+    );
+  align-items: center;
+  gap: 8px;
+}
+
+.edge-sentence-editor select,
+.edge-sentence-editor input {
+  min-width: 0;
 }
 
 .edge-context {
@@ -671,6 +729,26 @@ button:focus-visible {
 .selection-copy {
   color: var(--ink);
   margin-bottom: 10px;
+}
+
+.edge-sentence-readout {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 12px;
+}
+
+.edge-sentence-readout strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .meta-list {

@@ -9,7 +9,6 @@ import {
   documentLabelFromUrl,
   documentOptionsForAnnotations,
   edgeDisplayLabel,
-  edgeDisplayPurpose,
   graphLayersForView,
   tagPairKey,
 } from './graph-model.js';
@@ -74,11 +73,11 @@ const els = {
   canvasScroll: document.querySelector('#canvasScroll'),
   svg: document.querySelector('#graphSvg'),
   edgeEditor: document.querySelector('#edgeEditor'),
+  edgeEditorTitle: document.querySelector('#edgeEditorTitle'),
   cancelEdgeBtn: document.querySelector('#cancelEdgeBtn'),
   edgeSource: document.querySelector('#edgeSource'),
   edgeTarget: document.querySelector('#edgeTarget'),
   edgeLabel: document.querySelector('#edgeLabel'),
-  edgeExplanation: document.querySelector('#edgeExplanation'),
   edgeContext: document.querySelector('#edgeContext'),
   saveEdgeBtn: document.querySelector('#saveEdgeBtn'),
   selectionPanel: document.querySelector('#selectionPanel'),
@@ -257,21 +256,9 @@ function selectedDocumentLabel() {
 }
 
 function formatTagLabel(tag) {
-  const [scope, ...rest] = tag.split(':');
-  if (!rest.length) {
-    return {
-      scope: 'Tag',
-      name: tag.replace(/[-_]+/g, ' '),
-    };
-  }
-
-  const scopeLabel =
-    scope.toLowerCase() === 'hci'
-      ? 'HCI'
-      : scope.charAt(0).toUpperCase() + scope.slice(1);
   return {
-    scope: scopeLabel,
-    name: rest.join(':').replace(/[-_]+/g, ' '),
+    scope: 'Tag',
+    name: tag,
   };
 }
 
@@ -1079,15 +1066,12 @@ function tagEdgePath(source, target, index) {
   const normalX = -dy / distance;
   const normalY = dx / distance;
   const direction = index % 2 === 0 ? 1 : -1;
-  const spread = 28 + (index % 5) * 9;
-  const bow = Math.min(110, Math.max(34, distance * 0.18));
-  const midX = (start.x + end.x) / 2 + normalX * direction * spread;
-  const midY = (start.y + end.y) / 2 + normalY * direction * spread;
-  const c1x = start.x + dx * 0.28 + normalX * direction * bow;
-  const c1y = start.y + dy * 0.28 + normalY * direction * bow;
-  const c2x = end.x - dx * 0.28 + normalX * direction * bow;
-  const c2y = end.y - dy * 0.28 + normalY * direction * bow;
-  return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${midX} ${midY}, ${midX} ${midY} C ${midX} ${midY}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
+  const bow = clamp(distance * 0.14 + (index % 5) * 8, 30, 96);
+  const c1x = start.x + dx * 0.38 + normalX * direction * bow;
+  const c1y = start.y + dy * 0.38 + normalY * direction * bow;
+  const c2x = end.x - dx * 0.38 + normalX * direction * bow;
+  const c2y = end.y - dy * 0.38 + normalY * direction * bow;
+  return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
 }
 
 function edgeIsSelected(edge) {
@@ -1227,31 +1211,17 @@ function renderHumanEdges(group, layers) {
       return;
     }
     const visual = edgeVisual(edge, source, target);
-    const pathId = `path-${edge.id}`;
     const d = tagEdgePath(source, target, index);
     const edgeGroup = svgEl('g', {
       class: 'edge-interactive edge-human-group',
     });
     const path = svgEl('path', {
-      id: pathId,
       class: `edge-human ${visual.resting ? 'edge-resting' : ''} ${visual.muted ? 'edge-muted' : ''} ${visual.selected ? 'edge-active' : ''}`,
       d,
       stroke: visual.color,
     });
     edgeGroup.append(path);
 
-    const labelText = edgeDisplayLabel(edge);
-    if (labelText) {
-      const label = svgEl('text', { class: 'edge-label' });
-      const textPath = svgEl('textPath', {
-        href: `#${pathId}`,
-        startOffset: '50%',
-        'text-anchor': 'middle',
-      });
-      textPath.textContent = labelText;
-      label.append(textPath);
-      edgeGroup.append(label);
-    }
     const hitPath = svgEl('path', {
       class: 'edge-hit edge-human-hit',
       d,
@@ -1872,6 +1842,45 @@ function renderEvidenceDocuments(evidence = []) {
   `;
 }
 
+function edgeSentenceHtml(sourceLabel, relationship, targetLabel) {
+  const relation = relationship || 'connects to';
+  return `
+    <div class="edge-sentence-readout">
+      ${sourceLabel ? `<span class="tag-chip">${escapeHtml(sourceLabel)}</span>` : ''}
+      <strong>${escapeHtml(relation)}</strong>
+      ${targetLabel ? `<span class="tag-chip">${escapeHtml(targetLabel)}</span>` : ''}
+    </div>
+  `;
+}
+
+function createdEdgeById(id) {
+  return (state.edits?.tagEdges || []).find(edge => edge.id === id) || null;
+}
+
+function edgePairExists(sourceTag, targetTag, { ignoreEdgeId = null } = {}) {
+  const pairKey = tagPairKey(sourceTag, targetTag);
+  return (state.edits?.tagEdges || []).some(
+    edge =>
+      edge.id !== ignoreEdgeId &&
+      tagPairKey(edge.sourceTag, edge.targetTag) === pairKey,
+  );
+}
+
+function deleteCreatedEdge(edgeId) {
+  state.edits.tagEdges = (state.edits.tagEdges || []).filter(
+    edge => edge.id !== edgeId,
+  );
+  if (state.selectedEdgeId === edgeId) {
+    state.selectedEdgeId = null;
+  }
+  if (state.edgeDraft?.editingEdgeId === edgeId) {
+    closeEdgeEditor();
+  }
+  saveEditsNow();
+  buildGraph();
+  renderGraph();
+}
+
 function renderEdgeSelection(edge) {
   const source = state.graph.nodeById.get(edge.source);
   const target = state.graph.nodeById.get(edge.target);
@@ -1882,11 +1891,28 @@ function renderEdgeSelection(edge) {
         ? 'Suggested tag edge'
         : 'Evidence edge';
   const label = edgeDisplayLabel(edge);
-  const purpose = edgeDisplayPurpose(edge);
   const sourceLabel =
     edge.sourceTag || source?.tag || source?.label || source?.primaryTag || '';
   const targetLabel =
     edge.targetTag || target?.tag || target?.label || target?.primaryTag || '';
+
+  if (edge.type === 'human') {
+    els.selectionPanel.className = '';
+    els.selectionPanel.innerHTML = `
+      ${edgeSentenceHtml(sourceLabel, label, targetLabel)}
+      <div class="selection-actions">
+        <button id="editSelectedEdgeBtn" class="button compact" type="button">Edit</button>
+        <button id="deleteSelectedEdgeBtn" class="ghost-button danger" type="button">Delete</button>
+      </div>
+    `;
+    document
+      .querySelector('#editSelectedEdgeBtn')
+      ?.addEventListener('click', () => openEdgeEditor({ editEdge: edge }));
+    document
+      .querySelector('#deleteSelectedEdgeBtn')
+      ?.addEventListener('click', () => deleteCreatedEdge(edge.id));
+    return;
+  }
 
   let evidenceHtml = '';
   if (edge.type === 'implicit') {
@@ -1894,11 +1920,6 @@ function renderEdgeSelection(edge) {
       <div class="edge-context">${escapeHtml(implicitEdgeSummary(edge))}</div>
       ${renderEvidenceDocuments(edge.evidence)}
       <button id="promoteImplicitBtn" class="button primary full-width" type="button">Promote to Real Edge</button>
-    `;
-  } else if (edge.type === 'human') {
-    evidenceHtml = `
-      ${purpose ? `<div class="selection-copy">${escapeHtml(purpose)}</div>` : '<div class="empty-panel">No purpose has been written for this edge yet.</div>'}
-      ${edge.provenance?.evidence?.length ? renderEvidenceDocuments(edge.provenance.evidence) : ''}
     `;
   } else if (edge.evidenceKind === 'tag-document') {
     const annotations = annotationsForTagDocument(
@@ -2124,15 +2145,13 @@ function renderEdgeList() {
         <span>${escapeHtml(edge.sourceTag)}</span>
         <span>${escapeHtml(edge.targetTag)}</span>
       </div>
-      <input type="text" value="${escapeAttr(edgeDisplayLabel(edge))}" aria-label="Connection type" />
-      <textarea aria-label="Edge purpose">${escapeHtml(edgeDisplayPurpose(edge))}</textarea>
+      <input type="text" value="${escapeAttr(edgeDisplayLabel(edge))}" aria-label="Relationship" />
       <div class="edge-actions">
         <span>${isVisible ? (edge.createdFrom === 'implicit' ? 'Promoted suggestion' : 'Visible') : 'Hidden until both tags exist'}</span>
         <button class="ghost-button danger" type="button">Delete</button>
       </div>
     `;
     const input = item.querySelector('input');
-    const textarea = item.querySelector('textarea');
     const deleteButton = item.querySelector('button');
     input.addEventListener('change', () => {
       edge.connectionType = input.value.trim();
@@ -2142,20 +2161,7 @@ function renderEdgeList() {
       buildGraph();
       renderGraph();
     });
-    textarea.addEventListener('change', () => {
-      edge.purpose = textarea.value.trim();
-      edge.explanation = edge.purpose;
-      edge.updatedAt = new Date().toISOString();
-      saveEditsNow();
-    });
-    deleteButton.addEventListener('click', () => {
-      state.edits.tagEdges = state.edits.tagEdges.filter(
-        itemEdge => itemEdge.id !== edge.id,
-      );
-      saveEditsNow();
-      buildGraph();
-      renderGraph();
-    });
+    deleteButton.addEventListener('click', () => deleteCreatedEdge(edge.id));
     els.edgeList.append(item);
   }
 }
@@ -2177,17 +2183,21 @@ function openEdgeEditor({
   sourceTag = '',
   targetTag = '',
   implicitEdge = null,
+  editEdge = null,
 } = {}) {
   populateEdgeSelects();
-  state.edgeDraft = implicitEdge ? { implicitEdge } : null;
-  if (sourceTag) {
-    els.edgeSource.value = sourceTag;
-  }
-  if (targetTag) {
-    els.edgeTarget.value = targetTag;
-  }
-  els.edgeLabel.value = '';
-  els.edgeExplanation.value = '';
+  state.edgeDraft = editEdge
+    ? { editingEdgeId: editEdge.id }
+    : implicitEdge
+      ? { implicitEdge }
+      : null;
+  els.edgeEditorTitle.textContent = editEdge ? 'Edit Tag Edge' : 'Add Tag Edge';
+  els.saveEdgeBtn.textContent = editEdge ? 'Save Changes' : 'Save Edge';
+  els.edgeSource.value =
+    editEdge?.sourceTag || sourceTag || els.edgeSource.value;
+  els.edgeTarget.value =
+    editEdge?.targetTag || targetTag || els.edgeTarget.value;
+  els.edgeLabel.value = editEdge ? edgeDisplayLabel(editEdge) : '';
   if (implicitEdge) {
     els.edgeContext.hidden = false;
     els.edgeContext.textContent = implicitEdgeSummary(implicitEdge);
@@ -2204,6 +2214,8 @@ function openEdgeEditor({
 
 function closeEdgeEditor() {
   state.edgeDraft = null;
+  els.edgeEditorTitle.textContent = 'Add Tag Edge';
+  els.saveEdgeBtn.textContent = 'Save Edge';
   if (typeof els.edgeEditor.close === 'function') {
     els.edgeEditor.close();
   } else {
@@ -2215,31 +2227,46 @@ function saveNewEdge() {
   const sourceTag = els.edgeSource.value;
   const targetTag = els.edgeTarget.value;
   const connectionType = els.edgeLabel.value.trim();
-  const purpose = els.edgeExplanation.value.trim();
+  const editingEdgeId = state.edgeDraft?.editingEdgeId || null;
   if (!sourceTag || !targetTag || sourceTag === targetTag) {
     showNotice('Choose two different tags before saving the edge.');
     return;
   }
-  const newPairKey = tagPairKey(sourceTag, targetTag);
-  const duplicate = (state.edits.tagEdges || []).some(
-    edge => tagPairKey(edge.sourceTag, edge.targetTag) === newPairKey,
-  );
-  if (duplicate) {
+  if (edgePairExists(sourceTag, targetTag, { ignoreEdgeId: editingEdgeId })) {
     showNotice('That tag connection already exists.');
     return;
   }
 
   showNotice('');
   const now = new Date().toISOString();
+  if (editingEdgeId) {
+    const edge = createdEdgeById(editingEdgeId);
+    if (!edge) {
+      showNotice('That edge no longer exists.');
+      closeEdgeEditor();
+      buildGraph();
+      renderGraph();
+      return;
+    }
+    edge.sourceTag = sourceTag;
+    edge.targetTag = targetTag;
+    edge.connectionType = connectionType;
+    edge.label = connectionType;
+    edge.updatedAt = now;
+    closeEdgeEditor();
+    saveEditsNow();
+    buildGraph();
+    renderGraph();
+    return;
+  }
+
   const promotedImplicit = state.edgeDraft?.implicitEdge || null;
   const edge = {
     id: `edge:${Date.now()}:${Math.random().toString(16).slice(2)}`,
     sourceTag,
     targetTag,
     connectionType,
-    purpose,
     label: connectionType,
-    explanation: purpose,
     createdAt: now,
     updatedAt: now,
     createdBy: 'human',

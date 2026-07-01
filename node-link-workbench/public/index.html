@@ -127,25 +127,59 @@
             <label class="checkbox-field">
               <input id="edgeEvidenceToggle" type="checkbox" checked disabled />
               <span>Evidence</span>
+              <span class="filter-help">
+                <span
+                  class="help-icon"
+                  tabindex="0"
+                  aria-label="Evidence edge help"
+                  >?</span
+                >
+                <span class="help-popout" role="tooltip">
+                  Shows tag-to-quote links generated from annotation evidence.
+                </span>
+              </span>
             </label>
             <label class="checkbox-field">
               <input id="edgeHumanToggle" type="checkbox" checked disabled />
               <span>Real tag-tag</span>
+              <span class="filter-help">
+                <span
+                  class="help-icon"
+                  tabindex="0"
+                  aria-label="Real tag-tag edge help"
+                  >?</span
+                >
+                <span class="help-popout" role="tooltip">
+                  Shows tag-to-tag connections created by a person.
+                </span>
+              </span>
             </label>
             <label class="checkbox-field">
               <input id="edgeImplicitToggle" type="checkbox" checked disabled />
               <span>Suggested tag-tag</span>
+              <span class="filter-help">
+                <span
+                  class="help-icon"
+                  tabindex="0"
+                  aria-label="Suggested tag-tag edge help"
+                  >?</span
+                >
+                <span class="help-popout" role="tooltip">
+                  Shows dashed suggestions inferred from tags in the same
+                  document.
+                </span>
+              </span>
             </label>
           </div>
-          <label class="checkbox-field">
+          <label class="checkbox-field" hidden>
             <input id="documentComparisonToggle" type="checkbox" disabled />
             <span>Document comparison</span>
           </label>
-          <label class="field">
+          <label class="field" hidden>
             <span>Document A</span>
             <select id="compareDocASelect" disabled></select>
           </label>
-          <label class="field">
+          <label class="field" hidden>
             <span>Document B</span>
             <select id="compareDocBSelect" disabled></select>
           </label>
@@ -160,7 +194,7 @@
           </div>
         </section>
 
-        <section class="panel">
+        <section class="panel" hidden>
           <div class="panel-heading">
             <h2>Bridge Ranking</h2>
           </div>
@@ -171,7 +205,7 @@
           </div>
         </section>
 
-        <section class="panel">
+        <section class="panel" hidden>
           <div class="panel-heading">
             <h2>Document Comparison</h2>
           </div>
@@ -182,7 +216,7 @@
           </div>
         </section>
 
-        <section class="panel">
+        <section class="panel" hidden>
           <div class="panel-heading">
             <h2>Human Tag Edges</h2>
           </div>
@@ -194,36 +228,22 @@
     <dialog id="edgeEditor" class="edge-dialog">
       <section class="panel edge-dialog-panel">
         <div class="panel-heading">
-          <h2>Add Tag Edge</h2>
+          <h2 id="edgeEditorTitle">Add Tag Edge</h2>
           <button id="cancelEdgeBtn" class="ghost-button" type="button">
             Cancel
           </button>
         </div>
         <div id="edgeContext" class="edge-context" hidden></div>
-        <label class="field">
-          <span>Source tag</span>
-          <select id="edgeSource"></select>
-        </label>
-        <label class="field">
-          <span>Target tag</span>
-          <select id="edgeTarget"></select>
-        </label>
-        <label class="field">
-          <span>Connection type</span>
+        <div class="edge-sentence-editor">
+          <select id="edgeSource" aria-label="Source tag"></select>
           <input
             id="edgeLabel"
             type="text"
-            placeholder="supports, contrasts, explains..."
+            aria-label="Relationship"
+            placeholder="relationship"
           />
-        </label>
-        <label class="field">
-          <span>Purpose</span>
-          <textarea
-            id="edgeExplanation"
-            rows="4"
-            placeholder="Why should these tags be connected?"
-          ></textarea>
-        </label>
+          <select id="edgeTarget" aria-label="Target tag"></select>
+        </div>
         <button id="saveEdgeBtn" class="button primary full-width">
           Save Edge
         </button>

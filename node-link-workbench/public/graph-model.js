@@ -295,10 +295,6 @@ export function edgeDisplayLabel(edge) {
   return edge.connectionType || edge.label || edge.generator?.label || '';
 }
 
-export function edgeDisplayPurpose(edge) {
-  return edge.purpose || edge.explanation || '';
-}
-
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
