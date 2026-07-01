@@ -254,6 +254,12 @@ export type SidebarToGuestCalls = {
    * Expose the guest document info to the sidebar
    */
   getDocumentInfo(callback: (info: DocumentInfo) => void): void;
+
+  /**
+   * Return the loaded PDF as a base64 string for Claude document search.
+   * Only available for PDF documents.
+   */
+  getPdfBytes(callback: (result: Result<string>) => void): void;
 };
 
 /** Calls that the sidebar makes to the host. */

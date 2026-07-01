@@ -615,7 +615,11 @@ export class FrameSyncService {
     guestRPC.call('setHighlightsVisible', this._highlightsVisible);
     guestRPC.call('featureFlagsUpdated', this._store.features());
     guestRPC.call('shortcutsUpdated', getAllShortcuts());
-    guestRPC.call('setTagHighlightPalette', this._tagHighlightPalette, this._hiddenAnnotationIds);
+    guestRPC.call(
+      'setTagHighlightPalette',
+      this._tagHighlightPalette,
+      this._hiddenAnnotationIds,
+    );
 
     // If we have content banner data, send it to the guest. If there are
     // multiple guests the banner is likely only appropriate for the main one.
@@ -742,11 +746,31 @@ export class FrameSyncService {
    * Replace tag highlight colors in every connected guest (e.g. after a color
    * picker change). Pass the full map each time.
    */
-  setTagHighlightPalette(palette: Record<string, string>, hiddenAnnotationIds: string[] = []): void {
+  setTagHighlightPalette(
+    palette: Record<string, string>,
+    hiddenAnnotationIds: string[] = [],
+  ): void {
+    const paletteUnchanged =
+      Object.keys(palette).length === Object.keys(this._tagHighlightPalette).length &&
+      Object.entries(palette).every(
+        ([tag, color]) => this._tagHighlightPalette[tag] === color,
+      );
+    const hiddenUnchanged =
+      hiddenAnnotationIds.length === this._hiddenAnnotationIds.length &&
+      hiddenAnnotationIds.every(
+        (id, index) => id === this._hiddenAnnotationIds[index],
+      );
+    if (paletteUnchanged && hiddenUnchanged) {
+      return;
+    }
     this._tagHighlightPalette = { ...palette };
     this._hiddenAnnotationIds = hiddenAnnotationIds;
     this._guestRPC.forEach(rpc =>
-      rpc.call('setTagHighlightPalette', this._tagHighlightPalette, this._hiddenAnnotationIds),
+      rpc.call(
+        'setTagHighlightPalette',
+        this._tagHighlightPalette,
+        this._hiddenAnnotationIds,
+      ),
     );
   }
 
@@ -856,6 +880,27 @@ export class FrameSyncService {
     guest.call('getDocumentInfo', resolve);
 
     return promise;
+  }
+
+  /**
+   * Read the PDF bytes from the guest frame (browser session) as base64.
+   * Used when the public document URL is not downloadable by Claude.
+   */
+  async getPdfBytes(): Promise<string> {
+    const guest = this._guestRPC.get(null);
+    if (!guest) {
+      throw new Error('No guest connected');
+    }
+
+    return new Promise((resolve, reject) => {
+      guest.call('getPdfBytes', result => {
+        if (result.ok) {
+          resolve(result.value);
+        } else {
+          reject(new Error(result.error));
+        }
+      });
+    });
   }
 
   // Only used to cleanup tests
