@@ -74,6 +74,8 @@ function emptySnapshot() {
 }
 
 function emptyEdits() {
+  // Local-only workbench state. Hypothesis remains the source of annotation
+  // evidence; this file stores the graph metadata that Hypothesis does not.
   return {
     schemaVersion: 1,
     updatedAt: null,

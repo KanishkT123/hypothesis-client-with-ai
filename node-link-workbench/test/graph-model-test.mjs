@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
-  buildBridgeRankings,
-  buildDocumentComparison,
+  buildDescriptiveTagNodes,
   buildImplicitTagEdges,
   buildTagOnlyLayout,
   contentTags,
   documentOptionsForAnnotations,
   graphLayersForView,
   tagOnlyGraphSize,
+  visibleManualTagEdges,
 } from '../public/graph-model.js';
 
 function annotation(props = {}) {
@@ -163,42 +163,80 @@ describe('node-link workbench graph model', () => {
     );
   });
 
-  it('ranks bridge tags using document coverage and tag-edge degree', () => {
-    const rankings = buildBridgeRankings({
-      tagNodes: [
-        { tag: 'shared', count: 4, docCount: 2 },
-        { tag: 'single', count: 10, docCount: 1 },
-        { tag: 'connected', count: 2, docCount: 2 },
+  it('adds descriptive tags as zero-evidence tag nodes', () => {
+    const nodes = buildDescriptiveTagNodes({
+      descriptiveTags: [
+        {
+          id: 'desc:1',
+          tag: 'theory bridge',
+          createdAt: '2026-07-01T00:00:00.000Z',
+        },
       ],
-      humanEdges: [{ sourceTag: 'connected', targetTag: 'single' }],
-      implicitEdges: [
-        { sourceTag: 'shared', targetTag: 'connected' },
-        { sourceTag: 'shared', targetTag: 'single' },
-      ],
+      existingTags: new Set(['Character']),
     });
 
-    assert.equal(rankings[0].tag, 'connected');
-    assert.equal(rankings.find(item => item.tag === 'shared').docCount, 2);
-    assert.equal(rankings.find(item => item.tag === 'single').docCount, 1);
+    assert.deepEqual(nodes, [
+      {
+        id: 'tag:theory bridge',
+        type: 'tag',
+        tag: 'theory bridge',
+        count: 0,
+        documentUris: new Set(),
+        descriptive: true,
+        descriptiveTagId: 'desc:1',
+        createdAt: '2026-07-01T00:00:00.000Z',
+        updatedAt: undefined,
+      },
+    ]);
   });
 
-  it('classifies tags for document comparison', () => {
-    const comparison = buildDocumentComparison({
-      documentA: 'doyle',
-      documentB: 'little-women',
-      tagNodes: [
-        { tag: 'shared', documentUris: ['doyle', 'little-women'] },
-        { tag: 'doyle-only', documentUris: ['doyle'] },
-        { tag: 'little-only', documentUris: ['little-women'] },
-        { tag: 'other', documentUris: ['other'] },
+  it('keeps descriptive tags unique against annotation tags and each other', () => {
+    const nodes = buildDescriptiveTagNodes({
+      descriptiveTags: [
+        { id: 'desc:existing', tag: 'Character' },
+        { id: 'desc:empty', tag: '   ' },
+        { id: 'desc:first', tag: 'theory bridge' },
+        { id: 'desc:duplicate', tag: 'theory bridge' },
+      ],
+      existingTags: new Set(['Character']),
+    });
+
+    assert.deepEqual(
+      nodes.map(node => [node.descriptiveTagId, node.tag]),
+      [['desc:first', 'theory bridge']],
+    );
+  });
+
+  it('renders only manual tag edges whose endpoints are visible', () => {
+    const edges = visibleManualTagEdges({
+      visibleTags: new Set(['Character', 'theory bridge']),
+      tagEdges: [
+        {
+          id: 'edge:visible',
+          sourceTag: 'theory bridge',
+          targetTag: 'Character',
+          connectionType: 'frames',
+        },
+        {
+          id: 'edge:orphan',
+          sourceTag: 'theory bridge',
+          targetTag: 'missing tag',
+          connectionType: 'hides',
+        },
       ],
     });
 
-    assert.equal(comparison.enabled, true);
-    assert.deepEqual(comparison.shared, ['shared']);
-    assert.deepEqual(comparison.onlyA, ['doyle-only']);
-    assert.deepEqual(comparison.onlyB, ['little-only']);
-    assert.deepEqual(comparison.neither, ['other']);
+    assert.deepEqual(edges, [
+      {
+        id: 'edge:visible',
+        sourceTag: 'theory bridge',
+        targetTag: 'Character',
+        connectionType: 'frames',
+        type: 'human',
+        source: 'tag:theory bridge',
+        target: 'tag:Character',
+      },
+    ]);
   });
 
   it('computes a larger tag-only graph layout with bounded positions', () => {

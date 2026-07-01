@@ -87,6 +87,67 @@ export function tagEdgePairKeys(tagEdges = []) {
 }
 
 /**
+ * Convert user-created descriptive tags into graph tag nodes.
+ *
+ * Descriptive tags are local workbench concepts, not Hypothesis annotations.
+ * They therefore have no quote count or document evidence, but they still use
+ * the same `tag:<raw tag>` node id shape so manual tag-tag edges can connect
+ * them to annotation-backed tags.
+ */
+export function buildDescriptiveTagNodes({
+  descriptiveTags = [],
+  existingTags = new Set(),
+} = {}) {
+  const seen = new Set(existingTags);
+  const nodes = [];
+
+  for (const item of descriptiveTags) {
+    const tag = String(item?.tag || '').trim();
+    if (!tag || seen.has(tag)) {
+      continue;
+    }
+    seen.add(tag);
+    nodes.push({
+      id: `tag:${tag}`,
+      type: 'tag',
+      tag,
+      count: 0,
+      documentUris: new Set(),
+      descriptive: true,
+      descriptiveTagId: item.id,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    });
+  }
+
+  return nodes;
+}
+
+/**
+ * Resolve persisted manual tag-tag edges into renderable graph edges.
+ *
+ * Edges are kept in the JSON file even if a source/target tag is absent from
+ * the current filtered document view. Rendering only receives edges whose
+ * endpoints both exist, which prevents orphaned SVG paths.
+ */
+export function visibleManualTagEdges({
+  tagEdges = [],
+  visibleTags = new Set(),
+} = {}) {
+  return tagEdges
+    .filter(
+      edge =>
+        visibleTags.has(edge.sourceTag) && visibleTags.has(edge.targetTag),
+    )
+    .map(edge => ({
+      ...edge,
+      type: 'human',
+      source: `tag:${edge.sourceTag}`,
+      target: `tag:${edge.targetTag}`,
+    }));
+}
+
+/**
  * Build generated tag-tag suggestions.
  *
  * The current generator links tags that co-occur in at least one visible
@@ -168,110 +229,6 @@ export function buildImplicitTagEdges({
         a.sourceTag.localeCompare(b.sourceTag) ||
         a.targetTag.localeCompare(b.targetTag),
     );
-}
-
-/**
- * Rank tags that are likely to bridge documents or authored tag-tag edges.
- * Higher scores favor tags with broader document coverage and more explicit or
- * suggested tag connections.
- */
-export function buildBridgeRankings({
-  tagNodes = [],
-  humanEdges = [],
-  implicitEdges = [],
-} = {}) {
-  const humanDegree = new Map();
-  const implicitDegree = new Map();
-
-  const addDegree = (map, edge) => {
-    if (!edge.sourceTag || !edge.targetTag) {
-      return;
-    }
-    map.set(edge.sourceTag, (map.get(edge.sourceTag) || 0) + 1);
-    map.set(edge.targetTag, (map.get(edge.targetTag) || 0) + 1);
-  };
-
-  humanEdges.forEach(edge => addDegree(humanDegree, edge));
-  implicitEdges.forEach(edge => addDegree(implicitDegree, edge));
-
-  return tagNodes
-    .map(node => {
-      const docCount = node.docCount ?? (node.documentUris || []).length;
-      const realConnections = humanDegree.get(node.tag) || 0;
-      const suggestedConnections = implicitDegree.get(node.tag) || 0;
-      const bridgeScore =
-        docCount * 10 +
-        Math.min(node.count || 0, 12) +
-        realConnections * 4 +
-        suggestedConnections * 1.5 +
-        (docCount > 1 ? 8 : 0);
-      return {
-        tag: node.tag,
-        count: node.count || 0,
-        docCount,
-        realConnections,
-        suggestedConnections,
-        totalConnections: realConnections + suggestedConnections,
-        bridgeScore: Math.round(bridgeScore * 10) / 10,
-      };
-    })
-    .sort(
-      (a, b) =>
-        b.bridgeScore - a.bridgeScore ||
-        b.docCount - a.docCount ||
-        b.totalConnections - a.totalConnections ||
-        a.tag.localeCompare(b.tag),
-    );
-}
-
-/**
- * Classify visible tags against two documents. The result feeds both the
- * inspector summary and the comparison color mode in the SVG renderer.
- */
-export function buildDocumentComparison({
-  tagNodes = [],
-  documentA = '',
-  documentB = '',
-} = {}) {
-  const enabled =
-    Boolean(documentA) && Boolean(documentB) && documentA !== documentB;
-  const result = {
-    enabled,
-    documentA,
-    documentB,
-    shared: [],
-    onlyA: [],
-    onlyB: [],
-    either: [],
-    neither: [],
-  };
-
-  if (!enabled) {
-    return result;
-  }
-
-  for (const node of tagNodes) {
-    const docs = new Set(node.documentUris || []);
-    const inA = docs.has(documentA);
-    const inB = docs.has(documentB);
-    if (inA || inB) {
-      result.either.push(node.tag);
-    }
-    if (inA && inB) {
-      result.shared.push(node.tag);
-    } else if (inA) {
-      result.onlyA.push(node.tag);
-    } else if (inB) {
-      result.onlyB.push(node.tag);
-    } else {
-      result.neither.push(node.tag);
-    }
-  }
-
-  for (const key of ['shared', 'onlyA', 'onlyB', 'either', 'neither']) {
-    result[key].sort((a, b) => a.localeCompare(b));
-  }
-  return result;
 }
 
 export function graphLayersForView({

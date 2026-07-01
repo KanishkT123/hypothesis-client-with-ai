@@ -1,8 +1,7 @@
 import {
   annotationDocumentId,
   annotationDocumentLabel,
-  buildBridgeRankings,
-  buildDocumentComparison,
+  buildDescriptiveTagNodes,
   buildImplicitTagEdges,
   buildTagOnlyLayout,
   contentTags,
@@ -11,6 +10,7 @@ import {
   edgeDisplayLabel,
   graphLayersForView,
   tagPairKey,
+  visibleManualTagEdges,
 } from './graph-model.js';
 
 const LAYOUT_VERSION = 3;
@@ -55,9 +55,6 @@ const els = {
   edgeEvidenceToggle: document.querySelector('#edgeEvidenceToggle'),
   edgeHumanToggle: document.querySelector('#edgeHumanToggle'),
   edgeImplicitToggle: document.querySelector('#edgeImplicitToggle'),
-  documentComparisonToggle: document.querySelector('#documentComparisonToggle'),
-  compareDocASelect: document.querySelector('#compareDocASelect'),
-  compareDocBSelect: document.querySelector('#compareDocBSelect'),
   graphTitle: document.querySelector('#graphTitle'),
   graphStats: document.querySelector('#graphStats'),
   saveState: document.querySelector('#saveState'),
@@ -83,9 +80,6 @@ const els = {
   tagName: document.querySelector('#tagName'),
   saveTagBtn: document.querySelector('#saveTagBtn'),
   selectionPanel: document.querySelector('#selectionPanel'),
-  bridgeRanking: document.querySelector('#bridgeRanking'),
-  comparisonPanel: document.querySelector('#comparisonPanel'),
-  edgeList: document.querySelector('#edgeList'),
 };
 
 const state = {
@@ -104,9 +98,6 @@ const state = {
     human: true,
     implicit: true,
   },
-  documentComparisonEnabled: false,
-  compareDocumentA: '',
-  compareDocumentB: '',
   zoom: 0.82,
   userZoomed: false,
   selectedNodeId: null,
@@ -280,6 +271,8 @@ function ensureCurrentLayout() {
   if (!state.edits) {
     return;
   }
+  // Older edit files did not have local descriptive tags. Normalize once here
+  // so the rest of the app can treat the edit schema as current.
   if (!Array.isArray(state.edits.descriptiveTags)) {
     state.edits.descriptiveTags = [];
   }
@@ -593,6 +586,11 @@ function buildDrilldownGraph({ tagNodes, quoteNodes, lanes, width, height }) {
   };
 }
 
+/**
+ * Build the in-memory graph from two sources:
+ * Hypothesis annotations provide evidence-backed tags and quotes; local edits
+ * provide manual tag-tag edges, saved layout, and descriptive-only tags.
+ */
 function buildGraph() {
   ensureCurrentLayout();
   const snapshot = state.snapshot || { annotations: [] };
@@ -663,22 +661,11 @@ function buildGraph() {
     }
   }
 
-  for (const item of descriptiveTags()) {
-    const tag = normalizeEditableTag(item.tag);
-    if (!tag || tagMap.has(tag)) {
-      continue;
-    }
-    tagMap.set(tag, {
-      id: `tag:${tag}`,
-      type: 'tag',
-      tag,
-      count: 0,
-      documentUris: new Set(),
-      descriptive: true,
-      descriptiveTagId: item.id,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-    });
+  for (const node of buildDescriptiveTagNodes({
+    descriptiveTags: descriptiveTags(),
+    existingTags: new Set(tagMap.keys()),
+  })) {
+    tagMap.set(node.tag, node);
   }
 
   const tagNodes = [...tagMap.values()].sort((a, b) =>
@@ -775,17 +762,10 @@ function buildGraph() {
   }
 
   const visibleTags = new Set(tagNodes.map(node => node.tag));
-  const humanEdges = (state.edits?.tagEdges || [])
-    .filter(
-      edge =>
-        visibleTags.has(edge.sourceTag) && visibleTags.has(edge.targetTag),
-    )
-    .map(edge => ({
-      ...edge,
-      type: 'human',
-      source: `tag:${edge.sourceTag}`,
-      target: `tag:${edge.targetTag}`,
-    }));
+  const humanEdges = visibleManualTagEdges({
+    tagEdges: state.edits?.tagEdges || [],
+    visibleTags,
+  });
 
   const implicitEdges = buildImplicitTagEdges({
     tagNodes,
@@ -845,16 +825,6 @@ function buildGraph() {
 
   const nodes = [...tagNodes, ...quoteNodes, ...drillNodes];
   const nodeById = new Map(nodes.map(node => [node.id, node]));
-  const bridgeRankings = buildBridgeRankings({
-    tagNodes,
-    humanEdges,
-    implicitEdges,
-  });
-  const comparison = buildDocumentComparison({
-    tagNodes,
-    documentA: state.documentComparisonEnabled ? state.compareDocumentA : '',
-    documentB: state.documentComparisonEnabled ? state.compareDocumentB : '',
-  });
 
   state.graph = {
     width,
@@ -868,8 +838,6 @@ function buildGraph() {
     evidenceEdges,
     humanEdges,
     implicitEdges,
-    bridgeRankings,
-    comparison,
     tagOnlyFocusedTag,
     tagOnlyFocusedNeighbors,
     lanes,
@@ -937,45 +905,7 @@ function tagTouchesFocus(node) {
   );
 }
 
-function comparisonRoleForTag(tag) {
-  const comparison = state.graph?.comparison;
-  if (!comparison?.enabled) {
-    return 'off';
-  }
-  if (comparison.shared.includes(tag)) {
-    return 'shared';
-  }
-  if (comparison.onlyA.includes(tag)) {
-    return 'onlyA';
-  }
-  if (comparison.onlyB.includes(tag)) {
-    return 'onlyB';
-  }
-  return 'neither';
-}
-
-function comparisonTagStyle(role) {
-  if (role === 'shared') {
-    return { fill: '#0f766e', opacity: 1 };
-  }
-  if (role === 'onlyA') {
-    return { fill: '#2563eb', opacity: 1 };
-  }
-  if (role === 'onlyB') {
-    return { fill: '#b45309', opacity: 1 };
-  }
-  if (role === 'neither') {
-    return { fill: '#8d9a97', opacity: 0.18 };
-  }
-  return null;
-}
-
 function tagVisual(node) {
-  const comparisonStyle = comparisonTagStyle(comparisonRoleForTag(node.tag));
-  if (comparisonStyle) {
-    return comparisonStyle;
-  }
-
   if (state.colorMode === 'document') {
     if (state.colorFocus !== 'all' && tagTouchesFocus(node)) {
       const lane = state.graph.lanes.find(
@@ -1015,30 +945,6 @@ function tagVisual(node) {
 }
 
 function documentVisual(node) {
-  if (state.graph?.comparison?.enabled) {
-    if (node.documentUri === state.graph.comparison.documentA) {
-      return {
-        fill: '#eff6ff',
-        stroke: '#2563eb',
-        opacity: 1,
-        port: '#2563eb',
-      };
-    }
-    if (node.documentUri === state.graph.comparison.documentB) {
-      return {
-        fill: '#fff7ed',
-        stroke: '#b45309',
-        opacity: 1,
-        port: '#b45309',
-      };
-    }
-    return {
-      fill: '#f4f6f6',
-      stroke: '#cbd8d6',
-      opacity: 0.28,
-      port: '#9aa8a6',
-    };
-  }
   return {
     fill: hexToRgba(node.color || '#0f766e', 0.12),
     stroke: node.color || '#0f766e',
@@ -1052,22 +958,6 @@ function quoteVisual(node) {
   const tagStyle = tagNode
     ? tagVisual(tagNode)
     : { fill: '#7c8a87', opacity: 1 };
-
-  if (state.graph?.comparison?.enabled) {
-    const role = comparisonRoleForTag(node.primaryTag);
-    const style = comparisonTagStyle(role);
-    const documentFocused =
-      node.documentUri === state.graph.comparison.documentA ||
-      node.documentUri === state.graph.comparison.documentB;
-    return {
-      fill: documentFocused
-        ? hexToRgba(style?.fill || '#d7a940', 0.12)
-        : '#f4f6f6',
-      stroke: documentFocused ? style?.fill || tagStyle.fill : '#cbd8d6',
-      opacity: documentFocused && role !== 'neither' ? 1 : 0.24,
-      port: documentFocused ? style?.fill || tagStyle.fill : '#9aa8a6',
-    };
-  }
 
   if (state.colorMode === 'document') {
     const focused =
@@ -1839,9 +1729,6 @@ function renderGraph() {
   }
   els.svg.append(guides, edges, nodes);
   renderSelection();
-  renderBridgeRanking();
-  renderDocumentComparison();
-  renderEdgeList();
   updateGraphHeader();
   maybeFitGraph();
 }
@@ -2032,6 +1919,8 @@ function deleteDescriptiveTag(tagId) {
   }
   const references = tagEdgeReferences(tag.tag);
   if (references.length) {
+    // Deletion is intentionally blocked instead of cascading through edges.
+    // The user should choose which relationships to remove first.
     showNotice('Delete this tag after removing its manual tag-tag edges.');
     return;
   }
@@ -2078,6 +1967,8 @@ function saveDescriptiveTag() {
     existing.tag = tagName;
     existing.updatedAt = now;
     if (oldTag !== tagName) {
+      // Manual edges store endpoint tag strings, so a rename must move both
+      // the rendered relationships and any saved drag position atomically.
       rewriteManualEdgesForTag(oldTag, tagName);
       moveTagLayoutPosition(oldTag, tagName);
       if (state.selectedNodeId === `tag:${oldTag}`) {
@@ -2276,147 +2167,6 @@ function renderSelection() {
   document.querySelector('#openSourceBtn')?.addEventListener('click', () => {
     window.open(sourceUrl, '_blank', 'noopener');
   });
-}
-
-function documentLabelByUri(uri) {
-  return (
-    documentOptions().find(option => option.uri === uri)?.label ||
-    documentLabelFromUrl(uri)
-  );
-}
-
-function renderBridgeRanking() {
-  if (!els.bridgeRanking) {
-    return;
-  }
-  const rankings = state.graph?.bridgeRankings || [];
-  if (!rankings.length) {
-    els.bridgeRanking.innerHTML =
-      '<div class="empty-panel">Refresh annotations to rank bridge tags.</div>';
-    return;
-  }
-
-  els.bridgeRanking.innerHTML = rankings
-    .slice(0, 12)
-    .map((item, index) => {
-      const selected = state.selectedNodeId === `tag:${item.tag}`;
-      return `
-        <button class="rank-item ${selected ? 'rank-item-selected' : ''}" type="button" data-tag="${escapeAttr(item.tag)}">
-          <span class="rank-number">${index + 1}</span>
-          <span class="rank-main">
-            <strong>${escapeHtml(item.tag)}</strong>
-            <small>${item.docCount} docs / ${item.count} quotes / ${item.totalConnections} tag edges</small>
-          </span>
-          <span class="rank-score">${item.bridgeScore}</span>
-        </button>
-      `;
-    })
-    .join('');
-
-  els.bridgeRanking.querySelectorAll('[data-tag]').forEach(button => {
-    button.addEventListener('click', () => {
-      selectNode(`tag:${button.getAttribute('data-tag')}`);
-    });
-  });
-}
-
-function renderComparisonTagButtons(tags, className) {
-  if (!tags.length) {
-    return '<span class="empty-panel">None</span>';
-  }
-  return tags
-    .map(
-      tag =>
-        `<button class="tag-pill ${className}" type="button" data-tag="${escapeAttr(tag)}">${escapeHtml(tag)}</button>`,
-    )
-    .join('');
-}
-
-function renderDocumentComparison() {
-  if (!els.comparisonPanel) {
-    return;
-  }
-  const comparison = state.graph?.comparison;
-  if (!state.documentComparisonEnabled || !comparison?.enabled) {
-    els.comparisonPanel.innerHTML =
-      '<div class="empty-panel">Enable document comparison and choose two documents.</div>';
-    return;
-  }
-
-  els.comparisonPanel.innerHTML = `
-    <div class="comparison-docs">
-      <span class="doc-a">${escapeHtml(documentLabelByUri(comparison.documentA))}</span>
-      <span class="doc-b">${escapeHtml(documentLabelByUri(comparison.documentB))}</span>
-    </div>
-    <div class="comparison-row">
-      <strong>Shared</strong>
-      <span>${comparison.shared.length}</span>
-    </div>
-    <div class="tag-chip-row comparison-tags">
-      ${renderComparisonTagButtons(comparison.shared, 'tag-pill-shared')}
-    </div>
-    <div class="comparison-row">
-      <strong>Only A</strong>
-      <span>${comparison.onlyA.length}</span>
-    </div>
-    <div class="tag-chip-row comparison-tags">
-      ${renderComparisonTagButtons(comparison.onlyA, 'tag-pill-a')}
-    </div>
-    <div class="comparison-row">
-      <strong>Only B</strong>
-      <span>${comparison.onlyB.length}</span>
-    </div>
-    <div class="tag-chip-row comparison-tags">
-      ${renderComparisonTagButtons(comparison.onlyB, 'tag-pill-b')}
-    </div>
-  `;
-
-  els.comparisonPanel.querySelectorAll('[data-tag]').forEach(button => {
-    button.addEventListener('click', () => {
-      selectNode(`tag:${button.getAttribute('data-tag')}`);
-    });
-  });
-}
-
-function renderEdgeList() {
-  const edges = state.edits?.tagEdges || [];
-  if (!edges.length) {
-    els.edgeList.innerHTML =
-      '<div class="empty-panel">No human tag edges yet.</div>';
-    return;
-  }
-
-  els.edgeList.replaceChildren();
-  for (const edge of edges) {
-    const isVisible =
-      state.graph.visibleTags.has(edge.sourceTag) &&
-      state.graph.visibleTags.has(edge.targetTag);
-    const item = document.createElement('div');
-    item.className = `edge-item ${isVisible ? '' : 'hidden-edge'}`;
-    item.innerHTML = `
-      <div class="edge-tags">
-        <span>${escapeHtml(edge.sourceTag)}</span>
-        <span>${escapeHtml(edge.targetTag)}</span>
-      </div>
-      <input type="text" value="${escapeAttr(edgeDisplayLabel(edge))}" aria-label="Relationship" />
-      <div class="edge-actions">
-        <span>${isVisible ? (edge.createdFrom === 'implicit' ? 'Promoted suggestion' : 'Visible') : 'Hidden until both tags exist'}</span>
-        <button class="ghost-button danger" type="button">Delete</button>
-      </div>
-    `;
-    const input = item.querySelector('input');
-    const deleteButton = item.querySelector('button');
-    input.addEventListener('change', () => {
-      edge.connectionType = input.value.trim();
-      edge.label = edge.connectionType;
-      edge.updatedAt = new Date().toISOString();
-      saveEditsNow();
-      buildGraph();
-      renderGraph();
-    });
-    deleteButton.addEventListener('click', () => deleteCreatedEdge(edge.id));
-    els.edgeList.append(item);
-  }
 }
 
 function populateEdgeSelects() {
@@ -2706,7 +2456,6 @@ async function loadGraph() {
   updateGroupSelect();
   updateDocumentSelect();
   updateColorFocusSelect();
-  updateComparisonSelects();
   buildGraph();
   renderGraph();
   updateGraphHeader();
@@ -2734,7 +2483,6 @@ async function refreshSnapshot() {
     ensureCurrentLayout();
     updateDocumentSelect();
     updateColorFocusSelect();
-    updateComparisonSelects();
     buildGraph();
     renderGraph();
     updateGraphHeader();
@@ -2799,7 +2547,6 @@ function updateDocumentSelect() {
     state.documentFilter = 'all';
     els.documentSelect.value = 'all';
   }
-  updateComparisonSelects();
 }
 
 function updateColorFocusSelect() {
@@ -2824,36 +2571,6 @@ function updateColorFocusSelect() {
   } else {
     state.colorFocus = 'all';
     els.colorFocusSelect.value = 'all';
-  }
-}
-
-function updateComparisonSelects() {
-  const options = documentOptions();
-  const validUris = new Set(options.map(option => option.uri));
-
-  if (!validUris.has(state.compareDocumentA)) {
-    state.compareDocumentA = options[0]?.uri || '';
-  }
-  if (
-    !validUris.has(state.compareDocumentB) ||
-    state.compareDocumentB === state.compareDocumentA
-  ) {
-    state.compareDocumentB =
-      options.find(option => option.uri !== state.compareDocumentA)?.uri || '';
-  }
-
-  for (const [select, current] of [
-    [els.compareDocASelect, state.compareDocumentA],
-    [els.compareDocBSelect, state.compareDocumentB],
-  ]) {
-    select.replaceChildren();
-    for (const option of options) {
-      const item = document.createElement('option');
-      item.value = option.uri;
-      item.textContent = option.label;
-      select.append(item);
-    }
-    select.value = current;
   }
 }
 
@@ -2882,19 +2599,10 @@ function updateControls() {
   els.edgeEvidenceToggle.disabled = !state.graph;
   els.edgeHumanToggle.disabled = !state.graph;
   els.edgeImplicitToggle.disabled = !state.graph;
-  els.documentComparisonToggle.disabled =
-    !state.graph || documentOptions().length < 2;
-  els.compareDocASelect.disabled =
-    !state.graph || !state.documentComparisonEnabled;
-  els.compareDocBSelect.disabled =
-    !state.graph || !state.documentComparisonEnabled;
   els.tagOnlyToggle.checked = !state.showQuotes;
   els.edgeEvidenceToggle.checked = state.edgeFilters.evidence;
   els.edgeHumanToggle.checked = state.edgeFilters.human;
   els.edgeImplicitToggle.checked = state.showImplicitConnections;
-  els.documentComparisonToggle.checked = state.documentComparisonEnabled;
-  els.compareDocASelect.value = state.compareDocumentA;
-  els.compareDocBSelect.value = state.compareDocumentB;
   els.refreshBtn.disabled = !authenticated || !els.groupSelect.value;
   els.newTagBtn.disabled = !state.edits;
   els.newEdgeBtn.disabled = !state.graph?.tagNodes.length;
@@ -3021,31 +2729,10 @@ async function init() {
     renderGraph();
     updateControls();
   });
-  els.documentComparisonToggle.addEventListener('change', () => {
-    state.documentComparisonEnabled = els.documentComparisonToggle.checked;
-    buildGraph();
-    renderGraph();
-    updateControls();
-  });
-  els.compareDocASelect.addEventListener('change', () => {
-    state.compareDocumentA = els.compareDocASelect.value;
-    updateComparisonSelects();
-    buildGraph();
-    renderGraph();
-    updateControls();
-  });
-  els.compareDocBSelect.addEventListener('change', () => {
-    state.compareDocumentB = els.compareDocBSelect.value;
-    updateComparisonSelects();
-    buildGraph();
-    renderGraph();
-    updateControls();
-  });
   els.documentSelect.addEventListener('change', () => {
     state.documentFilter = els.documentSelect.value || 'all';
     buildGraph();
     updateColorFocusSelect();
-    updateComparisonSelects();
     if (
       state.selectedNodeId &&
       !state.graph.nodeById.has(state.selectedNodeId)
