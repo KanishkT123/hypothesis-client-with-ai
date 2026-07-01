@@ -15,6 +15,7 @@ describe('setupTagPaletteSync', () => {
         focusedGroupId: () => focusedGroupId,
         mainFrame: () => null,
         searchUris: () => [],
+        savedAnnotations: () => [],
       },
     );
   }

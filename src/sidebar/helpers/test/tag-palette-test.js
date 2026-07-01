@@ -1,5 +1,6 @@
 import {
   INITIAL_AI_TAG_HIGHLIGHT_PALETTE,
+  computeTagInventoryHighlightState,
   mergeVisibleTagHighlightPalette,
 } from '../tag-palette';
 
@@ -42,5 +43,38 @@ describe('sidebar/helpers/tag-palette', () => {
       schemaTagColors,
     );
     assert.propertyVal(visiblePalette, 'topic', 'rgba(10, 20, 30, 0.38)');
+  });
+
+  it('hides only annotations not on any visible row', () => {
+    const state = computeTagInventoryHighlightState(
+      [
+        {
+          id: 'r1',
+          groupId: 'g1',
+          schemaTag: 'topic',
+          query: 'q1',
+          annotationIds: ['ann-hidden-only'],
+          hidden: true,
+        },
+        {
+          id: 'r2',
+          groupId: 'g1',
+          schemaTag: 'topic',
+          query: 'q2',
+          annotationIds: ['ann-shared'],
+          hidden: true,
+        },
+        {
+          id: 'r3',
+          groupId: 'g1',
+          schemaTag: 'topic',
+          query: 'q3',
+          annotationIds: ['ann-shared', 'ann-visible-only'],
+        },
+      ],
+      { focusedGroupId: 'g1', currentDocumentUri: null, documentUriAliases: [] },
+    );
+
+    assert.deepEqual(state.hiddenAnnotationIds, ['ann-hidden-only']);
   });
 });

@@ -1,10 +1,23 @@
-import { currentDocumentUri, documentUriAliases } from '../helpers/document-uri';
+import { resolveDocumentUriFromCandidates, documentUriAliases, filterSavedAnnotationsForDocument } from '../helpers/document-uri';
+import { PUBLIC_GROUP_ID } from '../helpers/groups';
 import { isTagInventoryRowVisibleInScope } from '../helpers/tag-inventory-group';
-import { mergeVisibleTagHighlightPalette } from '../helpers/tag-palette';
+import {
+  computeTagInventoryHighlightState,
+  mergeVisibleTagHighlightPalette,
+} from '../helpers/tag-palette';
 import type { TagInventoryRow } from '../store/modules/sidebar-panels';
 import type { FrameSyncService } from './frame-sync';
 import type { SidebarStore } from '../store';
 import { watch } from '../util/watch';
+
+function savedAnnotationSignature(
+  store: Pick<SidebarStore, 'savedAnnotations'>,
+): string {
+  return store
+    .savedAnnotations()
+    .map(ann => ann.id ?? '')
+    .join('\n');
+}
 
 export function pushTagPalette(
   frameSync: FrameSyncService,
@@ -12,8 +25,20 @@ export function pushTagPalette(
 ) {
   const tagInventory = store.getState().sidebarPanels.tagInventory;
   const focusedGroupId = store.focusedGroupId();
-  const docUri = currentDocumentUri(store);
+  const docUri = resolveDocumentUriFromCandidates(store, [...documentUriAliases(store)]);
   const uriAliases = documentUriAliases(store);
+  const annotations =
+    focusedGroupId === PUBLIC_GROUP_ID
+      ? filterSavedAnnotationsForDocument(
+          store.savedAnnotations(),
+          focusedGroupId,
+          uriAliases,
+        )
+      : focusedGroupId
+        ? store
+            .savedAnnotations()
+            .filter(ann => ann.group === focusedGroupId)
+        : [];
 
   // Only the focused group's visible rows contribute highlight colors, so the
   // PDF palette matches the (group-scoped) inventory table.
@@ -27,9 +52,19 @@ export function pushTagPalette(
       )
     : [];
 
-  const hiddenAnnotationIds = (tagInventory.rows as TagInventoryRow[])
-    .filter(row => row.hidden === true)
-    .flatMap(row => row.annotationIds);
+  const scope = focusedGroupId
+    ? {
+        focusedGroupId,
+        currentDocumentUri: docUri,
+        documentUriAliases: [...uriAliases],
+      }
+    : { focusedGroupId: null };
+
+  const { hiddenAnnotationIds } = computeTagInventoryHighlightState(
+    tagInventory.rows as TagInventoryRow[],
+    scope,
+    annotations,
+  );
 
   frameSync.setTagHighlightPalette(
     mergeVisibleTagHighlightPalette(
@@ -50,8 +85,9 @@ export function setupTagPaletteSync(
       [
         store.getState().sidebarPanels.tagInventory,
         store.focusedGroupId(),
-        currentDocumentUri(store),
+        resolveDocumentUriFromCandidates(store, [...documentUriAliases(store)]),
         documentUriAliases(store),
+        savedAnnotationSignature(store),
       ] as const,
     () => {
       pushTagPalette(frameSync, store);
