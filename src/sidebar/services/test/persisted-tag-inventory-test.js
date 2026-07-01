@@ -309,7 +309,7 @@ describe('PersistedTagInventoryService', () => {
       assert.deepEqual(store.getState().sidebarPanels.tagInventory.rows, []);
     });
 
-    it('persists when tagInventory changes after init', () => {
+    it('persists when tagInventory changes after init', async () => {
       fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
       createService().init();
 
@@ -320,6 +320,8 @@ describe('PersistedTagInventoryService', () => {
         annotationIds: [],
       });
 
+      await Promise.resolve();
+
       assert.calledWith(
         fakeLocalStorage.setObject,
         TAG_INVENTORY_STORAGE_KEY,
@@ -328,6 +330,28 @@ describe('PersistedTagInventoryService', () => {
           ...store.getState().sidebarPanels.tagInventory,
         },
       );
+    });
+
+    it('coalesces rapid tagInventory updates into one persist write', async () => {
+      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
+      createService().init();
+
+      store.addTagInventoryRow({
+        id: 'r1',
+        schemaTag: 'a',
+        query: 'q1',
+        annotationIds: [],
+      });
+      store.addTagInventoryRow({
+        id: 'r2',
+        schemaTag: 'b',
+        query: 'q2',
+        annotationIds: [],
+      });
+
+      await Promise.resolve();
+
+      assert.calledOnce(fakeLocalStorage.setObject);
     });
 
     it('registers a storage listener', () => {

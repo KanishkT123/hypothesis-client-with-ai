@@ -151,6 +151,14 @@ export class PersistedTagInventoryService {
   private _toastMessenger: ToastMessengerService;
   /** Monotonic revision for `TAG_INVENTORY_STORAGE_KEY`; ignores stale sync reads. */
   private _tagInventoryRevision = 0;
+  /** True while applying inventory from localStorage (skip persist echo). */
+  private _applyingRemoteTagInventorySync = false;
+  /** Coalesces rapid store updates into a single localStorage write. */
+  private _pendingTagInventoryPersist: TagInventoryState | null = null;
+  private _tagInventoryPersistScheduled = false;
+  /** Suppresses localStorage writes during bulk store mutations. */
+  private _persistDeferDepth = 0;
+  private _storageSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     localStorage: LocalStorageService,
@@ -236,7 +244,7 @@ export class PersistedTagInventoryService {
     if (raw === null) {
       this._tagInventoryRevision = 0;
       if (JSON.stringify(empty) !== JSON.stringify(getCurrent())) {
-        this._store.hydrateTagInventory(empty);
+        this._applyRemoteTagInventory(empty, 0);
       }
       return;
     }
@@ -248,7 +256,7 @@ export class PersistedTagInventoryService {
 
     const { revision: incomingRevision, tagInventory } = parsed;
 
-    if (incomingRevision < this._tagInventoryRevision) {
+    if (incomingRevision <= this._tagInventoryRevision) {
       return;
     }
 
@@ -260,18 +268,86 @@ export class PersistedTagInventoryService {
       return;
     }
 
-    this._store.hydrateTagInventory(tagInventory);
-    this._tagInventoryRevision = incomingRevision;
-    backfillPublicTagInventoryDocumentUris(this._store);
+    this._applyRemoteTagInventory(tagInventory, incomingRevision);
+  }
+
+  /** Apply tag inventory from localStorage without echoing back to storage. */
+  private _applyRemoteTagInventory(
+    tagInventory: TagInventoryState,
+    revision: number,
+  ) {
+    this._applyingRemoteTagInventorySync = true;
+    try {
+      this._store.hydrateTagInventory(tagInventory);
+      this._tagInventoryRevision = revision;
+      backfillPublicTagInventoryDocumentUris(this._store);
+    } finally {
+      this._applyingRemoteTagInventorySync = false;
+    }
+  }
+
+  private _persistTagInventoryToLocalStorage(current: TagInventoryState) {
+    const lsRaw = this._storage.getObject<unknown>(TAG_INVENTORY_STORAGE_KEY);
+    const readRev = readTagInventoryRevisionFromStorageRaw(lsRaw);
+    this._tagInventoryRevision = Math.max(this._tagInventoryRevision, readRev) + 1;
+    this._storage.setObject(TAG_INVENTORY_STORAGE_KEY, {
+      revision: this._tagInventoryRevision,
+      ...current,
+    });
+  }
+
+  /**
+   * Run `work` without writing tag inventory to localStorage until the
+   * outermost deferred scope completes (one coalesced write at the end).
+   */
+  async runWithDeferredPersist(work: () => Promise<void>): Promise<void> {
+    this._persistDeferDepth++;
+    try {
+      await work();
+    } finally {
+      this._persistDeferDepth--;
+      if (this._persistDeferDepth === 0) {
+        const pending = this._pendingTagInventoryPersist;
+        this._pendingTagInventoryPersist = null;
+        if (pending && !this._applyingRemoteTagInventorySync) {
+          this._persistTagInventoryToLocalStorage(pending);
+        }
+      }
+    }
+  }
+
+  private _scheduleTagInventoryPersist(current: TagInventoryState) {
+    if (this._applyingRemoteTagInventorySync) {
+      return;
+    }
+    this._pendingTagInventoryPersist = current;
+    if (this._persistDeferDepth > 0) {
+      return;
+    }
+    if (this._tagInventoryPersistScheduled) {
+      return;
+    }
+    this._tagInventoryPersistScheduled = true;
+    queueMicrotask(() => {
+      this._tagInventoryPersistScheduled = false;
+      if (this._applyingRemoteTagInventorySync) {
+        this._pendingTagInventoryPersist = null;
+        return;
+      }
+      const pending = this._pendingTagInventoryPersist;
+      this._pendingTagInventoryPersist = null;
+      if (!pending) {
+        return;
+      }
+      this._persistTagInventoryToLocalStorage(pending);
+    });
   }
 
   init() {
     const persisted = this._storage.getObject<unknown>(TAG_INVENTORY_STORAGE_KEY);
     const parsed = parseTagInventoryPersisted(persisted);
     if (parsed) {
-      this._store.hydrateTagInventory(parsed.tagInventory);
-      this._tagInventoryRevision = parsed.revision;
-      backfillPublicTagInventoryDocumentUris(this._store);
+      this._applyRemoteTagInventory(parsed.tagInventory, parsed.revision);
     } else {
       this._tagInventoryRevision = 0;
     }
@@ -286,13 +362,7 @@ export class PersistedTagInventoryService {
       this._store.subscribe,
       () => this._store.getState().sidebarPanels.tagInventory,
       current => {
-        const lsRaw = this._storage.getObject<unknown>(TAG_INVENTORY_STORAGE_KEY);
-        const readRev = readTagInventoryRevisionFromStorageRaw(lsRaw);
-        this._tagInventoryRevision = Math.max(this._tagInventoryRevision, readRev) + 1;
-        this._storage.setObject(TAG_INVENTORY_STORAGE_KEY, {
-          revision: this._tagInventoryRevision,
-          ...current,
-        });
+        this._scheduleTagInventoryPersist(current);
       },
       (a, b) => JSON.stringify(a) === JSON.stringify(b),
     );
@@ -333,8 +403,14 @@ export class PersistedTagInventoryService {
       );
 
     this._window.addEventListener('storage', (e: StorageEvent) => {
-      syncHistory(e);
-      syncExperimentLog(e);
+      if (this._storageSyncTimer !== null) {
+        clearTimeout(this._storageSyncTimer);
+      }
+      this._storageSyncTimer = setTimeout(() => {
+        this._storageSyncTimer = null;
+        syncHistory(e);
+        syncExperimentLog(e);
+      }, 250);
     });
 
     this._window.document.addEventListener('visibilitychange', () => {
