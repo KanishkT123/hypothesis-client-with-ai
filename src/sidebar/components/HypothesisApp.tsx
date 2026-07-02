@@ -21,6 +21,7 @@ import SidebarView from './SidebarView';
 import StreamView from './StreamView';
 import ToastMessages from './ToastMessages';
 import TopBar from './TopBar';
+import NodeLinkGraphPage from './node-link/NodeLinkGraphPage';
 import TagLegendPanel from './node-link/TagLegendPanel';
 import AISearchPanel from './search/AISearchPanel';
 import EmptyPanel from './search/EmptyPanel';
@@ -84,6 +85,15 @@ function HypothesisApp({
   }, [isSidebar, currentPDFUri, store]);
 
   const isThirdParty = isThirdPartyService(settings);
+
+  if (route === 'nodeLink') {
+    return (
+      <>
+        <ToastMessages />
+        <NodeLinkGraphPage />
+      </>
+    );
+  }
 
   const loginOrSignUp = async (action: 'login' | 'signup') => {
     try {

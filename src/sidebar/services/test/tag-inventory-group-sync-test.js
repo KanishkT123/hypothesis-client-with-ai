@@ -93,7 +93,7 @@ describe('TagInventoryGroupSyncService', () => {
     assert.calledOnce(groupAnnotationsRead);
     assert.calledWith(
       groupAnnotationsRead,
-      sinon.match({ id: 'private-group', 'page[size]': 100 }),
+      sinon.match({ pubid: 'private-group', 'page[size]': 100 }),
     );
 
     assert.calledWith(fakeStore.addTagInventoryRow, {
@@ -238,7 +238,7 @@ describe('TagInventoryGroupSyncService', () => {
     assert.calledWith(
       groupAnnotationsRead.secondCall,
       sinon.match({
-        id: 'private-group',
+        pubid: 'private-group',
         'page[size]': 100,
         'page[after]': fullPage[99].created,
       }),

@@ -53,6 +53,7 @@ export function hostPageConfig(window: Window): ConfigFromAnnotator {
     'theme',
 
     'usernameUrl',
+    'nodeLinkAppUrl',
     'commentsMode',
     'groupsAllowlist',
   ];

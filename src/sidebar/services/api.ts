@@ -235,7 +235,7 @@ export class APIService {
   group: {
     annotations: {
       read: APICall<
-        { id: string } & Record<string, Param | Param[]>,
+        { pubid: string } & Record<string, Param | Param[]>,
         void,
         GroupAnnotationsResult
       >;

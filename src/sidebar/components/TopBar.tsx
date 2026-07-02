@@ -12,6 +12,7 @@ import GroupList from './GroupList';
 import SortMenu from './SortMenu';
 import TopBarToggleButton from './TopBarToggleButton';
 import UserMenu from './UserMenu';
+import NodeLinkGraphIconButton from './node-link/NodeLinkGraphIconButton';
 import TagLegendIconButton from './node-link/TagLegendIconButton';
 import AISearchIconButton from './search/AISearchIconButton';
 import EmptyPanelIconButton from './search/EmptyPanelIconButton';
@@ -117,6 +118,7 @@ function TopBar({
               <AISearchIconButton />
               <EmptyPanelIconButton />
               <SearchIconButton />
+              <NodeLinkGraphIconButton />
               <TagLegendIconButton />
               <SortMenu />
               {controlEnabled(settings, 'share') && (

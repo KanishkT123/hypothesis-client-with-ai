@@ -2,13 +2,17 @@ import {
   NODE_LINK_STATE_KIND,
   NODE_LINK_STATE_SCHEMA_VERSION,
   NODE_LINK_STATE_TAG,
+  NODE_LINK_STATE_TAGS,
   NODE_LINK_STATE_VERSION_TAG,
   contentTags,
+  createNodeLinkStatePayload,
   emptyNodeLinkState,
   isNodeLinkStateAnnotation,
   parseNodeLinkStateText,
   relationshipsForTag,
+  serializeNodeLinkState,
   stateFromNodeLinkPayload,
+  tagLegendText,
   tagsForNodeLinkState,
 } from '../graph-state';
 
@@ -96,6 +100,54 @@ describe('node-link graph state helpers', () => {
     ]);
     assert.notProperty(state, 'layout');
     assert.notProperty(state, 'annotations');
+  });
+
+  it('creates a portable Hypothesis state payload without layout or annotations', () => {
+    const state = emptyNodeLinkState({
+      selectedGroupId: 'group-a',
+      descriptiveTags: [{ id: 'desc-theme', tag: 'Theme' }],
+      tagEdges: [
+        {
+          sourceTag: 'Character',
+          targetTag: 'Theme',
+          connectionType: 'explains',
+        },
+      ],
+    });
+
+    const payload = createNodeLinkStatePayload(state, {
+      groupId: 'group-a',
+      stateUri: 'https://hypothesis-node-link.local/state/group/group-a',
+      updatedAt: '2026-07-01T12:00:00.000Z',
+    });
+
+    assert.equal(payload.kind, NODE_LINK_STATE_KIND);
+    assert.equal(payload.schemaVersion, NODE_LINK_STATE_SCHEMA_VERSION);
+    assert.equal(payload.groupId, 'group-a');
+    assert.deepEqual(payload.edits.descriptiveTags, [
+      {
+        id: 'desc-theme',
+        tag: 'Theme',
+        createdBy: 'human',
+      },
+    ]);
+    assert.deepEqual(payload.edits.tagEdges, [
+      {
+        sourceTag: 'Character',
+        targetTag: 'Theme',
+        connectionType: 'explains',
+        label: 'explains',
+        createdBy: 'human',
+        createdFrom: 'manual',
+      },
+    ]);
+    assert.notProperty(payload.edits, 'layout');
+    assert.notProperty(payload.edits, 'annotations');
+    assert.deepEqual(NODE_LINK_STATE_TAGS, [
+      NODE_LINK_STATE_TAG,
+      NODE_LINK_STATE_VERSION_TAG,
+    ]);
+    assert.include(serializeNodeLinkState(payload), '"descriptiveTags"');
   });
 
   it('identifies node-link state annotations', () => {
@@ -190,5 +242,40 @@ describe('node-link graph state helpers', () => {
         },
       ],
     });
+  });
+
+  it('exports a readable legend for manual tag-tag relationships', () => {
+    const legend = tagLegendText(
+      emptyNodeLinkState({
+        tagEdges: [
+          {
+            sourceTag: 'Character',
+            targetTag: 'Action',
+            connectionType: 'explains',
+          },
+          {
+            sourceTag: 'Theme',
+            targetTag: 'Character',
+            connectionType: 'frames',
+          },
+        ],
+      }),
+    );
+
+    assert.equal(
+      legend,
+      [
+        'Action',
+        '   --- incoming relationships ---',
+        '   Character explains Action',
+        'Character',
+        '   explains Action',
+        '   --- incoming relationships ---',
+        '   Theme frames Character',
+        'Theme',
+        '   frames Character',
+        '',
+      ].join('\n'),
+    );
   });
 });

@@ -1,9 +1,7 @@
 import type { Annotation, SavedAnnotation } from '../../types/api';
 import { isSaved } from '../helpers/annotation-metadata';
-import {
-  deriveTagInventoryRowDescriptors,
-} from '../helpers/tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
+import { deriveTagInventoryRowDescriptors } from '../helpers/tag-inventory-group';
 import type { SidebarStore } from '../store';
 import { watch } from '../util/watch';
 import type { APIService } from './api';
@@ -233,7 +231,9 @@ export class TagInventoryGroupSyncService {
    * Reconcile tag inventory rows from annotations already loaded for the
    * current document. No network requests.
    */
-  async applyStoreAnnotationsToInventory(options: SyncGroupInventoryOptions = {}) {
+  async applyStoreAnnotationsToInventory(
+    options: SyncGroupInventoryOptions = {},
+  ) {
     if (this._syncOnStack) {
       this._resyncAfterCurrent = true;
       return this._activeSync ?? Promise.resolve();
@@ -285,10 +285,7 @@ export class TagInventoryGroupSyncService {
    * Upsert realtime updates into the private-group cache and drop deletions.
    * No-op when the cache has not been populated yet.
    */
-  mergePendingUpdatesIntoCache(
-    updates: Annotation[],
-    deletedIds: string[],
-  ) {
+  mergePendingUpdatesIntoCache(updates: Annotation[], deletedIds: string[]) {
     const groupId = this._store.focusedGroupId();
     if (!groupId || groupId === PUBLIC_GROUP_ID) {
       return;

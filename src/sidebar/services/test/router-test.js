@@ -43,6 +43,12 @@ const fixtures = [
     route: 'notebook',
     params: {},
   },
+  {
+    path: '/client/node-link.html',
+    search: 'group=test-group',
+    route: 'nodeLink',
+    params: { group: 'test-group' },
+  },
 ];
 
 describe('RouterService', () => {

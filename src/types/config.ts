@@ -205,6 +205,9 @@ export type ConfigFromHost = {
   /** URL template for username links. */
   usernameUrl?: string;
 
+  /** URL for the full node-link graph application. */
+  nodeLinkAppUrl?: string;
+
   /**
    * Whether app should load in comments mode or not.
    *

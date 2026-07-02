@@ -4,6 +4,10 @@ export const NODE_LINK_STATE_KIND = 'hypothesis-node-link-state';
 export const NODE_LINK_STATE_SCHEMA_VERSION = 1;
 export const NODE_LINK_STATE_TAG = 'node-link-state';
 export const NODE_LINK_STATE_VERSION_TAG = 'node-link-state:v1';
+export const NODE_LINK_STATE_TAGS = [
+  NODE_LINK_STATE_TAG,
+  NODE_LINK_STATE_VERSION_TAG,
+];
 
 const STATE_URI_PREFIX = 'https://hypothesis-node-link.local/state/group/';
 const SYSTEM_TAGS = new Set(['ai-pending', 'ai-user-approved']);
@@ -215,6 +219,35 @@ export function stateFromNodeLinkPayload(
   );
 }
 
+export function createNodeLinkStatePayload(
+  state: NodeLinkSemanticState,
+  options: { groupId: string; stateUri: string; updatedAt?: string },
+): NodeLinkStatePayloadV1 {
+  const updatedAt = options.updatedAt || new Date().toISOString();
+  const normalized = normalizeNodeLinkState(state, {
+    groupId: options.groupId,
+    updatedAt,
+  });
+
+  return {
+    kind: NODE_LINK_STATE_KIND,
+    schemaVersion: NODE_LINK_STATE_SCHEMA_VERSION,
+    groupId: options.groupId,
+    stateUri: options.stateUri,
+    updatedAt,
+    // Keep Hypothesis as the portable semantic store. Layout and fetched
+    // annotations can be regenerated, so they do not belong in this payload.
+    edits: {
+      descriptiveTags: normalized.descriptiveTags,
+      tagEdges: normalized.tagEdges,
+    },
+  };
+}
+
+export function serializeNodeLinkState(payload: NodeLinkStatePayloadV1) {
+  return JSON.stringify(payload, null, 2);
+}
+
 export function isNodeLinkStateAnnotation(
   annotation: Pick<Annotation, 'tags' | 'text'>,
 ) {
@@ -278,4 +311,52 @@ export function relationshipsForTag(
     .sort((a, b) => a.sourceTag.localeCompare(b.sourceTag));
 
   return { outgoing, incoming };
+}
+
+export function tagLegendText(state: Pick<NodeLinkSemanticState, 'tagEdges'>) {
+  const outgoing = new Map<string, ManualTagEdge[]>();
+  const incoming = new Map<string, ManualTagEdge[]>();
+  const tags = new Set<string>();
+
+  for (const edge of normalizeNodeLinkState(state).tagEdges) {
+    tags.add(edge.sourceTag);
+    tags.add(edge.targetTag);
+    outgoing.set(edge.sourceTag, [
+      ...(outgoing.get(edge.sourceTag) || []),
+      edge,
+    ]);
+    incoming.set(edge.targetTag, [
+      ...(incoming.get(edge.targetTag) || []),
+      edge,
+    ]);
+  }
+
+  if (!tags.size) {
+    return 'No manual tag-tag relationships.';
+  }
+
+  const lines: string[] = [];
+  for (const tag of [...tags].sort((a, b) => a.localeCompare(b))) {
+    lines.push(tag);
+    const outgoingEdges = (outgoing.get(tag) || []).sort((a, b) =>
+      a.targetTag.localeCompare(b.targetTag),
+    );
+    for (const edge of outgoingEdges) {
+      lines.push(`   ${edge.connectionType} ${edge.targetTag}`);
+    }
+
+    const incomingEdges = (incoming.get(tag) || []).sort((a, b) =>
+      a.sourceTag.localeCompare(b.sourceTag),
+    );
+    if (incomingEdges.length) {
+      lines.push('   --- incoming relationships ---');
+      for (const edge of incomingEdges) {
+        lines.push(
+          `   ${edge.sourceTag} ${edge.connectionType} ${edge.targetTag}`,
+        );
+      }
+    }
+  }
+
+  return `${lines.join('\n')}\n`;
 }
