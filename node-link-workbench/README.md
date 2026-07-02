@@ -37,12 +37,12 @@ The server uses the token directly as a bearer token and does not copy it into
 6. Toggle tag-only view when you want to hide quote cards and inspect tag-tag
    structure directly.
 7. Toggle implicit connections to show generated same-document tag suggestions.
-   Click a dashed implicit edge to promote it into a real human edge with a
-   connection type and purpose.
-8. Toggle selection-first edges to dim unrelated edges until a node is selected.
-9. Drag tag or quote nodes to arrange the graph.
-10. Use the zoom controls to inspect the full graph or fit it to the canvas.
-11. Add human-authored tag-to-tag edges with connection types and purposes.
+   Click a dashed implicit edge to promote it into a real manual edge.
+8. Drag tag or quote nodes to arrange the graph.
+9. Use the zoom controls to inspect the full graph or fit it to the canvas.
+10. Add human-authored tag-to-tag edges with relationship labels.
+11. Export a tag legend when you want a plain-text summary of manual tag-tag
+    relationships.
 
 Tag-to-quote edges are regenerated from the latest annotation snapshot. Implicit
 tag-to-tag edges are generated from visible tags that appear in the same
@@ -51,6 +51,31 @@ document filter hides either endpoint tag, that human edge is hidden until both
 tags are visible again.
 
 The graph uses a versioned layout. `Reset` clears saved node positions for the current layout version without deleting annotations or human tag-to-tag edges.
+
+## Hypothesis-Backed State
+
+Hypothesis remains the source of annotation evidence: documents, quotes, tags,
+selectors, and in-context links. The workbench stores only node-link-specific
+state in a page-note-style annotation on a dummy URI:
+
+```text
+https://hypothesis-node-link.local/state/group/<group-id>
+```
+
+That state annotation is tagged with `node-link-state` and
+`node-link-state:v1`. Its JSON body stores only the descriptive tags and manual
+tag-tag edges needed to reconstruct the meaningful node-link data. It does not
+copy the full annotation snapshot or saved node positions.
+
+`Refresh` pulls the latest group annotations and then loads this Hypothesis
+state annotation when it exists. Saving manual graph edits updates the same
+state annotation. The local `graph.edits.json` file is a cache/fallback, so the
+semantic graph state can be restored from Hypothesis after local data is
+removed.
+
+Hypothesis search can take a few seconds to index a newly created state
+annotation. Immediately after the first save, the app may briefly show that no
+sync state exists until search catches up.
 
 ## Seed Test Annotations
 
@@ -80,7 +105,9 @@ Runtime data is stored under `node-link-workbench/data/` and ignored by git:
 - `auth.json`: local OAuth token cache.
 - `auth.debug.json`: local auth-flow diagnostics with codes and tokens redacted.
 - `annotations.snapshot.json`: latest pulled group annotation snapshot.
-- `graph.edits.json`: human graph layout and promoted/manual tag-to-tag edges.
+- `graph.edits.json`: local cache of graph layout, descriptive tags, and manual
+  tag-to-tag edges. Only descriptive tags and manual tag-to-tag edges are synced
+  to Hypothesis.
 
 If a later refresh no longer contains a tag used by a human edge, the edge remains in `graph.edits.json` but is hidden in the graph until both tags are present again.
 

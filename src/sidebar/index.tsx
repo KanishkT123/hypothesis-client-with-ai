@@ -29,6 +29,7 @@ import { GroupsService } from './services/groups';
 import { ImportAnnotationsService } from './services/import-annotations';
 import { LoadAnnotationsService } from './services/load-annotations';
 import { LocalStorageService } from './services/local-storage';
+import { NodeLinkStateService } from './services/node-link-state';
 import { PersistedTagInventoryService } from './services/persisted-tag-inventory';
 import { PersistedDefaultsService } from './services/persisted-defaults';
 import { RouterService } from './services/router';
@@ -166,6 +167,7 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('importAnnotationsService', ImportAnnotationsService)
     .register('loadAnnotationsService', LoadAnnotationsService)
     .register('localStorage', LocalStorageService)
+    .register('nodeLinkState', NodeLinkStateService)
     .register('persistedDefaults', PersistedDefaultsService)
     .register('persistedTagInventory', PersistedTagInventoryService)
     .register('tagInventoryGroupSync', TagInventoryGroupSyncService)

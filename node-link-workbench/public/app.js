@@ -12,6 +12,7 @@ import {
   tagPairKey,
   visibleManualTagEdges,
 } from './graph-model.js';
+import { tagLegendText } from './graph-state.js';
 
 const LAYOUT_VERSION = 3;
 const MIN_ZOOM = 0.35;
@@ -48,6 +49,7 @@ const els = {
   refreshBtn: document.querySelector('#refreshBtn'),
   newTagBtn: document.querySelector('#newTagBtn'),
   newEdgeBtn: document.querySelector('#newEdgeBtn'),
+  exportLegendBtn: document.querySelector('#exportLegendBtn'),
   loginBtn: document.querySelector('#loginBtn'),
   colorModeSelect: document.querySelector('#colorModeSelect'),
   colorFocusSelect: document.querySelector('#colorFocusSelect'),
@@ -87,6 +89,7 @@ const state = {
   groups: [],
   snapshot: null,
   edits: null,
+  sync: null,
   graph: null,
   documentFilter: 'all',
   colorMode: 'tag',
@@ -182,6 +185,25 @@ function showNotice(message) {
 
 function setSaveState(message) {
   els.saveState.textContent = message;
+}
+
+function syncStateLabel(sync) {
+  if (!sync) {
+    return 'Local';
+  }
+  if (sync.status === 'saved' || sync.status === 'loaded') {
+    return 'Synced';
+  }
+  if (sync.status === 'missing') {
+    return 'No sync state';
+  }
+  if (sync.status === 'skipped') {
+    return 'Local';
+  }
+  if (sync.status === 'failed' || sync.status === 'invalid') {
+    return 'Sync failed';
+  }
+  return sync.status || 'Local';
 }
 
 function shortText(text, max = 120) {
@@ -2300,11 +2322,13 @@ async function saveEditsNow() {
   state.saveTimer = null;
   setSaveState('Saving');
   try {
-    state.edits = await api('/api/edits', {
+    const result = await api('/api/edits', {
       method: 'PUT',
       body: state.edits,
     });
-    setSaveState('Saved');
+    state.edits = result.edits || result;
+    state.sync = result.sync || null;
+    setSaveState(syncStateLabel(state.sync));
   } catch (err) {
     setSaveState('Save failed');
     showNotice(err.message);
@@ -2448,10 +2472,20 @@ async function loadGroups() {
   updateGroupSelect();
 }
 
-async function loadGraph() {
-  const { snapshot, edits } = await api('/api/graph');
+async function loadGraph({ sync: syncFromHypothesis = false } = {}) {
+  let result = await api('/api/graph');
+  if (
+    syncFromHypothesis &&
+    state.session?.authenticated &&
+    result.edits?.selectedGroupId
+  ) {
+    const groupId = encodeURIComponent(result.edits.selectedGroupId);
+    result = await api(`/api/graph?groupId=${groupId}&sync=1`);
+  }
+  const { snapshot, edits, sync } = result;
   state.snapshot = snapshot;
   state.edits = edits;
+  state.sync = sync || null;
   ensureCurrentLayout();
   updateGroupSelect();
   updateDocumentSelect();
@@ -2460,6 +2494,7 @@ async function loadGraph() {
   renderGraph();
   updateGraphHeader();
   updateControls();
+  setSaveState(syncStateLabel(state.sync));
 }
 
 async function refreshSnapshot() {
@@ -2474,23 +2509,39 @@ async function refreshSnapshot() {
   els.refreshBtn.disabled = true;
   els.graphStats.textContent = 'Refreshing annotations...';
   try {
-    state.snapshot = await api('/api/refresh', {
+    const result = await api('/api/refresh', {
       method: 'POST',
       body: { groupId, group },
     });
-    const { edits } = await api('/api/graph');
-    state.edits = edits;
+    state.snapshot = result.snapshot || result;
+    state.edits = result.edits || state.edits;
+    state.sync = result.sync || null;
     ensureCurrentLayout();
     updateDocumentSelect();
     updateColorFocusSelect();
     buildGraph();
     renderGraph();
     updateGraphHeader();
+    setSaveState(syncStateLabel(state.sync));
   } catch (err) {
     showNotice(err.message);
   } finally {
     updateControls();
   }
+}
+
+function exportTagLegend() {
+  const text = tagLegendText(state.edits || {});
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const date = new Date().toISOString().slice(0, 10);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `tag-legend-${date}.txt`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function updateGroupSelect() {
@@ -2606,6 +2657,7 @@ function updateControls() {
   els.refreshBtn.disabled = !authenticated || !els.groupSelect.value;
   els.newTagBtn.disabled = !state.edits;
   els.newEdgeBtn.disabled = !state.graph?.tagNodes.length;
+  els.exportLegendBtn.disabled = !state.edits;
   els.zoomOutBtn.disabled = !state.graph;
   els.zoomInBtn.disabled = !state.graph;
   els.fitBtn.disabled = !state.graph;
@@ -2665,6 +2717,7 @@ async function init() {
   });
   els.newTagBtn.addEventListener('click', () => openTagEditor());
   els.newEdgeBtn.addEventListener('click', openEdgeEditor);
+  els.exportLegendBtn.addEventListener('click', exportTagLegend);
   els.cancelEdgeBtn.addEventListener('click', closeEdgeEditor);
   els.saveEdgeBtn.addEventListener('click', saveNewEdge);
   els.cancelTagBtn.addEventListener('click', closeTagEditor);
@@ -2689,8 +2742,12 @@ async function init() {
     resetLayout();
   });
   els.groupSelect.addEventListener('change', () => {
-    state.edits.selectedGroupId = els.groupSelect.value || null;
-    saveEditsNow().catch(err => showNotice(err.message));
+    if (state.edits) {
+      state.edits.selectedGroupId = els.groupSelect.value || null;
+    }
+    state.sync = null;
+    setSaveState('Refresh to sync');
+    updateControls();
   });
   els.colorModeSelect.addEventListener('change', () => {
     state.colorMode = els.colorModeSelect.value || 'tag';
@@ -2755,7 +2812,7 @@ async function init() {
   try {
     await loadStatus();
     await loadGroups();
-    await loadGraph();
+    await loadGraph({ sync: true });
   } catch (err) {
     showNotice(err.message);
   }

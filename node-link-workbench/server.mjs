@@ -7,6 +7,18 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  NODE_LINK_STATE_TAG,
+  NODE_LINK_STATE_TAGS,
+  createHypothesisStatePayload,
+  editsFromHypothesisStatePayload,
+  emptyGraphEdits,
+  isNodeLinkStateAnnotation,
+  normalizeGraphEdits,
+  parseHypothesisStateText,
+  serializeHypothesisState,
+} from './public/graph-state.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, 'public');
 const dataDir = path.join(__dirname, 'data');
@@ -38,6 +50,9 @@ const apiTokenSource = process.env.HYPOTHESIS_API_TOKEN
 const oauthClientId =
   process.env.HYPOTHESIS_OAUTH_CLIENT_ID ||
   'fd23fe2e-7792-11e7-8e16-23e47a1799d4';
+const stateUriPrefix =
+  process.env.NODE_LINK_STATE_URI_PREFIX ||
+  'https://hypothesis-node-link.local/state/group/';
 
 const GROUP_ANNOTATIONS_PAGE_SIZE = 100;
 const MAX_GROUP_ANNOTATION_PAGES = 1000;
@@ -74,19 +89,7 @@ function emptySnapshot() {
 }
 
 function emptyEdits() {
-  // Local-only workbench state. Hypothesis remains the source of annotation
-  // evidence; this file stores the graph metadata that Hypothesis does not.
-  return {
-    schemaVersion: 1,
-    updatedAt: null,
-    selectedGroupId: null,
-    layout: {
-      version: 2,
-      nodes: {},
-    },
-    descriptiveTags: [],
-    tagEdges: [],
-  };
+  return emptyGraphEdits();
 }
 
 function emptyAuthDebug() {
@@ -379,6 +382,26 @@ async function routeUrl(routeName, params = {}) {
   return { method: descriptor.method, url };
 }
 
+function nodeLinkStateUri(groupId) {
+  const prefix = stateUriPrefix.endsWith('/')
+    ? stateUriPrefix
+    : `${stateUriPrefix}/`;
+  return new URL(encodeURIComponent(groupId), prefix).toString();
+}
+
+function sharedPermissions(userid, groupId) {
+  return {
+    read: [`group:${groupId}`],
+    update: [userid],
+    delete: [userid],
+  };
+}
+
+function stateDocumentTitle(groupId, groupInfo = {}) {
+  const groupName = groupInfo?.name || groupId;
+  return `Node Link state for ${groupName}`;
+}
+
 async function readAuth() {
   return readJson(authPath, null);
 }
@@ -569,6 +592,161 @@ function normalizeAnnotation(annotation) {
   };
 }
 
+async function findGraphStateAnnotation(groupId) {
+  const stateUri = nodeLinkStateUri(groupId);
+  const result = await authorizedApiCall('search', {
+    group: groupId,
+    uri: stateUri,
+    tag: NODE_LINK_STATE_TAG,
+    limit: 10,
+    sort: 'updated',
+    order: 'desc',
+  });
+  const rows = result.rows || result.data || [];
+  const annotation =
+    rows
+      .filter(isNodeLinkStateAnnotation)
+      .sort((a, b) =>
+        String(b.updated || b.created || '').localeCompare(
+          String(a.updated || a.created || ''),
+        ),
+      )[0] || null;
+
+  return { annotation, stateUri };
+}
+
+async function pullGraphStateFromHypothesis(groupId) {
+  const { annotation, stateUri } = await findGraphStateAnnotation(groupId);
+  if (!annotation) {
+    return {
+      edits: null,
+      sync: {
+        status: 'missing',
+        provider: 'hypothesis',
+        stateUri,
+        annotationId: null,
+        message: 'No Hypothesis-backed node-link state exists yet.',
+      },
+    };
+  }
+
+  try {
+    const payload = parseHypothesisStateText(annotation.text || '');
+    return {
+      edits: editsFromHypothesisStatePayload(payload, { groupId }),
+      sync: {
+        status: 'loaded',
+        provider: 'hypothesis',
+        stateUri,
+        annotationId: annotation.id,
+        updatedAt: annotation.updated || payload.updatedAt || null,
+      },
+    };
+  } catch (err) {
+    return {
+      edits: null,
+      sync: {
+        status: 'invalid',
+        provider: 'hypothesis',
+        stateUri,
+        annotationId: annotation.id,
+        message: err.message,
+      },
+    };
+  }
+}
+
+async function editsForGroup(groupId, localEdits = emptyEdits()) {
+  const localForGroup =
+    localEdits?.selectedGroupId === groupId
+      ? normalizeGraphEdits(localEdits)
+      : emptyGraphEdits({ selectedGroupId: groupId });
+  const pulled = await pullGraphStateFromHypothesis(groupId);
+  return {
+    edits: pulled.edits || localForGroup,
+    sync: pulled.sync,
+  };
+}
+
+async function saveGraphStateToHypothesis(edits, groupInfo = {}) {
+  const normalized = normalizeGraphEdits(edits, {
+    updatedAt: edits.updatedAt || new Date().toISOString(),
+  });
+  const groupId = normalized.selectedGroupId;
+  if (!groupId) {
+    return {
+      status: 'skipped',
+      provider: 'hypothesis',
+      message: 'No group selected.',
+    };
+  }
+
+  const stateUri = nodeLinkStateUri(groupId);
+  const profile = await authorizedApiCall('profile.read');
+  const { annotation } = await findGraphStateAnnotation(groupId);
+  const payload = createHypothesisStatePayload(normalized, {
+    groupId,
+    stateUri,
+    updatedAt: normalized.updatedAt || new Date().toISOString(),
+  });
+  const body = {
+    group: groupId,
+    uri: stateUri,
+    text: serializeHypothesisState(payload),
+    tags: NODE_LINK_STATE_TAGS,
+    permissions: sharedPermissions(profile.userid, groupId),
+    document: {
+      title: [stateDocumentTitle(groupId, groupInfo)],
+    },
+    target: [
+      {
+        source: stateUri,
+      },
+    ],
+  };
+
+  let savedAnnotation;
+  try {
+    savedAnnotation = annotation
+      ? await authorizedApiCall(
+          'annotation.update',
+          { id: annotation.id },
+          { body },
+        )
+      : await authorizedApiCall('annotation.create', {}, { body });
+  } catch (err) {
+    if (!annotation || ![403, 404].includes(err.status)) {
+      throw err;
+    }
+    savedAnnotation = await authorizedApiCall(
+      'annotation.create',
+      {},
+      { body },
+    );
+  }
+
+  return {
+    status: 'saved',
+    provider: 'hypothesis',
+    stateUri,
+    annotationId: savedAnnotation.id,
+    updatedAt: savedAnnotation.updated || payload.updatedAt,
+  };
+}
+
+async function trySaveGraphStateToHypothesis(edits, groupInfo = {}) {
+  try {
+    return await saveGraphStateToHypothesis(edits, groupInfo);
+  } catch (err) {
+    return {
+      status: 'failed',
+      provider: 'hypothesis',
+      message: err.message,
+      details: errorDetails(err),
+    };
+  }
+}
+
 async function fetchAllGroupAnnotations(pubid, groupInfo) {
   const annotations = [];
   let pageAfter;
@@ -584,7 +762,11 @@ async function fetchAllGroupAnnotations(pubid, groupInfo) {
 
     const result = await authorizedApiCall('group.annotations.read', params);
     const data = result.data || [];
-    annotations.push(...data.map(normalizeAnnotation));
+    annotations.push(
+      ...data
+        .filter(annotation => !isNodeLinkStateAnnotation(annotation))
+        .map(normalizeAnnotation),
+    );
 
     if (data.length < GROUP_ANNOTATIONS_PAGE_SIZE) {
       break;
@@ -801,31 +983,45 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/graph') {
-    const [snapshot, edits] = await Promise.all([
+    const [snapshot, localEdits] = await Promise.all([
       readJson(snapshotPath, emptySnapshot()),
       readJson(editsPath, emptyEdits()),
     ]);
-    sendJson(res, 200, { snapshot, edits });
+    const groupId = url.searchParams.get('groupId');
+    if (groupId && url.searchParams.get('sync') === '1') {
+      const { edits, sync } = await editsForGroup(groupId, localEdits);
+      await writeJson(editsPath, edits);
+      sendJson(res, 200, { snapshot, edits, sync });
+      return;
+    }
+    sendJson(res, 200, { snapshot, edits: normalizeGraphEdits(localEdits) });
     return;
   }
 
   if (req.method === 'PUT' && url.pathname === '/api/edits') {
     const body = await readRequestBody(req);
-    const edits = {
-      schemaVersion: 1,
+    const edits = normalizeGraphEdits(body, {
       updatedAt: new Date().toISOString(),
-      selectedGroupId: body.selectedGroupId || null,
-      layout: {
-        version: body.layout?.version || 1,
-        nodes: body.layout?.nodes || {},
-      },
-      descriptiveTags: Array.isArray(body.descriptiveTags)
-        ? body.descriptiveTags
-        : [],
-      tagEdges: Array.isArray(body.tagEdges) ? body.tagEdges : [],
-    };
+    });
     await writeJson(editsPath, edits);
-    sendJson(res, 200, edits);
+    const groupInfo = edits.selectedGroupId
+      ? (await readJson(snapshotPath, emptySnapshot())).source?.group || {}
+      : {};
+    const sync = await trySaveGraphStateToHypothesis(edits, groupInfo);
+    sendJson(res, 200, { edits, sync });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/state/pull') {
+    const body = await readRequestBody(req);
+    if (!body.groupId) {
+      sendError(res, 400, 'Missing groupId');
+      return;
+    }
+    const localEdits = await readJson(editsPath, emptyEdits());
+    const { edits, sync } = await editsForGroup(body.groupId, localEdits);
+    await writeJson(editsPath, edits);
+    sendJson(res, 200, { edits, sync });
     return;
   }
 
@@ -837,7 +1033,10 @@ async function handleApi(req, res, url) {
     }
     const groupInfo = body.group || { id: body.groupId };
     const snapshot = await fetchAllGroupAnnotations(body.groupId, groupInfo);
-    sendJson(res, 200, snapshot);
+    const localEdits = await readJson(editsPath, emptyEdits());
+    const { edits, sync } = await editsForGroup(body.groupId, localEdits);
+    await writeJson(editsPath, edits);
+    sendJson(res, 200, { snapshot, edits, sync });
     return;
   }
 
