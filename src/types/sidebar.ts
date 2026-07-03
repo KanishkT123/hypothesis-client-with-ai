@@ -10,7 +10,8 @@ export type PanelName =
   | 'loginPrompt'
   | 'shareGroupAnnotations'
   | 'searchAnnotations'
-  | 'aiSearchAnnotations';
+  | 'aiSearchAnnotations'
+  | 'emptyPanel';
 
 /**
  * The top-level tabs in the sidebar interface. Used to reference which tab

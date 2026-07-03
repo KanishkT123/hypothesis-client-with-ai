@@ -193,6 +193,8 @@ export type HostToSidebarCalls = {
   sidebarOpened(): void;
   /** Notify the sidebar iframe that it has become hidden. */
   sidebarClosed(): void;
+  /** Notify the sidebar iframe that full-width mode was toggled. */
+  setSidebarFullWidth(fullWidth: boolean): void;
 };
 
 /** Calls that the sidebar makes to guests. */
@@ -348,4 +350,7 @@ export type SidebarToHostCalls = CommonCalls & {
 
   /** Dismiss a toast message in the host frame. */
   toastMessageDismissed(id: string): void;
+
+  /** Request the host to expand the sidebar to full viewport width. */
+  setSidebarFullWidth(fullWidth: boolean): void;
 };
