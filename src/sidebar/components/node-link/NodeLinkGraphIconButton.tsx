@@ -1,14 +1,8 @@
 import type { JSX } from 'preact';
 import { useCallback } from 'preact/hooks';
 
-import type { SidebarSettings } from '../../../types/config';
-import { withServices } from '../../service-context';
 import { useSidebarStore } from '../../store';
 import TopBarToggleButton from '../TopBarToggleButton';
-
-export type NodeLinkGraphIconButtonProps = {
-  settings: SidebarSettings;
-};
 
 function NodeLinkIcon(props: JSX.SVGAttributes<SVGSVGElement>) {
   return (
@@ -35,26 +29,28 @@ function NodeLinkIcon(props: JSX.SVGAttributes<SVGSVGElement>) {
   );
 }
 
-function extensionNodeLinkUrl() {
-  const url = new URL(window.location.href);
+export function extensionNodeLinkUrl(href = window.location.href) {
+  const url = new URL(href);
   if (url.protocol !== 'chrome-extension:') {
     return null;
   }
-  return new URL('node-link.html', url).toString();
+  const appUrl = new URL('app.html', url);
+  appUrl.searchParams.set('route', 'nodeLink');
+  return appUrl.toString();
 }
 
-function NodeLinkGraphIconButton({ settings }: NodeLinkGraphIconButtonProps) {
+export default function NodeLinkGraphIconButton() {
   const store = useSidebarStore();
   const groupId = store.focusedGroupId();
   const documentUri = store.searchUris()[0] || store.mainFrame()?.uri || '';
-  const nodeLinkAppUrl = settings.nodeLinkAppUrl || extensionNodeLinkUrl();
+  const nodeLinkUrl = extensionNodeLinkUrl();
 
   const openGraph = useCallback(() => {
-    if (!nodeLinkAppUrl) {
+    if (!nodeLinkUrl) {
       return;
     }
 
-    const url = new URL(nodeLinkAppUrl);
+    const url = new URL(nodeLinkUrl);
     if (groupId) {
       url.searchParams.set('group', groupId);
     }
@@ -62,9 +58,9 @@ function NodeLinkGraphIconButton({ settings }: NodeLinkGraphIconButtonProps) {
       url.searchParams.set('uri', documentUri);
     }
     window.open(url.toString(), '_blank', 'noopener');
-  }, [documentUri, groupId, nodeLinkAppUrl]);
+  }, [documentUri, groupId, nodeLinkUrl]);
 
-  if (!nodeLinkAppUrl) {
+  if (!nodeLinkUrl) {
     return null;
   }
 
@@ -79,5 +75,3 @@ function NodeLinkGraphIconButton({ settings }: NodeLinkGraphIconButtonProps) {
     />
   );
 }
-
-export default withServices(NodeLinkGraphIconButton, ['settings']);

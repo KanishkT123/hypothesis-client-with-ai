@@ -26,6 +26,10 @@ import { useSidebarStore } from '../../store';
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type AddMode = 'edge' | 'tag';
+type PendingDelete =
+  | { type: 'edge'; id: string }
+  | { type: 'tag'; id: string }
+  | null;
 
 export type NodeLinkGraphPageProps = {
   auth: AuthService;
@@ -213,6 +217,75 @@ function RelationshipSentence({
       <strong>{edge.connectionType}</strong>
       <TagBadge tag={edge.targetTag} tagColors={tagColors} />
     </span>
+  );
+}
+
+function EditorActionButton({
+  children,
+  disabled = false,
+  title,
+  variant = 'default',
+  onClick,
+}: {
+  children: JSX.Element | string;
+  disabled?: boolean;
+  title?: string;
+  variant?: 'default' | 'danger' | 'secondary';
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={classnames(
+        'rounded border px-2.5 py-1 text-xs font-bold transition',
+        'hover:-translate-y-px hover:shadow-sm active:translate-y-0 active:shadow-none',
+        'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none',
+        {
+          'border-grey-4 bg-white text-brand hover:bg-grey-1 active:bg-grey-2':
+            variant === 'default',
+          'border-red-3 bg-white text-red-6 hover:bg-red-1 active:bg-red-2':
+            variant === 'danger',
+          'border-grey-4 bg-grey-1 text-grey-7 hover:bg-white active:bg-grey-2':
+            variant === 'secondary',
+        },
+      )}
+      disabled={disabled}
+      title={title}
+      type="button"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function EditModal({
+  children,
+  title,
+  onClose,
+}: {
+  children: JSX.Element;
+  title: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-6 py-8"
+      role="presentation"
+    >
+      <div
+        aria-modal="true"
+        className="w-full max-w-3xl rounded-lg bg-white p-5 shadow-2xl"
+        role="dialog"
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h3 className="text-lg font-bold text-color-text">{title}</h3>
+          <EditorActionButton variant="secondary" onClick={onClose}>
+            Close
+          </EditorActionButton>
+        </div>
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -861,7 +934,7 @@ function EvidencePanel({
   );
 }
 
-function NodeLinkEditor({
+export function NodeLinkEditor({
   graph,
   selectedTag,
   semanticState,
@@ -884,8 +957,13 @@ function NodeLinkEditor({
   const [edgeRelationship, setEdgeRelationship] = useState('');
   const [editingEdgeId, setEditingEdgeId] = useState('');
   const [tagName, setTagName] = useState('');
+  const [editEdgeSource, setEditEdgeSource] = useState('');
+  const [editEdgeTarget, setEditEdgeTarget] = useState('');
+  const [editEdgeRelationship, setEditEdgeRelationship] = useState('');
   const [editingTagId, setEditingTagId] = useState('');
+  const [editTagName, setEditTagName] = useState('');
   const [addMode, setAddMode] = useState<AddMode>('edge');
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
   const [formMessage, setFormMessage] = useState('');
 
   useEffect(() => {
@@ -895,31 +973,48 @@ function NodeLinkEditor({
   }, [edgeSource, selectedTag, tags]);
 
   const resetEdgeForm = () => {
-    setEditingEdgeId('');
     setEdgeRelationship('');
     setEdgeTarget('');
     setFormMessage('');
   };
 
   const resetTagForm = () => {
-    setEditingTagId('');
     setTagName('');
     setFormMessage('');
   };
 
-  const editEdge = (edge: ManualTagEdge) => {
-    setAddMode('edge');
-    setEditingEdgeId(edgeId(edge));
-    setEdgeSource(edge.sourceTag);
-    setEdgeRelationship(edge.connectionType);
-    setEdgeTarget(edge.targetTag);
+  const closeEditModal = () => {
+    setEditingEdgeId('');
+    setEditEdgeSource('');
+    setEditEdgeRelationship('');
+    setEditEdgeTarget('');
+    setEditingTagId('');
+    setEditTagName('');
     setFormMessage('');
   };
 
-  const saveEdge = () => {
-    const sourceTag = edgeSource.trim();
-    const targetTag = edgeTarget.trim();
-    const connectionType = edgeRelationship.trim();
+  const editEdge = (edge: ManualTagEdge) => {
+    setEditingEdgeId(edgeId(edge));
+    setEditEdgeSource(edge.sourceTag);
+    setEditEdgeRelationship(edge.connectionType);
+    setEditEdgeTarget(edge.targetTag);
+    setFormMessage('');
+  };
+
+  const saveEdgeValues = ({
+    edgeIdToUpdate = '',
+    relationship,
+    source,
+    target,
+  }: {
+    edgeIdToUpdate?: string;
+    relationship: string;
+    source: string;
+    target: string;
+  }) => {
+    const sourceTag = source.trim();
+    const targetTag = target.trim();
+    const connectionType = relationship.trim();
     if (!sourceTag || !targetTag || !connectionType) {
       setFormMessage('Choose source, relationship, and target.');
       return;
@@ -932,7 +1027,7 @@ function NodeLinkEditor({
     const existingDuplicate = semanticState.tagEdges.find(
       edge =>
         edgeKey(edge) === edgeKey({ sourceTag, targetTag }) &&
-        edgeId(edge) !== editingEdgeId,
+        edgeId(edge) !== edgeIdToUpdate,
     );
     if (existingDuplicate) {
       setFormMessage('That source-target edge already exists.');
@@ -941,7 +1036,7 @@ function NodeLinkEditor({
 
     const now = new Date().toISOString();
     const nextEdge: ManualTagEdge = {
-      id: editingEdgeId || newManualEdgeId(),
+      id: edgeIdToUpdate || newManualEdgeId(),
       sourceTag,
       targetTag,
       connectionType,
@@ -951,9 +1046,9 @@ function NodeLinkEditor({
       createdAt: now,
       updatedAt: now,
     };
-    const nextEdges = editingEdgeId
+    const nextEdges = edgeIdToUpdate
       ? semanticState.tagEdges.map(edge =>
-          edgeId(edge) === editingEdgeId
+          edgeId(edge) === edgeIdToUpdate
             ? {
                 ...edge,
                 sourceTag,
@@ -971,7 +1066,28 @@ function NodeLinkEditor({
       tagEdges: nextEdges,
       updatedAt: now,
     });
-    resetEdgeForm();
+    if (edgeIdToUpdate) {
+      closeEditModal();
+    } else {
+      resetEdgeForm();
+    }
+  };
+
+  const saveEdge = () => {
+    saveEdgeValues({
+      source: edgeSource,
+      relationship: edgeRelationship,
+      target: edgeTarget,
+    });
+  };
+
+  const saveEditedEdge = () => {
+    saveEdgeValues({
+      edgeIdToUpdate: editingEdgeId,
+      source: editEdgeSource,
+      relationship: editEdgeRelationship,
+      target: editEdgeTarget,
+    });
   };
 
   const deleteEdge = (edge: ManualTagEdge) => {
@@ -984,19 +1100,26 @@ function NodeLinkEditor({
       updatedAt: now,
     });
     if (editingEdgeId === edgeId(edge)) {
-      resetEdgeForm();
+      closeEditModal();
     }
+    setPendingDelete(null);
   };
 
-  const saveDescriptiveTag = () => {
-    const tag = tagName.trim();
+  const saveDescriptiveTagValue = ({
+    name,
+    tagId = '',
+  }: {
+    name: string;
+    tagId?: string;
+  }) => {
+    const tag = name.trim();
     if (!tag) {
       setFormMessage('Enter a descriptive tag.');
       return;
     }
 
-    const currentTag = editingTagId
-      ? semanticState.descriptiveTags.find(item => item.id === editingTagId)
+    const currentTag = tagId
+      ? semanticState.descriptiveTags.find(item => item.id === tagId)
       : null;
     const duplicateTag = graph.tags.find(
       item =>
@@ -1006,7 +1129,7 @@ function NodeLinkEditor({
     const duplicateDescriptiveTag = semanticState.descriptiveTags.find(
       item =>
         item.tag.toLocaleLowerCase() === tag.toLocaleLowerCase() &&
-        item.id !== editingTagId,
+        item.id !== tagId,
     );
     if (duplicateTag || duplicateDescriptiveTag) {
       setFormMessage('That tag already exists.');
@@ -1016,12 +1139,12 @@ function NodeLinkEditor({
     const now = new Date().toISOString();
     let nextTags: DescriptiveTag[];
     let nextEdges = semanticState.tagEdges;
-    if (editingTagId) {
+    if (tagId) {
       const previous = semanticState.descriptiveTags.find(
-        item => item.id === editingTagId,
+        item => item.id === tagId,
       );
       nextTags = semanticState.descriptiveTags.map(item =>
-        item.id === editingTagId ? { ...item, tag, updatedAt: now } : item,
+        item.id === tagId ? { ...item, tag, updatedAt: now } : item,
       );
       if (previous) {
         nextEdges = semanticState.tagEdges.map(edge => ({
@@ -1053,13 +1176,24 @@ function NodeLinkEditor({
       tagEdges: nextEdges,
       updatedAt: now,
     });
-    resetTagForm();
+    if (tagId) {
+      closeEditModal();
+    } else {
+      resetTagForm();
+    }
+  };
+
+  const saveDescriptiveTag = () => {
+    saveDescriptiveTagValue({ name: tagName });
+  };
+
+  const saveEditedDescriptiveTag = () => {
+    saveDescriptiveTagValue({ name: editTagName, tagId: editingTagId });
   };
 
   const editDescriptiveTag = (tag: DescriptiveTag) => {
-    setAddMode('tag');
     setEditingTagId(tag.id);
-    setTagName(tag.tag);
+    setEditTagName(tag.tag);
     setFormMessage('');
   };
 
@@ -1079,8 +1213,9 @@ function NodeLinkEditor({
       updatedAt: new Date().toISOString(),
     });
     if (editingTagId === tag.id) {
-      resetTagForm();
+      closeEditModal();
     }
+    setPendingDelete(null);
   };
 
   const exportLegend = () => {
@@ -1206,9 +1341,8 @@ function NodeLinkEditor({
                 onClick={saveEdge}
                 disabled={!canEdit || saveStatus === 'saving'}
               >
-                {editingEdgeId ? 'Update Edge' : 'Add Edge'}
+                Add Edge
               </Button>
-              {editingEdgeId && <Button onClick={resetEdgeForm}>Cancel</Button>}
             </div>
           </div>
         ) : (
@@ -1226,9 +1360,8 @@ function NodeLinkEditor({
                 onClick={saveDescriptiveTag}
                 disabled={saveStatus === 'saving'}
               >
-                {editingTagId ? 'Update Tag' : 'Add Tag'}
+                Add Tag
               </Button>
-              {editingTagId && <Button onClick={resetTagForm}>Cancel</Button>}
             </div>
           </div>
         )}
@@ -1247,32 +1380,51 @@ function NodeLinkEditor({
         </div>
         {semanticState.tagEdges.length ? (
           <ul className="max-h-52 space-y-2 overflow-auto pr-1">
-            {semanticState.tagEdges.map(edge => (
-              <li
-                className="rounded border px-3 py-2 text-sm"
-                key={edgeId(edge)}
-              >
-                <div className="leading-6">
-                  <RelationshipSentence edge={edge} tagColors={tagColors} />
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <button
-                    className="text-sm font-bold text-brand"
-                    type="button"
-                    onClick={() => editEdge(edge)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="text-sm font-bold text-red-6"
-                    type="button"
-                    onClick={() => deleteEdge(edge)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
+            {semanticState.tagEdges.map(edge => {
+              const id = edgeId(edge);
+              const confirmingDelete =
+                pendingDelete?.type === 'edge' && pendingDelete.id === id;
+              return (
+                <li className="rounded border px-3 py-2 text-sm" key={id}>
+                  <div className="leading-6">
+                    <RelationshipSentence edge={edge} tagColors={tagColors} />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {confirmingDelete ? (
+                      <>
+                        <span className="text-xs font-bold text-red-6">
+                          Confirm delete?
+                        </span>
+                        <EditorActionButton
+                          variant="danger"
+                          onClick={() => deleteEdge(edge)}
+                        >
+                          Yes
+                        </EditorActionButton>
+                        <EditorActionButton
+                          variant="secondary"
+                          onClick={() => setPendingDelete(null)}
+                        >
+                          No
+                        </EditorActionButton>
+                      </>
+                    ) : (
+                      <>
+                        <EditorActionButton onClick={() => editEdge(edge)}>
+                          Edit
+                        </EditorActionButton>
+                        <EditorActionButton
+                          variant="danger"
+                          onClick={() => setPendingDelete({ type: 'edge', id })}
+                        >
+                          Delete
+                        </EditorActionButton>
+                      </>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className="text-sm text-grey-6">No manual tag-tag edges yet.</p>
@@ -1288,33 +1440,56 @@ function NodeLinkEditor({
                 edge =>
                   edge.sourceTag === tag.tag || edge.targetTag === tag.tag,
               );
+              const confirmingDelete =
+                pendingDelete?.type === 'tag' && pendingDelete.id === tag.id;
               return (
                 <li
                   className="flex items-center justify-between gap-2 rounded border px-3 py-2 text-sm"
                   key={tag.id}
                 >
                   <span className="font-medium">{tag.tag}</span>
-                  <span className="flex gap-2">
-                    <button
-                      className="text-sm font-bold text-brand"
-                      type="button"
-                      onClick={() => editDescriptiveTag(tag)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="text-sm font-bold text-red-6 disabled:text-grey-5"
-                      type="button"
-                      disabled={hasEdges}
-                      title={
-                        hasEdges
-                          ? 'Remove connected manual edges before deleting'
-                          : 'Delete descriptive tag'
-                      }
-                      onClick={() => deleteDescriptiveTag(tag)}
-                    >
-                      Delete
-                    </button>
+                  <span className="flex flex-wrap items-center justify-end gap-2">
+                    {confirmingDelete ? (
+                      <>
+                        <span className="text-xs font-bold text-red-6">
+                          Confirm delete?
+                        </span>
+                        <EditorActionButton
+                          variant="danger"
+                          onClick={() => deleteDescriptiveTag(tag)}
+                        >
+                          Yes
+                        </EditorActionButton>
+                        <EditorActionButton
+                          variant="secondary"
+                          onClick={() => setPendingDelete(null)}
+                        >
+                          No
+                        </EditorActionButton>
+                      </>
+                    ) : (
+                      <>
+                        <EditorActionButton
+                          onClick={() => editDescriptiveTag(tag)}
+                        >
+                          Edit
+                        </EditorActionButton>
+                        <EditorActionButton
+                          disabled={hasEdges}
+                          title={
+                            hasEdges
+                              ? 'Remove connected manual edges before deleting'
+                              : 'Delete descriptive tag'
+                          }
+                          variant="danger"
+                          onClick={() =>
+                            setPendingDelete({ type: 'tag', id: tag.id })
+                          }
+                        >
+                          Delete
+                        </EditorActionButton>
+                      </>
+                    )}
                   </span>
                 </li>
               );
@@ -1324,6 +1499,101 @@ function NodeLinkEditor({
           <p className="text-sm text-grey-6">No descriptive tags yet.</p>
         )}
       </section>
+
+      {editingEdgeId && (
+        <EditModal title="Edit edge" onClose={closeEditModal}>
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,1.2fr)_minmax(0,1fr)]">
+              <label className="grid gap-1 text-xs font-bold uppercase text-grey-6">
+                Source Tag
+                <select
+                  className="h-10 rounded border bg-white px-2 text-sm font-normal normal-case text-color-text"
+                  value={editEdgeSource}
+                  disabled={!canEdit}
+                  onChange={event =>
+                    setEditEdgeSource((event.target as HTMLSelectElement).value)
+                  }
+                >
+                  <option value="">Source tag</option>
+                  {tags.map(tag => (
+                    <option key={tag} value={tag}>
+                      {tag}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-bold uppercase text-grey-6">
+                Relationship
+                <input
+                  className="h-10 rounded border px-2 text-sm font-normal normal-case text-color-text"
+                  value={editEdgeRelationship}
+                  disabled={!canEdit}
+                  placeholder="relationship"
+                  onInput={event =>
+                    setEditEdgeRelationship(
+                      (event.target as HTMLInputElement).value,
+                    )
+                  }
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-bold uppercase text-grey-6">
+                Target Tag
+                <select
+                  className="h-10 rounded border bg-white px-2 text-sm font-normal normal-case text-color-text"
+                  value={editEdgeTarget}
+                  disabled={!canEdit}
+                  onChange={event =>
+                    setEditEdgeTarget((event.target as HTMLSelectElement).value)
+                  }
+                >
+                  <option value="">Target tag</option>
+                  {tags.map(tag => (
+                    <option key={tag} value={tag}>
+                      {tag}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button onClick={closeEditModal}>Cancel</Button>
+              <Button
+                onClick={saveEditedEdge}
+                disabled={!canEdit || saveStatus === 'saving'}
+              >
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </EditModal>
+      )}
+
+      {editingTagId && (
+        <EditModal title="Edit descriptive tag" onClose={closeEditModal}>
+          <div className="space-y-4">
+            <label className="grid gap-1 text-xs font-bold uppercase text-grey-6">
+              Tag
+              <input
+                className="h-10 rounded border px-2 text-sm font-normal normal-case text-color-text"
+                value={editTagName}
+                placeholder="Descriptive tag"
+                onInput={event =>
+                  setEditTagName((event.target as HTMLInputElement).value)
+                }
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button onClick={closeEditModal}>Cancel</Button>
+              <Button
+                onClick={saveEditedDescriptiveTag}
+                disabled={saveStatus === 'saving'}
+              >
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </EditModal>
+      )}
     </div>
   );
 }
@@ -1446,6 +1716,7 @@ function NodeLinkGraphPage({
   };
 
   useEffect(loadGraph, [
+    groups,
     groups.length,
     isLoggedIn,
     nodeLinkState,

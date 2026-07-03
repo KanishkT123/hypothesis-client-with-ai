@@ -39,15 +39,15 @@ const fixtures = [
     params: {},
   },
   {
+    path: '/client/app.html',
+    search: 'route=nodeLink&group=test-group',
+    route: 'nodeLink',
+    params: { group: 'test-group' },
+  },
+  {
     path: '/client/notebook.html',
     route: 'notebook',
     params: {},
-  },
-  {
-    path: '/client/node-link.html',
-    search: 'group=test-group',
-    route: 'nodeLink',
-    params: { group: 'test-group' },
   },
 ];
 

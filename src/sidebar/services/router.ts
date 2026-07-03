@@ -53,6 +53,14 @@ export class RouterService {
 
     let route: RouteName;
 
+    // The browser extension already packages `/client/app.html`. Opening that
+    // shell with `?route=nodeLink` lets the node-link graph run from the
+    // client bundle without requiring a new extension HTML entrypoint.
+    if (mainSegment === 'app' && params.route === 'nodeLink') {
+      delete params.route;
+      return { route: 'nodeLink', params };
+    }
+
     switch (mainSegment) {
       case 'a':
         route = 'annotation';
