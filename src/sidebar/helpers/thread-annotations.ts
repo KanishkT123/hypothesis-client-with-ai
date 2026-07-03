@@ -1,7 +1,7 @@
 import type { Annotation } from '../../types/api';
 import type { TabName } from '../../types/sidebar';
 import { memoize } from '../util/memoize';
-import { isWaitingToAnchor } from './annotation-metadata';
+import { isWaitingToAnchor, isPendingLocationEnrichment } from './annotation-metadata';
 import { buildThread } from './build-thread';
 import type { Thread, BuildThreadOptions } from './build-thread';
 import { filterAnnotations } from './filter-annotations';
@@ -120,6 +120,10 @@ function threadAnnotationsImpl(
       // If this annotation is still anchoring, we do not know whether it should
       // appear in the "Annotations" or "Orphans" tab.
       if (thread.annotation && isWaitingToAnchor(thread.annotation)) {
+        return false;
+      }
+
+      if (thread.annotation && isPendingLocationEnrichment(thread.annotation)) {
         return false;
       }
 

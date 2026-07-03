@@ -126,13 +126,29 @@ describe('sidebar/helpers/thread-annotations', () => {
 
     describe('annotation and thread filtering', () => {
       context('when `showTabs` is true', () => {
+        function withSortableLocation(annotation) {
+          const target = annotation.target[0];
+          return {
+            ...annotation,
+            target: [
+              {
+                ...target,
+                selector: [
+                  ...(target.selector ?? []),
+                  { type: 'TextPositionSelector', start: 0, end: 5 },
+                ],
+              },
+            ],
+          };
+        }
+
         function annotationForTab(tab) {
           switch (tab) {
             case 'annotation':
-              return {
+              return withSortableLocation({
                 ...annotationFixtures.defaultAnnotation(),
                 $orphan: false,
-              };
+              });
             case 'note':
               return annotationFixtures.oldPageNote();
             case 'orphan':
@@ -234,10 +250,10 @@ describe('sidebar/helpers/thread-annotations', () => {
         ['note', 'annotation', 'orphan'].forEach(selectedTab => {
           it(`should filter the thread for the tab '${selectedTab}'`, () => {
             fakeThreadState.annotations = [
-              {
+              withSortableLocation({
                 ...annotationFixtures.defaultAnnotation(),
                 $orphan: false,
-              },
+              }),
               annotationFixtures.oldPageNote(),
               {
                 ...annotationFixtures.defaultAnnotation(),
