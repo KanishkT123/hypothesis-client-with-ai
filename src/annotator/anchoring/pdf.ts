@@ -387,25 +387,19 @@ function stripSpaces(str: string) {
   return stripped;
 }
 
+type QuoteMatch = {
+  pageIndex: number;
+  start: number;
+  end: number;
+};
+
 /**
- * Search for a quote in the given pages.
- *
- * When comparing quote selectors to document text, ASCII whitespace characters
- * are ignored. This is because text extracted from a PDF by different PDF
- * viewers, including different versions of PDF.js, can often differ in the
- * whitespace between characters and words. For a long time PDF.js in particular
- * had issues where it would often produce extra spaces between characters that
- * should not be there or omit spaces between words.
- *
- * @param [positionHint] - Expected start offset of quote
- * @return - Location of quote
+ * Search for a quote in the document and return page-local character offsets.
  */
-async function anchorQuote(
+async function findQuoteInDocument(
   quoteSelector: TextQuoteSelector,
   positionHint?: number,
-): Promise<Range> {
-  // Determine which pages to search and in what order. If we have a position
-  // hint we'll try to use that. Otherwise we'll just search all pages in order.
+): Promise<QuoteMatch | null> {
   const pageCount = getPDFViewer().pagesCount;
   const pageIndexes = Array(pageCount)
     .fill(0)
@@ -414,13 +408,11 @@ async function anchorQuote(
   let expectedPageIndex;
   let expectedOffsetInPage;
 
-  if (positionHint) {
+  if (positionHint !== undefined) {
     const { index, offset } = await findPageByOffset(positionHint);
     expectedPageIndex = index;
     expectedOffsetInPage = positionHint - offset;
 
-    // Sort pages by distance from the page where we expect to find the quote,
-    // based on the position hint.
     pageIndexes.sort((a, b) => {
       const distA = Math.abs(a - index);
       const distB = Math.abs(b - index);
@@ -428,7 +420,6 @@ async function anchorQuote(
     });
   }
 
-  // Search pages for the best match, ignoring whitespace differences.
   const strippedPrefix =
     quoteSelector.prefix !== undefined
       ? stripSpaces(quoteSelector.prefix)
@@ -439,31 +430,29 @@ async function anchorQuote(
       : undefined;
   const strippedQuote = stripSpaces(quoteSelector.exact);
 
-  let bestMatch;
+  let bestMatch: {
+    page: number;
+    match: { start: number; end: number; score: number };
+  } | null = null;
   for (const page of pageIndexes) {
     const text = await getPageTextContent(page);
     const strippedText = stripSpaces(text);
 
-    // Determine expected offset of quote in current page based on position hint.
     let strippedHint;
     if (expectedPageIndex !== undefined && expectedOffsetInPage !== undefined) {
       if (page < expectedPageIndex) {
-        strippedHint = strippedText.length; // Prefer matches closer to end of page.
+        strippedHint = strippedText.length;
       } else if (page === expectedPageIndex) {
-        // Translate expected offset in whitespace-inclusive version of page
-        // text into offset in whitespace-stripped version of page text.
         [strippedHint] = translateOffsets(
           text,
           strippedText,
           expectedOffsetInPage,
           expectedOffsetInPage,
           isNotSpace,
-          // We don't need to normalize here since both input strings are
-          // derived from the same input.
           { normalize: false },
         );
       } else {
-        strippedHint = 0; // Prefer matches closer to start of page.
+        strippedHint = 0;
       }
     }
 
@@ -478,8 +467,6 @@ async function anchorQuote(
     }
 
     if (!bestMatch || match.score > bestMatch.match.score) {
-      // Translate match offset from whitespace-stripped version of page text
-      // back to original text.
       const [start, end] = translateOffsets(
         strippedText,
         text,
@@ -496,15 +483,6 @@ async function anchorQuote(
         },
       };
 
-      // If we find a very good match, stop early.
-      //
-      // There is a tradeoff here between optimizing search performance and
-      // ensuring that we have found the best match in the document.
-      //
-      // The current heuristics are that we require an exact match for the quote
-      // and either the preceding or following context. The context matching
-      // helps to avoid incorrectly stopping the search early if the quote is
-      // a word or phrase that is common in the document.
       const exactQuoteMatch =
         strippedText.slice(match.start, match.end) === strippedQuote;
 
@@ -517,7 +495,8 @@ async function anchorQuote(
 
       const exactSuffixMatch =
         strippedSuffix !== undefined &&
-        strippedText.slice(match.end, strippedSuffix.length) === strippedSuffix;
+        strippedText.slice(match.end, match.end + strippedSuffix.length) ===
+          strippedSuffix;
 
       const hasContext =
         strippedPrefix !== undefined || strippedSuffix !== undefined;
@@ -531,24 +510,70 @@ async function anchorQuote(
     }
   }
 
-  if (bestMatch) {
-    const { page, match } = bestMatch;
-
-    // If we found a match, optimize future anchoring of this selector in the
-    // same session by caching the match location.
-    if (positionHint) {
-      const cacheKey = quotePositionCacheKey(quoteSelector.exact, positionHint);
-      quotePositionCache.set(cacheKey, {
-        pageIndex: page,
-        anchor: match,
-      });
-    }
-
-    // Convert the (start, end) position match into a DOM range.
-    return anchorByPosition(page, match.start, match.end);
+  if (!bestMatch) {
+    return null;
   }
 
-  throw new Error('Quote not found');
+  return {
+    pageIndex: bestMatch.page,
+    start: bestMatch.match.start,
+    end: bestMatch.match.end,
+  };
+}
+
+async function anchorQuote(
+  quoteSelector: TextQuoteSelector,
+  positionHint?: number,
+): Promise<Range> {
+  const match = await findQuoteInDocument(quoteSelector, positionHint);
+  if (!match) {
+    throw new Error('Quote not found');
+  }
+
+  if (positionHint !== undefined) {
+    const cacheKey = quotePositionCacheKey(quoteSelector.exact, positionHint);
+    quotePositionCache.set(cacheKey, {
+      pageIndex: match.pageIndex,
+      anchor: { start: match.start, end: match.end },
+    });
+  }
+
+  return anchorByPosition(match.pageIndex, match.start, match.end);
+}
+
+/**
+ * Build position and page selectors from quote-only selectors without rendering
+ * the PDF page text layer.
+ */
+export async function describeQuoteOnly(
+  selectors: Selector[],
+): Promise<Selector[]> {
+  const quote = selectors.find(s => s.type === 'TextQuoteSelector') as
+    | TextQuoteSelector
+    | undefined;
+  if (!quote) {
+    throw new Error('No quote selector found');
+  }
+
+  const position = selectors.find(s => s.type === 'TextPositionSelector') as
+    | TextPositionSelector
+    | undefined;
+
+  const match = await findQuoteInDocument(quote, position?.start);
+  if (!match) {
+    throw new Error('Quote not found');
+  }
+
+  const pageOffset = await getPageOffset(match.pageIndex);
+  const pageView = await getPageView(match.pageIndex);
+
+  const positionSelector = {
+    type: 'TextPositionSelector',
+    start: pageOffset + match.start,
+    end: pageOffset + match.end,
+  } as TextPositionSelector;
+
+  return [positionSelector, createPageSelector(pageView, match.pageIndex)];
 }
 
 /**

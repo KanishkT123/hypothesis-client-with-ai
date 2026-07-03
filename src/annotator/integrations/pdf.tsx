@@ -28,6 +28,7 @@ import {
   anchor,
   canDescribe,
   describe,
+  describeQuoteOnly,
   describeShape,
   documentHasText,
   isTextLayerRenderingDone,
@@ -363,6 +364,10 @@ export class PDFIntegration
     } else {
       return describeShape(region);
     }
+  }
+
+  describeQuoteOnly(selectors: Selector[]): Promise<Selector[]> {
+    return describeQuoteOnly(selectors);
   }
 
   /**
