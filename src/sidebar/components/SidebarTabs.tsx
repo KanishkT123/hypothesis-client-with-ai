@@ -9,12 +9,13 @@ import {
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
 import type { ComponentChildren } from 'preact';
-import { useCallback } from 'preact/hooks';
+import { useCallback, useEffect } from 'preact/hooks';
 
 import { pluralize } from '../../shared/pluralize';
 import type { SidebarSettings } from '../../types/config';
 import type { TabName } from '../../types/sidebar';
 import { applyTheme } from '../helpers/theme';
+import { isPendingLocationEnrichment } from '../helpers/annotation-metadata';
 import { withServices } from '../service-context';
 import type { AnnotationsService } from '../services/annotations';
 import type { FrameSyncService } from '../services/frame-sync';
@@ -121,6 +122,56 @@ function SidebarTabs({
   const annotationCount = tabCounts.annotation;
   const orphanCount = tabCounts.orphan;
   const isWaitingToAnchorAnnotations = store.isWaitingToAnchorAnnotations();
+  const isWaitingForLocationEnrichment = store.isWaitingForLocationEnrichment();
+  const isAnnotationFetchComplete = store.isAnnotationFetchComplete();
+  const initialLoadLocationReady = store.initialLoadLocationReady();
+
+  const isInitialLocationGateActive =
+    !initialLoadLocationReady &&
+    (!isAnnotationFetchComplete || isWaitingForLocationEnrichment);
+
+  const tabListWaiting =
+    isWaitingToAnchorAnnotations || isInitialLocationGateActive;
+
+  useEffect(() => {
+    if (initialLoadLocationReady) {
+      return;
+    }
+    if (isAnnotationFetchComplete && !isWaitingForLocationEnrichment) {
+      store.setInitialLoadLocationReady();
+    }
+  }, [
+    initialLoadLocationReady,
+    isAnnotationFetchComplete,
+    isWaitingForLocationEnrichment,
+    store,
+  ]);
+
+  useEffect(() => {
+    if (!isAnnotationFetchComplete || initialLoadLocationReady) {
+      return;
+    }
+
+    const LOCATION_ENRICHMENT_TIMEOUT = 3000;
+    const timeoutId = window.setTimeout(() => {
+      const pendingTags = store
+        .allAnnotations()
+        .filter(isPendingLocationEnrichment)
+        .map(ann => ann.$tag);
+      if (pendingTags.length > 0) {
+        store.updateLocationEnrichmentTimeout(pendingTags);
+      }
+    }, LOCATION_ENRICHMENT_TIMEOUT);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    initialLoadLocationReady,
+    isAnnotationFetchComplete,
+    isWaitingForLocationEnrichment,
+    store,
+  ]);
 
   const selectTab = (tabId: TabName) => {
     store.selectTab(tabId);
@@ -134,7 +185,13 @@ function SidebarTabs({
     selectedTab === 'annotation' &&
     annotationCount === 0 &&
     !isWaitingToAnchorAnnotations &&
-    !isAIOrEmptyPanelOpen;
+    !isAIOrEmptyPanelOpen &&
+    !isWaitingForLocationEnrichment;
+
+  const showLocationLoadingGate =
+    selectedTab === 'annotation' &&
+    !settings.commentsMode &&
+    isInitialLocationGateActive;
 
   const showNotesUnavailableMessage = selectedTab === 'note' && noteCount === 0;
 
@@ -291,7 +348,15 @@ function SidebarTabs({
                   </CardContent>
                 </Card>
               )}
-              <ThreadList threads={rootThread.children} />
+              {showLocationLoadingGate ? (
+                <Card data-testid="location-enrichment-loading" variant="flat">
+                  <CardContent classes="text-center">
+                    Determining annotation locations…
+                  </CardContent>
+                </Card>
+              ) : (
+                <ThreadList threads={rootThread.children} />
+              )}
             </div>
           )}
         </div>

@@ -164,7 +164,7 @@ type AnnotationSearchResult = {
 };
 
 /**
- * Result of `GET /api/groups/{id}/annotations`.
+ * Result of `GET /api/groups/{pubid}/annotations`.
  *
  * NB: This endpoint paginates with `page[after]` (a date-time cursor) +
  * `page[size]` and returns `{ meta, data }` — it is NOT search-compatible

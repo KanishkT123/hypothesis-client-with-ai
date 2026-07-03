@@ -4,6 +4,10 @@ import {
   canMarkTagAsNegativeExample,
   canRevertNegativeExampleTag,
   deriveTagInventoryRowDescriptors,
+  tagInventoryRowDescriptorsForAnnotation,
+  annotationBelongsToTagInventoryRow,
+  countAnnotationsForTagInventoryRow,
+  listAnnotationsBelongingToTagInventoryRow,
   isTagInventoryRowVisibleInScope,
   isConvertiblePositiveContentTag,
   isNegativeSchemaTag,
@@ -12,6 +16,7 @@ import {
   positiveSchemaTagForNegativeTag,
   positiveSchemaTags,
   pruneTagInventoryRowsToDescriptors,
+  retagAllPositiveSchemaTagsAsNegative,
   retagOneNegativeSchemaTagAsPositive,
   retagOnePositiveSchemaTagAsNegative,
   rowDescriptorKey,
@@ -19,10 +24,10 @@ import {
 } from '../tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../groups';
 
-function publicScope(documentUri, keys) {
+function publicScope(documentUri) {
   return {
     focusedGroupId: PUBLIC_GROUP_ID,
-    publicDocumentDescriptorKeys: new Set(keys),
+    currentDocumentUri: documentUri,
   };
 }
 
@@ -150,6 +155,17 @@ describe('sidebar/helpers/tag-inventory-group', () => {
       );
     });
 
+    it('retagAllPositiveSchemaTagsAsNegative strips AI system tags', () => {
+      assert.deepEqual(
+        retagAllPositiveSchemaTagsAsNegative(['ai-pending', 'methods']),
+        ['methods-neg-example'],
+      );
+      assert.deepEqual(
+        retagAllPositiveSchemaTagsAsNegative(['ai-user-approved', 'methods']),
+        ['methods-neg-example'],
+      );
+    });
+
     it('canRevertNegativeExampleTag requires negative tag and no ai-pending', () => {
       assert.isTrue(
         canRevertNegativeExampleTag(
@@ -180,7 +196,7 @@ describe('sidebar/helpers/tag-inventory-group', () => {
       ]);
     });
 
-    it('neg-example tag yields neg row, not positive methods', () => {
+    it('neg-example tag yields neg row with empty query', () => {
       const descriptors = deriveTagInventoryRowDescriptors([
         savedAnn({
           id: 'n1',
@@ -189,17 +205,31 @@ describe('sidebar/helpers/tag-inventory-group', () => {
         }),
       ]);
       assert.deepEqual(descriptors, [
-        { schemaTag: 'methods-neg-example', query: 'declined q' },
+        { schemaTag: 'methods-neg-example', query: '' },
       ]);
     });
 
-    it('manual tag only yields empty query row', () => {
+    it('two neg annotations with different text dedupe to one descriptor', () => {
       const descriptors = deriveTagInventoryRowDescriptors([
         savedAnn({
-          id: 'm1',
-          tags: ['methods'],
-          text: 'ignored for manual',
+          id: 'n1',
+          tags: ['methods-neg-example'],
+          text: 'first body',
         }),
+        savedAnn({
+          id: 'n2',
+          tags: ['methods-neg-example'],
+          text: 'second body',
+        }),
+      ]);
+      assert.deepEqual(descriptors, [
+        { schemaTag: 'methods-neg-example', query: '' },
+      ]);
+    });
+
+    it('regular annotations create rows with empty query', () => {
+      const descriptors = deriveTagInventoryRowDescriptors([
+        savedAnn({ id: 'm1', tags: ['methods'], text: 'ignored' }),
       ]);
       assert.deepEqual(descriptors, [{ schemaTag: 'methods', query: '' }]);
     });
@@ -238,6 +268,168 @@ describe('sidebar/helpers/tag-inventory-group', () => {
       assert.deepEqual(descriptors, [
         { schemaTag: 'methods', query: 'regression' },
       ]);
+    });
+  });
+
+  describe('tagInventoryRowDescriptorsForAnnotation', () => {
+    it('classifies manual, ai-pending, ai-user-approved, and negative annotations', () => {
+      assert.deepEqual(
+        tagInventoryRowDescriptorsForAnnotation(
+          savedAnn({ id: 'm', tags: ['methods'], text: 'ignored' }),
+        ),
+        [{ schemaTag: 'methods', query: '' }],
+      );
+      assert.deepEqual(
+        tagInventoryRowDescriptorsForAnnotation(
+          savedAnn({
+            id: 'p',
+            tags: ['methods', 'ai-pending'],
+            text: 'find stats',
+          }),
+        ),
+        [{ schemaTag: 'methods', query: 'find stats' }],
+      );
+      assert.deepEqual(
+        tagInventoryRowDescriptorsForAnnotation(
+          savedAnn({
+            id: 'a',
+            tags: ['methods', 'ai-user-approved'],
+            text: 'find stats',
+          }),
+        ),
+        [{ schemaTag: 'methods', query: 'find stats' }],
+      );
+      assert.deepEqual(
+        tagInventoryRowDescriptorsForAnnotation(
+          savedAnn({
+            id: 'n',
+            tags: ['methods-neg-example'],
+            text: 'any text',
+          }),
+        ),
+        [{ schemaTag: 'methods-neg-example', query: '' }],
+      );
+    });
+  });
+
+  describe('annotationBelongsToTagInventoryRow / listAnnotationsBelongingToTagInventoryRow', () => {
+    const query = 'find stats';
+
+    it('query row includes pending and approved, excludes manual', () => {
+      const pending = savedAnn({
+        id: 'p1',
+        tags: ['methods', 'ai-pending'],
+        text: query,
+      });
+      const approved = savedAnn({
+        id: 'a1',
+        tags: ['methods', 'ai-user-approved'],
+        text: query,
+      });
+      const manual = savedAnn({
+        id: 'm1',
+        tags: ['methods'],
+        text: query,
+      });
+      const annotations = [pending, approved, manual];
+
+      for (const ann of [pending, approved]) {
+        assert.isTrue(
+          annotationBelongsToTagInventoryRow(ann, pdf, 'methods', query),
+        );
+      }
+      assert.isFalse(
+        annotationBelongsToTagInventoryRow(manual, pdf, 'methods', query),
+      );
+
+      const matches = listAnnotationsBelongingToTagInventoryRow(
+        annotations,
+        pdf,
+        'methods',
+        query,
+      );
+      assert.sameMembers(
+        matches.map(a => a.id),
+        ['p1', 'a1'],
+      );
+    });
+
+    it('empty-query row includes manual only, excludes AI-tagged', () => {
+      const pending = savedAnn({
+        id: 'p1',
+        tags: ['methods', 'ai-pending'],
+        text: 'any',
+      });
+      const manual = savedAnn({
+        id: 'm1',
+        tags: ['methods'],
+        text: 'any',
+      });
+      const annotations = [pending, manual];
+
+      assert.isTrue(
+        annotationBelongsToTagInventoryRow(manual, pdf, 'methods', ''),
+      );
+      assert.isFalse(
+        annotationBelongsToTagInventoryRow(pending, pdf, 'methods', ''),
+      );
+
+      const matches = listAnnotationsBelongingToTagInventoryRow(
+        annotations,
+        pdf,
+        'methods',
+        '',
+      );
+      assert.deepEqual(matches.map(a => a.id), ['m1']);
+    });
+  });
+
+  describe('countAnnotationsForTagInventoryRow', () => {
+    it('public row counts document-scoped pending and approved only', () => {
+      const query = 'find stats';
+      const pending = savedAnn({
+        id: 'p1',
+        tags: ['methods', 'ai-pending'],
+        text: query,
+      });
+      const manual = savedAnn({
+        id: 'm1',
+        tags: ['methods'],
+        text: query,
+      });
+      const row = {
+        schemaTag: 'methods',
+        query,
+        groupId: PUBLIC_GROUP_ID,
+      };
+      assert.equal(
+        countAnnotationsForTagInventoryRow([pending, manual], row, {
+          focusedGroupId: PUBLIC_GROUP_ID,
+          documentUri: pdf,
+        }),
+        1,
+      );
+    });
+
+    it('private row counts group-wide without document filter', () => {
+      const manual = savedAnn({
+        id: 'm1',
+        group: groupA,
+        uri: 'http://other/doc.pdf',
+        tags: ['methods'],
+        text: '',
+      });
+      const row = {
+        schemaTag: 'methods',
+        query: '',
+        groupId: groupA,
+      };
+      assert.equal(
+        countAnnotationsForTagInventoryRow([manual], row, {
+          focusedGroupId: groupA,
+        }),
+        1,
+      );
     });
   });
 
@@ -315,22 +507,56 @@ describe('sidebar/helpers/tag-inventory-group', () => {
       assert.isFalse(isTagInventoryRowVisibleInScope(baseRow, privateScope('other')));
     });
 
-    it('public group: visible only when descriptor key is in current-doc set', () => {
-      const publicRow = { ...baseRow, groupId: PUBLIC_GROUP_ID };
-      const key = rowDescriptorKey('methods', 'q');
+    it('public group: visible only when row.documentUri matches currentDocumentUri', () => {
+      const publicRow = {
+        ...baseRow,
+        groupId: PUBLIC_GROUP_ID,
+        documentUri: pdf,
+      };
       assert.isTrue(
-        isTagInventoryRowVisibleInScope(publicRow, publicScope(pdf, [key])),
+        isTagInventoryRowVisibleInScope(publicRow, publicScope(pdf)),
       );
       assert.isFalse(
-        isTagInventoryRowVisibleInScope(
-          publicRow,
-          publicScope(pdf, [rowDescriptorKey('other', '')]),
-        ),
+        isTagInventoryRowVisibleInScope(publicRow, publicScope(pdfB)),
+      );
+      assert.isTrue(
+        isTagInventoryRowVisibleInScope(publicRow, {
+          focusedGroupId: PUBLIC_GROUP_ID,
+          currentDocumentUri: null,
+          documentUriAliases: [pdf],
+        }),
+        'stays visible while frame URI is resolving when row URI is in aliases',
       );
       assert.isFalse(
         isTagInventoryRowVisibleInScope(publicRow, {
           focusedGroupId: PUBLIC_GROUP_ID,
-          publicDocumentDescriptorKeys: null,
+          currentDocumentUri: null,
+          documentUriAliases: [],
+        }),
+      );
+      assert.isFalse(
+        isTagInventoryRowVisibleInScope(
+          { ...baseRow, groupId: PUBLIC_GROUP_ID },
+          publicScope(pdf),
+        ),
+        'row without documentUri is not visible',
+      );
+    });
+
+    it('public group: visible when row URN and canonical HTTPS share alias set', () => {
+      const urn = 'urn:x-pdf:abc';
+      const https = 'https://example.com/paper.pdf';
+      const aliases = [urn, https];
+      const publicRow = {
+        ...baseRow,
+        groupId: PUBLIC_GROUP_ID,
+        documentUri: urn,
+      };
+      assert.isTrue(
+        isTagInventoryRowVisibleInScope(publicRow, {
+          focusedGroupId: PUBLIC_GROUP_ID,
+          currentDocumentUri: https,
+          documentUriAliases: aliases,
         }),
       );
     });

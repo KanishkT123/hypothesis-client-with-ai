@@ -22,14 +22,17 @@ import type {
   RenderToBitmapOptions,
 } from '../../types/annotator';
 import type { Annotation } from '../../types/api';
-import type {
+import { mapHiddenAnnotationIdsToGuestTags } from '../helpers/hidden-annotation-guest-tags';
+import {
   SidebarToHostCalls,
   HostToSidebarCalls,
   SidebarToGuestCalls,
   GuestToSidebarCalls,
 } from '../../types/port-rpc-calls';
-import { ensureTagInventoryRowForTagQuery } from '../helpers/tag-inventory-row';
 import { isReply } from '../helpers/annotation-metadata';
+import { currentDocumentUri } from '../helpers/document-uri';
+import { PUBLIC_GROUP_ID } from '../helpers/groups';
+import { tagInventoryRowId } from '../store/modules/sidebar-panels';
 import {
   annotationMatchesSegment,
   segmentMatchesFocusFilters,
@@ -40,6 +43,15 @@ import type { Frame } from '../store/modules/frames';
 import { watch } from '../util/watch';
 import type { AnnotationsService } from './annotations';
 import type { ToastMessengerService } from './toast-messenger';
+
+function hiddenTagsEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((tag, index) => tag === sortedB[index]);
+}
 
 /**
  * Return a minimal representation of an annotation that can be sent from the
@@ -139,6 +151,8 @@ export class FrameSyncService {
   private _highlightsVisible: boolean;
   /** Latest tag highlight palette to replay to newly connected guests. */
   private _tagHighlightPalette: Record<string, string>;
+  /** Latest hidden annotation `$tag`s to replay to newly connected guests. */
+  private _hiddenAnnotationIds: string[];
 
   /**
    * Channel for sidebar-host communication.
@@ -216,6 +230,7 @@ export class FrameSyncService {
     this._inFrame = new Set<string>();
     this._highlightsVisible = false;
     this._tagHighlightPalette = {};
+    this._hiddenAnnotationIds = [];
 
     this._pendingScrollToTag = null;
     this._pendingHoverTag = null;
@@ -493,13 +508,21 @@ export class FrameSyncService {
           annot.tags = [...tags, schemaTag];
         }
 
-        ensureTagInventoryRowForTagQuery(this._store, {
-          id: `manual-${annot.$tag}`,
-          groupId: this._store.focusedGroupId() ?? undefined,
-          schemaTag,
-          query,
-          annotationIds: [],
-        });
+        const groupId = this._store.focusedGroupId() ?? undefined;
+        const isPublic = groupId === PUBLIC_GROUP_ID;
+        const docUri = isPublic
+          ? (currentDocumentUri(this._store) ?? undefined)
+          : undefined;
+        if (!isPublic || docUri) {
+          this._store.addTagInventoryRow({
+            id: tagInventoryRowId(schemaTag, query, groupId, docUri),
+            groupId,
+            schemaTag,
+            query,
+            annotationIds: [],
+            ...(docUri !== undefined ? { documentUri: docUri } : {}),
+          });
+        }
       }
 
       // Open the sidebar so that the user can immediately edit the draft
@@ -548,6 +571,10 @@ export class FrameSyncService {
           permissions: ann.permissions ?? existing.permissions,
         };
         this._store.addAnnotations([merged as Annotation]);
+        this._annotationsService.persistEnrichedTargetIfChanged(
+          existing,
+          merged as Annotation,
+        );
       }
 
       if ($tag === this._pendingHoverTag) {
@@ -608,7 +635,11 @@ export class FrameSyncService {
     guestRPC.call('setHighlightsVisible', this._highlightsVisible);
     guestRPC.call('featureFlagsUpdated', this._store.features());
     guestRPC.call('shortcutsUpdated', getAllShortcuts());
-    guestRPC.call('setTagHighlightPalette', this._tagHighlightPalette);
+    guestRPC.call(
+      'setTagHighlightPalette',
+      this._tagHighlightPalette,
+      this._hiddenAnnotationIds,
+    );
 
     // If we have content banner data, send it to the guest. If there are
     // multiple guests the banner is likely only appropriate for the main one.
@@ -738,10 +769,34 @@ export class FrameSyncService {
    * Replace tag highlight colors in every connected guest (e.g. after a color
    * picker change). Pass the full map each time.
    */
-  setTagHighlightPalette(palette: Record<string, string>): void {
+  setTagHighlightPalette(
+    palette: Record<string, string>,
+    hiddenAnnotationIds: string[] = [],
+  ): void {
+    const hiddenGuestTags = mapHiddenAnnotationIdsToGuestTags(
+      this._store.allAnnotations(),
+      hiddenAnnotationIds,
+    );
+    const paletteUnchanged =
+      Object.keys(palette).length === Object.keys(this._tagHighlightPalette).length &&
+      Object.entries(palette).every(
+        ([tag, color]) => this._tagHighlightPalette[tag] === color,
+      );
+    const hiddenUnchanged = hiddenTagsEqual(
+      hiddenGuestTags,
+      this._hiddenAnnotationIds,
+    );
+    if (paletteUnchanged && hiddenUnchanged) {
+      return;
+    }
     this._tagHighlightPalette = { ...palette };
+    this._hiddenAnnotationIds = hiddenGuestTags;
     this._guestRPC.forEach(rpc =>
-      rpc.call('setTagHighlightPalette', this._tagHighlightPalette),
+      rpc.call(
+        'setTagHighlightPalette',
+        this._tagHighlightPalette,
+        this._hiddenAnnotationIds,
+      ),
     );
   }
 
@@ -851,6 +906,27 @@ export class FrameSyncService {
     guest.call('getDocumentInfo', resolve);
 
     return promise;
+  }
+
+  /**
+   * Read the PDF bytes from the guest frame (browser session) as base64.
+   * Used when the public document URL is not downloadable by Claude.
+   */
+  async getPdfBytes(): Promise<string> {
+    const guest = this._guestRPC.get(null);
+    if (!guest) {
+      throw new Error('No guest connected');
+    }
+
+    return new Promise((resolve, reject) => {
+      guest.call('getPdfBytes', result => {
+        if (result.ok) {
+          resolve(result.value);
+        } else {
+          reject(new Error(result.error));
+        }
+      });
+    });
   }
 
   // Only used to cleanup tests

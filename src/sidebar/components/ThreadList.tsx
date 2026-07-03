@@ -10,58 +10,17 @@ import {
   calculateVisibleThreads,
   THREAD_DIMENSION_DEFAULTS,
 } from '../helpers/visible-threads';
+import {
+  getThreadListScrollContainer,
+  measureThreadListScrollMetrics,
+  scrollTopForThreadViewportOffset,
+} from '../helpers/thread-list-scroll-metrics';
 import { useSidebarStore } from '../store';
 import { getElementHeightWithMargins } from '../util/dom';
 import ThreadCard from './ThreadCard';
 
-// The precision of the `scrollPosition` value in pixels; values will be rounded
-// down to the nearest multiple of this scale value
-const SCROLL_PRECISION = 50;
-
 function getScrollContainer() {
-  const container = document.querySelector('.js-thread-list-scroll-root');
-  if (!container) {
-    throw new Error('Scroll container is missing');
-  }
-  return container;
-}
-
-function roundScrollPosition(pos: number) {
-  return Math.max(pos - (pos % SCROLL_PRECISION), 0);
-}
-
-type ScrollMetrics = {
-  scrollPosition: number;
-  viewportHeight: number;
-  listTopOffset: number;
-};
-
-function measureScrollMetrics(
-  scrollContainer: Element,
-  listRoot: Element | null,
-): ScrollMetrics {
-  const container = scrollContainer as HTMLElement;
-  const rootScrollTop = container.scrollTop;
-  const containerRect = container.getBoundingClientRect();
-  const listTopWithinContainer =
-    listRoot === null
-      ? 0
-      : listRoot.getBoundingClientRect().top - containerRect.top;
-  const listTopOffset = Math.max(0, listTopWithinContainer + rootScrollTop);
-
-  // For virtualization math, use list-relative scroll offsets. This keeps
-  // visibility calculations stable when widgets above the list grow/shrink.
-  const effectiveScrollPosition = Math.max(0, rootScrollTop - listTopOffset);
-  const visibleHeight = Math.max(
-    0,
-    container.clientHeight - Math.max(0, listTopWithinContainer),
-  );
-
-  return {
-    scrollPosition: roundScrollPosition(effectiveScrollPosition),
-    viewportHeight: visibleHeight,
-    listTopOffset,
-  };
+  return getThreadListScrollContainer();
 }
 
 export type ThreadListProps = {
@@ -142,7 +101,7 @@ export default function ThreadList({ threads }: ThreadListProps) {
     const scrollContainer = getScrollContainer();
 
     const updateMetrics = () => {
-      const metrics = measureScrollMetrics(scrollContainer, listRootRef.current);
+      const metrics = measureThreadListScrollMetrics(scrollContainer, listRootRef.current);
       setScrollContainerHeight(prev =>
         prev === metrics.viewportHeight ? prev : metrics.viewportHeight,
       );
@@ -180,7 +139,7 @@ export default function ThreadList({ threads }: ThreadListProps) {
   // changed height without a window resize or container scroll.
   useLayoutEffect(() => {
     const scrollContainer = getScrollContainer();
-    const metrics = measureScrollMetrics(scrollContainer, listRootRef.current);
+    const metrics = measureThreadListScrollMetrics(scrollContainer, listRootRef.current);
     setScrollContainerHeight(prev =>
       prev === metrics.viewportHeight ? prev : metrics.viewportHeight,
     );
@@ -201,6 +160,28 @@ export default function ThreadList({ threads }: ThreadListProps) {
   const [scrollToId, setScrollToId] = useState<string | null>(null);
 
   const topLevelThreads = threads;
+
+  const store = useSidebarStore();
+  const threadScrollAnchor = store.threadScrollAnchor();
+
+  const threadOrderKey = useMemo(
+    () => topLevelThreads.map(thread => thread.id).join('\n'),
+    [topLevelThreads],
+  );
+  const threadOrderAtAnchorRef = useRef<string | null>(null);
+  const anchorIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!threadScrollAnchor) {
+      anchorIdRef.current = null;
+      threadOrderAtAnchorRef.current = null;
+      return;
+    }
+    if (anchorIdRef.current !== threadScrollAnchor.id) {
+      anchorIdRef.current = threadScrollAnchor.id;
+      threadOrderAtAnchorRef.current = threadOrderKey;
+    }
+  }, [threadScrollAnchor, threadOrderKey]);
 
   const {
     offscreenLowerHeight,
@@ -252,7 +233,6 @@ export default function ThreadList({ threads }: ThreadListProps) {
     return headings;
   }, [threads]);
 
-  const store = useSidebarStore();
   const currentUserId = store.profile().userid;
   const editing = store.countDrafts() > 0;
   const highlightedAnnotations = store.highlightedAnnotations();
@@ -291,17 +271,79 @@ export default function ThreadList({ threads }: ThreadListProps) {
   );
 
   // Scroll to the most relevant highlighted annotation, unless creating/editing
-  // another annotation
+  // another annotation or the user asked to keep a specific thread in view.
   useEffect(() => {
-    if (!editing && mostRelevantHighlightedAnnotationId) {
+    if (
+      !editing &&
+      mostRelevantHighlightedAnnotationId &&
+      !threadScrollAnchor
+    ) {
       setScrollToId(mostRelevantHighlightedAnnotationId);
     }
-  }, [editing, mostRelevantHighlightedAnnotationId]);
+  }, [editing, mostRelevantHighlightedAnnotationId, threadScrollAnchor]);
+
+  // After a location-sort reorder, restore scroll using thread heights (not DOM
+  // positions, which are wrong while the virtual list is remounting).
+  useLayoutEffect(() => {
+    if (!threadScrollAnchor) {
+      return;
+    }
+    if (threadOrderAtAnchorRef.current === threadOrderKey) {
+      return;
+    }
+    threadOrderAtAnchorRef.current = threadOrderKey;
+
+    const threadIndex = topLevelThreads.findIndex(
+      thread => thread.id === threadScrollAnchor.id,
+    );
+    if (threadIndex === -1) {
+      return;
+    }
+
+    const container = getScrollContainer();
+    const targetScrollTop = scrollTopForThreadViewportOffset(
+      threadIndex,
+      topLevelThreads,
+      threadHeights,
+      listTopOffset,
+      threadScrollAnchor.viewportOffset,
+      THREAD_DIMENSION_DEFAULTS.defaultHeight,
+    );
+    const previousScrollTop = container.scrollTop;
+    if (Math.abs(previousScrollTop - targetScrollTop) <= 1) {
+      return;
+    }
+    container.scrollTop = targetScrollTop;
+  }, [
+    threadScrollAnchor,
+    threadOrderKey,
+    topLevelThreads,
+    threadHeights,
+    listTopOffset,
+  ]);
+
+  // Stop pinning the list after anchoring-driven reorder settles.
+  useEffect(() => {
+    if (!threadScrollAnchor) {
+      return () => {};
+    }
+    const timeout = window.setTimeout(() => {
+      store.clearThreadScrollAnchor();
+    }, 2000);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [threadScrollAnchor, store]);
 
   // Effect to scroll a particular thread into view. This is mainly used to
   // scroll a newly created annotation into view.
   useEffect(() => {
     if (!scrollToId) {
+      return;
+    }
+
+    if (threadScrollAnchor?.id === scrollToId) {
+      setScrollToId(null);
       return;
     }
 
@@ -323,8 +365,9 @@ export default function ThreadList({ threads }: ThreadListProps) {
       .reduce((total, thread) => total + getThreadHeight(thread), 0);
 
     const scrollContainer = getScrollContainer();
+    const previousScrollTop = scrollContainer.scrollTop;
     scrollContainer.scrollTop = yOffset + listTopOffset;
-  }, [scrollToId, topLevelThreads, threadHeights, listTopOffset]);
+  }, [scrollToId, topLevelThreads, threadHeights, listTopOffset, store, threadScrollAnchor]);
 
   // When the set of visible threads changes, recalculate the real rendered
   // heights of thread cards and update `threadHeights` state if there are changes.

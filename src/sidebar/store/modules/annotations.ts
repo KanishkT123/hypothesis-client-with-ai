@@ -137,7 +137,7 @@ function mergeAnnotationsWithSameId(annotations: Annotation[]): Annotation[] {
  * @return - API annotation data with client annotation data merged
  */
 function initializeAnnotation(
-  annotation: Omit<Annotation, '$anchorTimeout'>,
+  annotation: Omit<Annotation, '$anchorTimeout' | '$locationTimeout'>,
   tag: string,
   currentUserId: string | null,
 ): Annotation {
@@ -155,6 +155,7 @@ function initializeAnnotation(
 
   return Object.assign({}, annotation, {
     $anchorTimeout: false,
+    $locationTimeout: false,
     $cluster,
     $tag: annotation.$tag || tag,
     $orphan: orphan,
@@ -291,6 +292,20 @@ const reducers = {
       } else {
         return annot;
       }
+    });
+    return { annotations };
+  },
+
+  UPDATE_LOCATION_ENRICHMENT_TIMEOUT(
+    state: State,
+    action: { tags: string[] },
+  ): Partial<State> {
+    const timedOut = new Set(action.tags);
+    const annotations = state.annotations.map(annot => {
+      if (!timedOut.has(annot.$tag)) {
+        return annot;
+      }
+      return Object.assign({}, annot, { $locationTimeout: true });
     });
     return { annotations };
   },
@@ -436,6 +451,10 @@ function updateFlagStatus(id: string, isFlagged: boolean) {
   return makeAction(reducers, 'UPDATE_FLAG_STATUS', { id, isFlagged });
 }
 
+function updateLocationEnrichmentTimeout(tags: string[]) {
+  return makeAction(reducers, 'UPDATE_LOCATION_ENRICHMENT_TIMEOUT', { tags });
+}
+
 /* Selectors */
 
 /**
@@ -514,6 +533,11 @@ function isAnnotationHovered(state: State, $tag: string) {
 const isWaitingToAnchorAnnotations = createSelector(
   (state: State) => state.annotations,
   annotations => annotations.some(metadata.isWaitingToAnchor),
+);
+
+const isWaitingForLocationEnrichment = createSelector(
+  (state: State) => state.annotations,
+  annotations => annotations.some(metadata.isPendingLocationEnrichment),
 );
 
 /**
@@ -631,6 +655,7 @@ export const annotationsModule = createStoreModule(initialState, {
     removeAnnotations,
     updateAnchorStatus,
     updateFlagStatus,
+    updateLocationEnrichmentTimeout,
   },
   selectors: {
     allAnnotations,
@@ -643,6 +668,7 @@ export const annotationsModule = createStoreModule(initialState, {
     isAnnotationHighlighted,
     isAnnotationHovered,
     isWaitingToAnchorAnnotations,
+    isWaitingForLocationEnrichment,
     newAnnotations,
     newHighlights,
     noteCount,

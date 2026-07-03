@@ -1,6 +1,9 @@
 import {
   isQuoteOnlySelectors,
   mergeAnchoringSelectors,
+  mergeQuoteDisplayFromDescribe,
+  needsQuoteDisplayEnrichment,
+  quoteDisplayChanged,
 } from '../merge-anchoring-selectors';
 
 describe('annotator/util/merge-anchoring-selectors', () => {
@@ -49,6 +52,54 @@ describe('annotator/util/merge-anchoring-selectors', () => {
     it('does not duplicate position or page if already present', () => {
       const out = mergeAnchoringSelectors([quote, pos, page], [pos, page]);
       assert.equal(out.length, 3);
+    });
+  });
+
+  describe('needsQuoteDisplayEnrichment', () => {
+    it('returns true when quote lacks display metadata', () => {
+      assert.isTrue(
+        needsQuoteDisplayEnrichment([
+          { type: 'TextQuoteSelector', exact: 'hello' },
+        ]),
+      );
+    });
+
+    it('returns false when displayExact is set', () => {
+      assert.isFalse(
+        needsQuoteDisplayEnrichment([
+          {
+            type: 'TextQuoteSelector',
+            exact: 'hello',
+            displayExact: 'hello',
+          },
+        ]),
+      );
+    });
+  });
+
+  describe('mergeQuoteDisplayFromDescribe', () => {
+    it('copies displayExact onto the existing quote', () => {
+      const existing = [{ type: 'TextQuoteSelector', exact: 'hello' }];
+      const fromDescribe = [
+        {
+          type: 'TextQuoteSelector',
+          exact: 'ignored',
+          displayExact: 'hello world',
+        },
+      ];
+      const out = mergeQuoteDisplayFromDescribe(existing, fromDescribe);
+      assert.equal(out[0].displayExact, 'hello world');
+      assert.equal(out[0].exact, 'hello');
+    });
+  });
+
+  describe('quoteDisplayChanged', () => {
+    it('returns true when displayExact is added', () => {
+      const before = [{ type: 'TextQuoteSelector', exact: 'a' }];
+      const after = [
+        { type: 'TextQuoteSelector', exact: 'a', displayExact: 'a b' },
+      ];
+      assert.isTrue(quoteDisplayChanged(before, after));
     });
   });
 });

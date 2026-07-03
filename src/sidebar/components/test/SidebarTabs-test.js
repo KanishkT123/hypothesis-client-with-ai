@@ -54,6 +54,12 @@ describe('SidebarTabs', () => {
     fakeStore = {
       selectTab: sinon.stub(),
       isWaitingToAnchorAnnotations: sinon.stub().returns(false),
+      isWaitingForLocationEnrichment: sinon.stub().returns(false),
+      isAnnotationFetchComplete: sinon.stub().returns(true),
+      initialLoadLocationReady: sinon.stub().returns(true),
+      setInitialLoadLocationReady: sinon.stub(),
+      updateLocationEnrichmentTimeout: sinon.stub(),
+      allAnnotations: sinon.stub().returns([]),
       selectedTab: sinon.stub().returns('annotation'),
     };
     fakeUseRootThread = sinon.stub();
@@ -231,6 +237,16 @@ describe('SidebarTabs', () => {
       assert.isFalse(
         wrapper.exists('[data-testid="annotations-unavailable-message"]'),
       );
+    });
+
+    it('should show location enrichment loading before initial gate opens', () => {
+      fakeStore.initialLoadLocationReady.returns(false);
+      fakeStore.isWaitingForLocationEnrichment.returns(true);
+      const wrapper = createComponent({ isLoading: false });
+      assert.isTrue(
+        wrapper.exists('[data-testid="location-enrichment-loading"]'),
+      );
+      assert.isFalse(wrapper.exists('ThreadList'));
     });
 
     it('should display the longer version of the no notes message when there are no notes', () => {

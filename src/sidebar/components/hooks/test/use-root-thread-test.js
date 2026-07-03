@@ -19,7 +19,6 @@ describe('sidebar/components/hooks/use-root-thread', () => {
       getFilterValues: sinon.stub().returns({ user: 'hotspur' }),
       focusedGroupId: sinon.stub().returns('group-1'),
       tagInventoryRows: sinon.stub().returns([]),
-      tagInventoryPublicDocumentScope: sinon.stub().returns(null),
       mainFrame: sinon.stub().returns({ uri: 'http://example.com/doc.pdf' }),
       searchUris: sinon.stub().returns(['http://example.com/doc.pdf']),
     };
@@ -53,19 +52,18 @@ describe('sidebar/components/hooks/use-root-thread', () => {
     assert.equal(threadState.selection.filterQuery, 'itchy');
     assert.equal(threadState.showTabs, true);
     assert.equal(threadState.selection.filters.user, 'hotspur');
-    assert.deepEqual(threadState.hiddenTagInventoryRows, []);
-    assert.equal(threadState.documentUri, 'http://example.com/doc.pdf');
+    assert.deepEqual(threadState.hiddenAnnotationIds, new Set());
     assert.equal(lastRootThread, fakeThreadAnnotations());
   });
 
-  it('passes hidden AI search rows visible in the focused group', () => {
+  it('passes hidden annotation IDs from hidden rows visible in the focused group', () => {
     fakeStore.tagInventoryRows.returns([
       {
         id: 'r1',
         groupId: 'group-1',
         schemaTag: 'methods',
         query: 'q',
-        annotationIds: [],
+        annotationIds: ['ann-hidden'],
         hidden: true,
       },
       {
@@ -73,7 +71,7 @@ describe('sidebar/components/hooks/use-root-thread', () => {
         groupId: 'group-2',
         schemaTag: 'other',
         query: '',
-        annotationIds: [],
+        annotationIds: ['ann-other'],
         hidden: true,
       },
     ]);
@@ -81,9 +79,7 @@ describe('sidebar/components/hooks/use-root-thread', () => {
     mount(<DummyComponent />);
 
     const threadState = fakeThreadAnnotations.getCall(0).args[0];
-    assert.deepEqual(threadState.hiddenTagInventoryRows, [
-      { schemaTag: 'methods', query: 'q' },
-    ]);
+    assert.deepEqual(threadState.hiddenAnnotationIds, new Set(['ann-hidden']));
   });
 
   [

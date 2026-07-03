@@ -4,7 +4,7 @@ import { fakeReduxStore } from '../../test/fake-redux-store';
 import { setupTagPaletteSync } from '../tag-palette-sync';
 
 describe('setupTagPaletteSync', () => {
-  function createStore(tagInventory, { focusedGroupId = 'group-1', publicScope = null } = {}) {
+  function createStore(tagInventory, { focusedGroupId = 'group-1' } = {}) {
     return fakeReduxStore(
       {
         sidebarPanels: {
@@ -13,7 +13,9 @@ describe('setupTagPaletteSync', () => {
       },
       {
         focusedGroupId: () => focusedGroupId,
-        tagInventoryPublicDocumentScope: () => publicScope,
+        mainFrame: () => null,
+        searchUris: () => [],
+        savedAnnotations: () => [],
       },
     );
   }
@@ -43,9 +45,10 @@ describe('setupTagPaletteSync', () => {
       'ai-user-approved': 'rgba(255, 64, 223, 0.38)',
       topic: 'rgba(1, 2, 3, 0.38)',
     });
+    assert.deepEqual(frameSync.setTagHighlightPalette.firstCall.args[1], []);
   });
 
-  it('re-pushes palette when a row is hidden or unhidden', () => {
+  it('re-pushes palette and hidden annotation IDs when a row is hidden or unhidden', () => {
     const frameSync = {
       setTagHighlightPalette: sinon.stub(),
     };
@@ -56,7 +59,7 @@ describe('setupTagPaletteSync', () => {
           groupId: 'group-1',
           schemaTag: 'topic',
           query: '',
-          annotationIds: [],
+          annotationIds: ['ann-1'],
         },
       ],
       schemaTagColors: { topic: 'rgba(1, 2, 3, 0.38)' },
@@ -73,7 +76,7 @@ describe('setupTagPaletteSync', () => {
               groupId: 'group-1',
               schemaTag: 'topic',
               query: '',
-              annotationIds: [],
+              annotationIds: ['ann-1'],
               hidden: true,
             },
           ],
@@ -90,7 +93,7 @@ describe('setupTagPaletteSync', () => {
               groupId: 'group-1',
               schemaTag: 'topic',
               query: '',
-              annotationIds: [],
+              annotationIds: ['ann-1'],
             },
           ],
           schemaTagColors: { topic: 'rgba(1, 2, 3, 0.38)' },
@@ -100,10 +103,15 @@ describe('setupTagPaletteSync', () => {
 
     assert.equal(frameSync.setTagHighlightPalette.callCount, 3);
     assert.notProperty(frameSync.setTagHighlightPalette.getCall(1).args[0], 'topic');
+    assert.deepEqual(
+      frameSync.setTagHighlightPalette.getCall(1).args[1],
+      ['ann-1'],
+    );
     assert.propertyVal(
       frameSync.setTagHighlightPalette.getCall(2).args[0],
       'topic',
       'rgba(1, 2, 3, 0.38)',
     );
+    assert.deepEqual(frameSync.setTagHighlightPalette.getCall(2).args[1], []);
   });
 });

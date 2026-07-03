@@ -291,6 +291,63 @@ describe('sidebar/store/modules/annotations', () => {
     });
   });
 
+  describe('#isWaitingForLocationEnrichment', () => {
+    it('returns true when quote-only annotations lack location', () => {
+      const store = createTestStore();
+      store.addAnnotations([
+        Object.assign(fixtures.defaultAnnotation(), {
+          $orphan: false,
+          target: [
+            {
+              source: 'https://example.com',
+              selector: [{ type: 'TextQuoteSelector', exact: 'text' }],
+            },
+          ],
+        }),
+      ]);
+      assert.isTrue(store.isWaitingForLocationEnrichment());
+    });
+
+    it('returns false when all annotatable annotations have location', () => {
+      const store = createTestStore();
+      store.addAnnotations([
+        Object.assign(fixtures.defaultAnnotation(), {
+          $orphan: false,
+          target: [
+            {
+              source: 'https://example.com',
+              selector: [
+                { type: 'TextQuoteSelector', exact: 'text' },
+                { type: 'TextPositionSelector', start: 0, end: 4 },
+              ],
+            },
+          ],
+        }),
+      ]);
+      assert.isFalse(store.isWaitingForLocationEnrichment());
+    });
+
+    it('clears pending state when location enrichment times out', () => {
+      const ann = Object.assign(fixtures.defaultAnnotation(), {
+        $tag: 't1',
+        $orphan: false,
+        target: [
+          {
+            source: 'https://example.com',
+            selector: [{ type: 'TextQuoteSelector', exact: 'text' }],
+          },
+        ],
+      });
+      const store = createTestStore();
+      store.addAnnotations([ann]);
+      assert.isTrue(store.isWaitingForLocationEnrichment());
+
+      store.updateLocationEnrichmentTimeout(['t1']);
+      assert.isFalse(store.isWaitingForLocationEnrichment());
+      assert.isTrue(store.allAnnotations()[0].$locationTimeout);
+    });
+  });
+
   describe('newAnnotations', () => {
     [
       {

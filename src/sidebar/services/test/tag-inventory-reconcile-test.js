@@ -1,196 +1,299 @@
 import sinon from 'sinon';
 
-import { rowDescriptorKey } from '../../helpers/tag-inventory-group';
+import { PUBLIC_GROUP_ID } from '../../helpers/groups';
 import {
   applyDerivedTagInventoryRows,
-  loadSyncRowID,
-  reconcileTagInventoryRowsFromAnnotations,
+  backfillPublicTagInventoryDocumentUris,
 } from '../tag-inventory-reconcile';
+import { tagInventoryRowId } from '../../store/modules/sidebar-panels';
 
-describe('reconcileTagInventoryRowsFromAnnotations', () => {
-  let fakeStore;
+const docUri = 'http://example.com';
 
-  beforeEach(() => {
-    fakeStore = {
-      addTagInventoryRow: sinon.stub(),
-      tagInventoryRows: sinon.stub().returns([]),
-      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
-      savedAnnotations: sinon.stub(),
-      focusedGroupId: sinon.stub().returns('group-a'),
-      searchUris: sinon.stub().returns(['http://example.com']),
-      mainFrame: sinon.stub().returns({ uri: 'http://example.com' }),
-      setTagInventoryPublicDocumentScope: sinon.stub(),
-    };
-  });
+function fakeReconcileStore(overrides = {}) {
+  return {
+    addTagInventoryRow: sinon.stub(),
+    setTagInventoryRowAnnotationIds: sinon.stub(),
+    tagInventoryRows: sinon.stub().returns([]),
+    ...overrides,
+  };
+}
 
-  it('adds missing rows for schema tags found in annotations', () => {
-    fakeStore.savedAnnotations.returns([
-      { id: 'a1', group: 'group-a', uri: 'http://example.com', tags: ['methods'] },
-      {
-        id: 'a2',
-        group: 'group-a',
-        uri: 'http://example.com',
-        tags: ['results'],
-      },
-    ]);
+describe('applyDerivedTagInventoryRows', () => {
+  it('adds rows for schema tags found in annotations', () => {
+    const fakeStore = fakeReconcileStore();
 
-    reconcileTagInventoryRowsFromAnnotations(fakeStore);
+    applyDerivedTagInventoryRows(fakeStore, {
+      groupId: 'group-a',
+      documentUri: docUri,
+      annotations: [
+        { id: 'a1', group: 'group-a', uri: docUri, tags: ['methods'] },
+        { id: 'a2', group: 'group-a', uri: docUri, tags: ['results'] },
+      ],
+    });
 
     assert.calledWith(fakeStore.addTagInventoryRow, {
-      id: loadSyncRowID('methods', ''),
+      id: tagInventoryRowId('methods', '', 'group-a'),
       groupId: 'group-a',
       schemaTag: 'methods',
       query: '',
       annotationIds: [],
     });
     assert.calledWith(fakeStore.addTagInventoryRow, {
-      id: loadSyncRowID('results', ''),
+      id: tagInventoryRowId('results', '', 'group-a'),
       groupId: 'group-a',
       schemaTag: 'results',
       query: '',
       annotationIds: [],
     });
+    assert.calledWith(
+      fakeStore.setTagInventoryRowAnnotationIds,
+      tagInventoryRowId('methods', '', 'group-a'),
+      ['a1'],
+    );
+    assert.calledWith(
+      fakeStore.setTagInventoryRowAnnotationIds,
+      tagInventoryRowId('results', '', 'group-a'),
+      ['a2'],
+    );
   });
 
   it('uses query text from ai-user-approved annotations', () => {
-    fakeStore.savedAnnotations.returns([
-      {
-        id: 'a1',
-        group: 'group-a',
-        uri: 'http://example.com',
-        tags: ['methods', 'ai-user-approved'],
-        text: '  find methods  ',
-      },
-    ]);
+    const fakeStore = fakeReconcileStore();
 
-    reconcileTagInventoryRowsFromAnnotations(fakeStore);
+    applyDerivedTagInventoryRows(fakeStore, {
+      groupId: 'group-a',
+      documentUri: docUri,
+      annotations: [
+        {
+          id: 'a1',
+          group: 'group-a',
+          uri: docUri,
+          tags: ['methods', 'ai-user-approved'],
+          text: '  find methods  ',
+        },
+      ],
+    });
 
+    const rowId = tagInventoryRowId('methods', 'find methods', 'group-a');
     assert.calledWith(fakeStore.addTagInventoryRow, {
-      id: loadSyncRowID('methods', 'find methods'),
+      id: rowId,
       groupId: 'group-a',
       schemaTag: 'methods',
       query: 'find methods',
       annotationIds: [],
     });
+    assert.calledWith(fakeStore.setTagInventoryRowAnnotationIds, rowId, ['a1']);
   });
 
-  it('does not add a duplicate row when matching row already exists', () => {
-    fakeStore.savedAnnotations.returns([
-      {
-        id: 'a1',
-        group: 'group-a',
-        uri: 'http://example.com',
-        tags: ['methods'],
-      },
-    ]);
-    fakeStore.tagInventoryRows.returns([
-      {
-        id: 'existing-row',
-        groupId: 'group-a',
-        schemaTag: 'methods',
-        query: '',
-        annotationIds: [],
-      },
-    ]);
+  it('generates rows for ai-pending schema tags and manual tags', () => {
+    const fakeStore = fakeReconcileStore();
 
-    reconcileTagInventoryRowsFromAnnotations(fakeStore);
+    applyDerivedTagInventoryRows(fakeStore, {
+      groupId: 'group-a',
+      documentUri: docUri,
+      annotations: [
+        {
+          id: 'a3',
+          group: 'group-a',
+          uri: docUri,
+          tags: ['methods', 'ai-pending'],
+        },
+        {
+          id: 'a4',
+          group: 'group-a',
+          uri: docUri,
+          tags: ['results'],
+        },
+      ],
+    });
 
-    assert.notCalled(fakeStore.addTagInventoryRow);
-    assert.calledWith(
-      fakeStore.mergeTagInventoryRowsWithSameTagQuery,
-      'existing-row',
-    );
-  });
-
-  it('ignores annotations from other groups or URIs', () => {
-    fakeStore.savedAnnotations.returns([
-      {
-        id: 'a1',
-        group: 'other-group',
-        uri: 'http://example.com',
-        tags: ['methods'],
-      },
-      {
-        id: 'a2',
-        group: 'group-a',
-        uri: 'http://other.com',
-        tags: ['results'],
-      },
-    ]);
-
-    reconcileTagInventoryRowsFromAnnotations(fakeStore);
-
-    assert.notCalled(fakeStore.addTagInventoryRow);
-  });
-
-  it('ignores system tags and pending annotations but keeps manual tags', () => {
-    fakeStore.savedAnnotations.returns([
-      {
-        id: 'a1',
-        group: 'group-a',
-        uri: 'http://example.com',
-        tags: ['ai-pending', '  ', ''],
-      },
-      {
-        id: 'a2',
-        group: 'group-a',
-        uri: 'http://example.com',
-        tags: ['ai-user-approved'],
-      },
-      {
-        id: 'a3',
-        group: 'group-a',
-        uri: 'http://example.com',
-        tags: ['methods', 'ai-pending'],
-      },
-      {
-        id: 'a4',
-        group: 'group-a',
-        uri: 'http://example.com',
-        tags: ['results'],
-      },
-    ]);
-
-    reconcileTagInventoryRowsFromAnnotations(fakeStore);
-
-    assert.calledOnce(fakeStore.addTagInventoryRow);
+    assert.calledTwice(fakeStore.addTagInventoryRow);
     assert.calledWith(fakeStore.addTagInventoryRow, {
-      id: loadSyncRowID('results', ''),
+      id: tagInventoryRowId('methods', '', 'group-a'),
+      groupId: 'group-a',
+      schemaTag: 'methods',
+      query: '',
+      annotationIds: [],
+    });
+    assert.calledWith(fakeStore.addTagInventoryRow, {
+      id: tagInventoryRowId('results', '', 'group-a'),
       groupId: 'group-a',
       schemaTag: 'results',
       query: '',
       annotationIds: [],
     });
+    assert.calledWith(
+      fakeStore.setTagInventoryRowAnnotationIds,
+      tagInventoryRowId('methods', '', 'group-a'),
+      ['a3'],
+    );
+    assert.calledWith(
+      fakeStore.setTagInventoryRowAnnotationIds,
+      tagInventoryRowId('results', '', 'group-a'),
+      ['a4'],
+    );
   });
-});
 
-describe('applyDerivedTagInventoryRows', () => {
-  it('updates Public document scope keys', () => {
-    const fakeStore = {
-      addTagInventoryRow: sinon.stub(),
-      tagInventoryRows: sinon.stub().returns([]),
-      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
-      setTagInventoryPublicDocumentScope: sinon.stub(),
-    };
+  it('stores documentUri on Public group rows and includes it in the row id', () => {
+    const fakeStore = fakeReconcileStore();
 
     applyDerivedTagInventoryRows(fakeStore, {
-      groupId: '__world__',
-      documentUri: 'http://example.com',
-      updatePublicScope: true,
+      groupId: PUBLIC_GROUP_ID,
+      documentUri: docUri,
       annotations: [
         {
           id: 'a1',
-          group: '__world__',
-          uri: 'http://example.com',
+          group: PUBLIC_GROUP_ID,
+          uri: docUri,
           tags: ['methods', 'ai-user-approved'],
           text: 'q1',
         },
       ],
     });
 
-    assert.calledWith(fakeStore.setTagInventoryPublicDocumentScope, {
-      documentUri: 'http://example.com',
-      visibleDescriptorKeys: [rowDescriptorKey('methods', 'q1')],
+    const rowId = tagInventoryRowId('methods', 'q1', PUBLIC_GROUP_ID, docUri);
+    assert.calledWith(fakeStore.addTagInventoryRow, {
+      id: rowId,
+      groupId: PUBLIC_GROUP_ID,
+      schemaTag: 'methods',
+      query: 'q1',
+      annotationIds: [],
+      documentUri: docUri,
     });
+    assert.calledWith(fakeStore.setTagInventoryRowAnnotationIds, rowId, ['a1']);
+  });
+
+  it('does not set documentUri on private group rows', () => {
+    const fakeStore = fakeReconcileStore();
+
+    applyDerivedTagInventoryRows(fakeStore, {
+      groupId: 'group-a',
+      documentUri: docUri,
+      annotations: [
+        {
+          id: 'a1',
+          group: 'group-a',
+          uri: docUri,
+          tags: ['methods', 'ai-user-approved'],
+          text: 'q1',
+        },
+      ],
+    });
+
+    const call = fakeStore.addTagInventoryRow.firstCall.args[0];
+    assert.equal(call.id, tagInventoryRowId('methods', 'q1', 'group-a'));
+    assert.isUndefined(call.documentUri);
+  });
+
+  it('clears stale annotationIds on in-scope rows with no matching descriptor', () => {
+    const staleRowId = tagInventoryRowId('orphan', 'old q', 'group-a');
+    const fakeStore = fakeReconcileStore({
+      tagInventoryRows: sinon.stub().returns([
+        {
+          id: staleRowId,
+          groupId: 'group-a',
+          schemaTag: 'orphan',
+          query: 'old q',
+          annotationIds: ['stale-id'],
+        },
+      ]),
+    });
+
+    applyDerivedTagInventoryRows(fakeStore, {
+      groupId: 'group-a',
+      documentUri: docUri,
+      annotations: [
+        { id: 'a1', group: 'group-a', uri: docUri, tags: ['methods'] },
+      ],
+    });
+
+    assert.calledWith(fakeStore.setTagInventoryRowAnnotationIds, staleRowId, []);
+  });
+
+  it('is a no-op for Public group when documentUri is missing', () => {
+    const fakeStore = fakeReconcileStore();
+
+    applyDerivedTagInventoryRows(fakeStore, {
+      groupId: PUBLIC_GROUP_ID,
+      annotations: [
+        { id: 'a1', group: PUBLIC_GROUP_ID, uri: docUri, tags: ['methods'] },
+      ],
+    });
+
+    assert.notCalled(fakeStore.addTagInventoryRow);
+    assert.notCalled(fakeStore.setTagInventoryRowAnnotationIds);
+  });
+
+  it('creates rows for private group without documentUri', () => {
+    const fakeStore = fakeReconcileStore();
+
+    applyDerivedTagInventoryRows(fakeStore, {
+      groupId: 'group-a',
+      annotations: [
+        { id: 'a1', group: 'group-a', uri: docUri, tags: ['methods'] },
+      ],
+    });
+
+    assert.calledOnce(fakeStore.addTagInventoryRow);
+    assert.calledOnce(fakeStore.setTagInventoryRowAnnotationIds);
+  });
+});
+
+describe('backfillPublicTagInventoryDocumentUris', () => {
+  it('assigns documentUri and re-keys legacy Public rows', () => {
+    const legacyId = tagInventoryRowId('methods', 'q', PUBLIC_GROUP_ID);
+    const fakeStore = {
+      addTagInventoryRow: sinon.stub(),
+      removeTagInventoryRow: sinon.stub(),
+      tagInventoryRows: sinon.stub().returns([
+        {
+          id: legacyId,
+          groupId: PUBLIC_GROUP_ID,
+          schemaTag: 'methods',
+          query: 'q',
+          annotationIds: ['a1'],
+        },
+      ]),
+      mainFrame: sinon.stub().returns({ uri: 'https://example.com/paper.pdf' }),
+      defaultContentFrame: sinon.stub().returns(null),
+      searchUris: sinon.stub().returns(['https://example.com/paper.pdf']),
+    };
+
+    backfillPublicTagInventoryDocumentUris(fakeStore);
+
+    const documentUri = 'https://example.com/paper.pdf';
+    assert.calledWith(fakeStore.addTagInventoryRow, {
+      id: tagInventoryRowId('methods', 'q', PUBLIC_GROUP_ID, documentUri),
+      groupId: PUBLIC_GROUP_ID,
+      schemaTag: 'methods',
+      query: 'q',
+      annotationIds: ['a1'],
+      documentUri,
+    });
+    assert.calledWith(fakeStore.removeTagInventoryRow, legacyId);
+  });
+
+  it('is a no-op when document URI is unknown', () => {
+    const fakeStore = {
+      addTagInventoryRow: sinon.stub(),
+      removeTagInventoryRow: sinon.stub(),
+      tagInventoryRows: sinon.stub().returns([
+        {
+          id: 'legacy',
+          groupId: PUBLIC_GROUP_ID,
+          schemaTag: 'methods',
+          query: 'q',
+          annotationIds: [],
+        },
+      ]),
+      mainFrame: sinon.stub().returns(null),
+      defaultContentFrame: sinon.stub().returns(null),
+      searchUris: sinon.stub().returns([]),
+    };
+
+    backfillPublicTagInventoryDocumentUris(fakeStore);
+
+    assert.notCalled(fakeStore.addTagInventoryRow);
+    assert.notCalled(fakeStore.removeTagInventoryRow);
   });
 });
