@@ -50,6 +50,8 @@ import { isEditableContext } from './util/node';
 import {
   isQuoteOnlySelectors,
   mergeAnchoringSelectors,
+  mergeQuoteDisplayFromDescribe,
+  needsQuoteDisplayEnrichment,
 } from './util/merge-anchoring-selectors';
 import { normalizeURI } from './util/url';
 
@@ -429,8 +431,12 @@ export class Guest
       if (!anchor.highlights?.length) {
         continue;
       }
-      const hidden = this._hiddenAnnotationIds.has(anchor.annotation.$tag);
-      setHighlightsHidden(anchor.highlights, hidden);
+      const shouldHide = this._hiddenAnnotationIds.has(anchor.annotation.$tag);
+      const isHidden = anchor.highlights[0].classList.contains('h-row-hidden');
+      if (shouldHide === isHidden) {
+        continue;
+      }
+      setHighlightsHidden(anchor.highlights, shouldHide);
     }
   }
 
@@ -739,10 +745,6 @@ export class Guest
       async (annotations: AnnotationData[]) => {
         try {
           await Promise.all(annotations.map(ann => this.anchor(ann)));
-          applyTagHighlightPalette(
-            this.element.ownerDocument,
-            this._tagHighlightPalette,
-          );
         } catch (e) {
           /* istanbul ignore next */
           console.warn('Failed to anchor annotations:', e);
@@ -753,13 +755,30 @@ export class Guest
     this._sidebarRPC.on(
       'setTagHighlightPalette',
       (palette: Record<string, string>, hiddenAnnotationIds: string[] = []) => {
-        this._tagHighlightPalette = { ...palette };
-        this._hiddenAnnotationIds = new Set(hiddenAnnotationIds);
-        applyTagHighlightPalette(
-          this.element.ownerDocument,
-          this._tagHighlightPalette,
-        );
-        this._applyHiddenAnnotationClasses();
+        const paletteUnchanged =
+          Object.keys(palette).length ===
+            Object.keys(this._tagHighlightPalette).length &&
+          Object.entries(palette).every(
+            ([tag, color]) => this._tagHighlightPalette[tag] === color,
+          );
+        const nextHidden = new Set(hiddenAnnotationIds);
+        const hiddenUnchanged =
+          nextHidden.size === this._hiddenAnnotationIds.size &&
+          [...nextHidden].every(tag => this._hiddenAnnotationIds.has(tag));
+        if (paletteUnchanged && hiddenUnchanged) {
+          return;
+        }
+        if (!paletteUnchanged) {
+          this._tagHighlightPalette = { ...palette };
+          applyTagHighlightPalette(
+            this.element.ownerDocument,
+            this._tagHighlightPalette,
+          );
+        }
+        if (!hiddenUnchanged) {
+          this._hiddenAnnotationIds = nextHidden;
+          this._applyHiddenAnnotationClasses();
+        }
       },
     );
 
@@ -965,16 +984,61 @@ export class Guest
   private _globalKeyboardListenerCleanup?: () => void;
 
   /**
-   * After quote-only targets anchor, derive TextPositionSelector / PageSelector
-   * via describe(trimmedRange) so the sidebar can sort by location.
+   * Enrich anchored targets with location selectors (Phase 1) and quote
+   * display metadata (Phase 2) before syncing to the sidebar.
    */
-  private async _enrichQuoteOnlyTargets(anchors: Anchor[]): Promise<void> {
+  private async _enrichAnchoredTargets(anchors: Anchor[]): Promise<void> {
     for (const anchor of anchors) {
-      if (!anchor.region || !isRange(anchor.region)) {
+      const { target } = anchor;
+
+      // Phase 1 — location selectors for quote-only targets.
+      if (isQuoteOnlySelectors(target.selector)) {
+        let locationEnriched = false;
+        if (anchor.region && isRange(anchor.region)) {
+          try {
+            const range = resolveAnchor(anchor);
+            if (range) {
+              const trimmed = this._integration.getAnnotatableRange(range);
+              if (trimmed) {
+                const described = await Promise.resolve(
+                  this._integration.describe(this.element, trimmed),
+                );
+                target.selector = mergeAnchoringSelectors(
+                  target.selector,
+                  described,
+                );
+                locationEnriched = !isQuoteOnlySelectors(target.selector);
+              }
+            }
+          } catch {
+            // Fall through to describeQuoteOnly.
+          }
+        }
+
+        if (
+          !locationEnriched &&
+          isQuoteOnlySelectors(target.selector) &&
+          this._integration.describeQuoteOnly
+        ) {
+          try {
+            const described = await Promise.resolve(
+              this._integration.describeQuoteOnly(target.selector),
+            );
+            target.selector = mergeAnchoringSelectors(
+              target.selector,
+              described,
+            );
+          } catch {
+            // Leave selectors unchanged (quote-only).
+          }
+        }
+      }
+
+      // Phase 2 — quote display metadata when a text layer is available.
+      if (!needsQuoteDisplayEnrichment(target.selector)) {
         continue;
       }
-      const { target } = anchor;
-      if (!isQuoteOnlySelectors(target.selector)) {
+      if (!anchor.region || !isRange(anchor.region)) {
         continue;
       }
       try {
@@ -989,9 +1053,12 @@ export class Guest
         const described = await Promise.resolve(
           this._integration.describe(this.element, trimmed),
         );
-        target.selector = mergeAnchoringSelectors(target.selector, described);
+        target.selector = mergeQuoteDisplayFromDescribe(
+          target.selector,
+          described,
+        );
       } catch {
-        // Leave selectors unchanged (quote-only).
+        // Quote display enrichment is best-effort.
       }
     }
   }
@@ -1115,7 +1182,7 @@ export class Guest
       return [];
     }
 
-    await this._enrichQuoteOnlyTargets(anchors);
+    await this._enrichAnchoredTargets(anchors);
 
     // Set flag indicating whether anchoring succeeded. For each target,
     // anchoring is successful either if there are no selectors (ie. this is a
@@ -1320,17 +1387,29 @@ export class Guest
    * associated document region(s) is hovered).
    */
   _hoverAnnotations(tags: string[]) {
-    this._hoveredAnnotations.clear();
-    tags.forEach(tag => this._hoveredAnnotations.add(tag));
+    const prevHovered = this._hoveredAnnotations;
+    const nextHovered = new Set(tags);
 
     for (const anchor of this.anchors) {
-      if (anchor.highlights) {
-        const toggle = tags.includes(anchor.annotation.$tag);
-        this._highlighter.setHighlightsFocused(anchor.highlights, toggle);
+      if (!anchor.highlights) {
+        continue;
       }
+      const tag = anchor.annotation.$tag;
+      const shouldFocus = nextHovered.has(tag);
+      const wasFocused = prevHovered.has(tag);
+      if (shouldFocus === wasFocused) {
+        continue;
+      }
+      this._highlighter.setHighlightsFocused(anchor.highlights, shouldFocus);
     }
 
-    this._sidebarRPC.call('hoverAnnotations', tags);
+    this._hoveredAnnotations = nextHovered;
+
+    const prevKey = [...prevHovered].sort().join(',');
+    const nextKey = [...nextHovered].sort().join(',');
+    if (prevKey !== nextKey) {
+      this._sidebarRPC.call('hoverAnnotations', tags);
+    }
   }
 
   /**

@@ -1953,14 +1953,62 @@ describe('Guest', () => {
       );
     });
 
-    it('does not call describe to enrich when selectors are not quote-only', async () => {
+    it('falls back to describeQuoteOnly when describe does not add location', async () => {
+      const guest = createGuest();
+      fakeIntegration.anchor.resolves(range);
+      fakeIntegration.describe.resolves([]);
+      const pos = { type: 'TextPositionSelector', start: 10, end: 15 };
+      const page = { type: 'PageSelector', index: 2 };
+      fakeIntegration.describeQuoteOnly = sinon
+        .stub()
+        .resolves([pos, page]);
+
+      const target = {
+        selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+      };
+      await guest.anchor({ target: [target] });
+
+      assert.called(fakeIntegration.describeQuoteOnly);
+      assert.include(target.selector, pos);
+      assert.include(target.selector, page);
+    });
+
+    it('merges quote display metadata in phase 2 when position selectors exist', async () => {
+      const guest = createGuest();
+      fakeIntegration.anchor.resolves(range);
+      fakeIntegration.describe.resolves([
+        {
+          type: 'TextQuoteSelector',
+          exact: 'ignored',
+          displayExact: 'hello world',
+        },
+      ]);
+
+      const target = {
+        selector: [
+          { type: 'TextQuoteSelector', exact: 'hello' },
+          { type: 'TextPositionSelector', start: 0, end: 5 },
+        ],
+      };
+      await guest.anchor({ target: [target] });
+
+      const quote = target.selector.find(s => s.type === 'TextQuoteSelector');
+      assert.equal(quote.displayExact, 'hello world');
+      assert.equal(quote.exact, 'hello');
+    });
+
+    it('does not call describe when location and quote display are complete', async () => {
       const guest = createGuest();
       fakeIntegration.anchor.resolves(range);
       fakeIntegration.describe.resetHistory();
 
       const target = {
         selector: [
-          { type: 'TextQuoteSelector', exact: 'hello' },
+          {
+            type: 'TextQuoteSelector',
+            exact: 'hello',
+            displayExact: 'hello',
+          },
           { type: 'TextPositionSelector', start: 0, end: 5 },
         ],
       };
