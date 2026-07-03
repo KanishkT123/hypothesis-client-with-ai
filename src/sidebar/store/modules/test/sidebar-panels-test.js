@@ -1,8 +1,7 @@
 import { createStore } from '../../create-store';
-import { rowDescriptorKey } from '../../../helpers/tag-inventory-group';
 import { isTagInventoryRowVisibleInScope } from '../../../helpers/tag-inventory-group';
 import { PUBLIC_GROUP_ID } from '../../../helpers/groups';
-import { sidebarPanelsModule } from '../sidebar-panels';
+import { sidebarPanelsModule, tagInventoryRowId } from '../sidebar-panels';
 
 describe('sidebar/store/modules/sidebar-panels', () => {
   let store;
@@ -32,9 +31,6 @@ describe('sidebar/store/modules/sidebar-panels', () => {
         version: 1,
         events: [],
       });
-    });
-    it('sets initial `tagInventoryPublicDocumentScope` to null', () => {
-      assert.isNull(getSidebarPanelsState().tagInventoryPublicDocumentScope);
     });
   });
 
@@ -174,50 +170,6 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       );
     });
 
-    it('merges duplicate tag+query rows into keep row and unions annotation ids', () => {
-      store.addTagInventoryRow({
-        id: 'keep',
-        schemaTag: 't',
-        query: 'q1',
-        annotationIds: ['a1'],
-      });
-      store.addTagInventoryRow({
-        id: 'dup',
-        schemaTag: 't',
-        query: 'q1',
-        annotationIds: ['a2', 'a1'],
-      });
-      store.addTagInventoryRow({
-        id: 'other',
-        schemaTag: 'u',
-        query: 'q2',
-        annotationIds: ['x'],
-      });
-      store.mergeTagInventoryRowsWithSameTagQuery('keep');
-      const ai = getSidebarPanelsState().tagInventory;
-      assert.lengthOf(ai.rows, 2);
-      const merged = ai.rows.find(r => r.id === 'keep');
-      assert.deepEqual(merged.annotationIds, ['a1', 'a2']);
-      assert.isTrue(ai.rows.some(r => r.id === 'other'));
-    });
-
-    it('merge with trim-equivalent tag and query still merges', () => {
-      store.addTagInventoryRow({
-        id: 'k',
-        schemaTag: ' tag ',
-        query: ' q ',
-        annotationIds: ['1'],
-      });
-      store.addTagInventoryRow({
-        id: 'd',
-        schemaTag: 'tag',
-        query: 'q',
-        annotationIds: ['2'],
-      });
-      store.mergeTagInventoryRowsWithSameTagQuery('k');
-      assert.lengthOf(getSidebarPanelsState().tagInventory.rows, 1);
-    });
-
     it('sets and clears row hidden flag', () => {
       store.addTagInventoryRow({
         id: 'r1',
@@ -231,45 +183,6 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       store.setTagInventoryRowHidden('r1', false);
       row = getSidebarPanelsState().tagInventory.rows[0];
       assert.notProperty(row, 'hidden');
-    });
-
-    it('merge clears hidden when any duplicate is non-hidden', () => {
-      store.addTagInventoryRow({
-        id: 'keep',
-        schemaTag: 't',
-        query: 'q',
-        annotationIds: ['a1'],
-        hidden: true,
-      });
-      store.addTagInventoryRow({
-        id: 'dup',
-        schemaTag: 't',
-        query: 'q',
-        annotationIds: ['a2'],
-      });
-      store.mergeTagInventoryRowsWithSameTagQuery('keep');
-      const merged = getSidebarPanelsState().tagInventory.rows[0];
-      assert.notProperty(merged, 'hidden');
-    });
-
-    it('merge keeps hidden when every duplicate is hidden', () => {
-      store.addTagInventoryRow({
-        id: 'keep',
-        schemaTag: 't',
-        query: 'q',
-        annotationIds: ['a1'],
-        hidden: true,
-      });
-      store.addTagInventoryRow({
-        id: 'dup',
-        schemaTag: 't',
-        query: 'q',
-        annotationIds: ['a2'],
-        hidden: true,
-      });
-      store.mergeTagInventoryRowsWithSameTagQuery('keep');
-      const merged = getSidebarPanelsState().tagInventory.rows[0];
-      assert.isTrue(merged.hidden);
     });
 
     it('sets annotation ids on a single row', () => {
@@ -314,15 +227,17 @@ describe('sidebar/store/modules/sidebar-panels', () => {
     describe('#HYDRATE_TAG_INVENTORY', () => {
       it('replaces the full tagInventory slice', () => {
         store.addTagInventoryRow({
-          id: 'r1',
+          id: tagInventoryRowId('tag', 'q', undefined),
           schemaTag: 'tag',
           query: 'q',
           annotationIds: [],
         });
+        // HYDRATE_TAG_INVENTORY normalizes row ids to the deterministic format.
+        const normalizedId = tagInventoryRowId('a', 'b', undefined);
         const replacement = {
           rows: [
             {
-              id: 'x',
+              id: 'old-format-x',
               schemaTag: 'a',
               query: 'b',
               annotationIds: ['id1'],
@@ -331,7 +246,10 @@ describe('sidebar/store/modules/sidebar-panels', () => {
           schemaTagColors: { a: 'rgba(1,1,1,0.38)' },
         };
         store.hydrateTagInventory(replacement);
-        assert.deepEqual(getSidebarPanelsState().tagInventory, replacement);
+        assert.deepEqual(getSidebarPanelsState().tagInventory, {
+          rows: [{ id: normalizedId, schemaTag: 'a', query: 'b', annotationIds: ['id1'] }],
+          schemaTagColors: { a: 'rgba(1,1,1,0.38)' },
+        });
       });
 
       it('does not change activePanelName', () => {
@@ -344,6 +262,39 @@ describe('sidebar/store/modules/sidebar-panels', () => {
           getSidebarPanelsState().activePanelName,
           'aiSearchAnnotations',
         );
+      });
+
+      it('preserves documentUri and document-scoped ids for Public rows', () => {
+        const documentUri = 'https://example.com/paper.pdf';
+        const normalizedId = tagInventoryRowId(
+          'methods',
+          'q',
+          PUBLIC_GROUP_ID,
+          documentUri,
+        );
+        store.hydrateTagInventory({
+          rows: [
+            {
+              id: 'legacy-id',
+              groupId: PUBLIC_GROUP_ID,
+              schemaTag: 'methods',
+              query: 'q',
+              annotationIds: ['a1'],
+              documentUri,
+            },
+          ],
+          schemaTagColors: {},
+        });
+        assert.deepEqual(getSidebarPanelsState().tagInventory.rows, [
+          {
+            id: normalizedId,
+            groupId: PUBLIC_GROUP_ID,
+            schemaTag: 'methods',
+            query: 'q',
+            annotationIds: ['a1'],
+            documentUri,
+          },
+        ]);
       });
     });
 
@@ -400,20 +351,6 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       });
     });
 
-    describe('#SET_TAG_INVENTORY_PUBLIC_DOCUMENT_SCOPE', () => {
-      it('stores Public document visibility keys', () => {
-        store.setTagInventoryPublicDocumentScope({
-          documentUri: 'http://example.com',
-          visibleDescriptorKeys: [rowDescriptorKey('methods', '')],
-        });
-
-        assert.deepEqual(store.tagInventoryPublicDocumentScope(), {
-          documentUri: 'http://example.com',
-          visibleDescriptorKeys: [rowDescriptorKey('methods', '')],
-        });
-      });
-    });
-
     describe('group-scoped row visibility', () => {
       it('shows private rows only for matching focused group', () => {
         const row = {
@@ -432,26 +369,53 @@ describe('sidebar/store/modules/sidebar-panels', () => {
         );
       });
 
-      it('shows Public rows only when descriptor key is in document scope', () => {
+      it('shows Public rows only when row.documentUri matches currentDocumentUri', () => {
         const row = {
           id: 'r1',
           groupId: PUBLIC_GROUP_ID,
           schemaTag: 'methods',
           query: '',
           annotationIds: [],
+          documentUri: 'http://example.com',
         };
-        const key = rowDescriptorKey('methods', '');
 
         assert.isTrue(
           isTagInventoryRowVisibleInScope(row, {
             focusedGroupId: PUBLIC_GROUP_ID,
-            publicDocumentDescriptorKeys: new Set([key]),
+            currentDocumentUri: 'http://example.com',
           }),
         );
         assert.isFalse(
           isTagInventoryRowVisibleInScope(row, {
             focusedGroupId: PUBLIC_GROUP_ID,
-            publicDocumentDescriptorKeys: new Set(),
+            currentDocumentUri: 'http://other.com',
+          }),
+        );
+        assert.isFalse(
+          isTagInventoryRowVisibleInScope(row, {
+            focusedGroupId: PUBLIC_GROUP_ID,
+            currentDocumentUri: null,
+          }),
+        );
+      });
+
+      it('shows Public rows when URN row matches HTTPS canonical via aliases', () => {
+        const urn = 'urn:x-pdf:abc';
+        const https = 'https://example.com/paper.pdf';
+        const row = {
+          id: 'r1',
+          groupId: PUBLIC_GROUP_ID,
+          schemaTag: 'methods',
+          query: '',
+          annotationIds: [],
+          documentUri: urn,
+        };
+
+        assert.isTrue(
+          isTagInventoryRowVisibleInScope(row, {
+            focusedGroupId: PUBLIC_GROUP_ID,
+            currentDocumentUri: https,
+            documentUriAliases: [urn, https],
           }),
         );
       });

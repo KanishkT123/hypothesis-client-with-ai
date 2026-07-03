@@ -183,7 +183,7 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
       const stored = localStorage.getItem(categoryRowsKey);
       if (stored) return JSON.parse(stored) as CategoryRow[];
     } catch {}
-    return DEFAULT_CATEGORY_ROWS;
+    return [];
   });
 
   useEffect(() => {
@@ -413,6 +413,7 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
               + Add category
             </button>
           </div>
+          </div>)} {/* end isControlsExpanded */}
 
           {/* Highlight toolbar */}
           <div className="flex items-center gap-x-2 px-2">
@@ -523,8 +524,6 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
               })}
             </div>
           )}
-
-          </div>)} {/* end isControlsExpanded */}
 
           {/* Annotations — aligned table or card list */}
           {alignCategory !== null && isFullWidth ? (

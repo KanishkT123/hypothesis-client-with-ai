@@ -12,22 +12,34 @@ describe('ai-search-claude-runs', () => {
   it('registerClaudeRun adds an active run and finish removes it', () => {
     assert.equal(getActiveClaudeRunCount(), 0);
 
-    const { signal, finish } = registerClaudeRun();
+    const run = registerClaudeRun();
+    assert.isNotNull(run);
     assert.equal(getActiveClaudeRunCount(), 1);
-    assert.equal(signal.aborted, false);
+    assert.equal(run.signal.aborted, false);
 
-    finish();
+    run.finish();
     assert.equal(getActiveClaudeRunCount(), 0);
   });
 
+  it('registerClaudeRun returns null when a run is already active', () => {
+    const first = registerClaudeRun();
+    assert.isNotNull(first);
+
+    const second = registerClaudeRun();
+    assert.isNull(second);
+
+    first.finish();
+    assert.isNotNull(registerClaudeRun());
+  });
+
   it('abortAllClaudeRuns aborts the signal and clears runs', () => {
-    const { signal, finish } = registerClaudeRun();
+    const run = registerClaudeRun();
     assert.equal(getActiveClaudeRunCount(), 1);
 
     abortAllClaudeRuns();
 
-    assert.equal(signal.aborted, true);
+    assert.equal(run.signal.aborted, true);
     assert.equal(getActiveClaudeRunCount(), 0);
-    finish(); // no-op if already cleared
+    run.finish(); // no-op if already cleared
   });
 });

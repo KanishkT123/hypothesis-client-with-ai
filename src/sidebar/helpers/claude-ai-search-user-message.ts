@@ -1,5 +1,6 @@
 import type { SavedAnnotation } from '../../types/api';
 import type { AnnotationsService } from '../services/annotations';
+import { documentUriMatches } from './document-uri';
 import { negativeSchemaTags, positiveSchemaTags } from './tag-inventory-group';
 import { isReply, isSaved, quote } from './annotation-metadata';
 
@@ -300,9 +301,13 @@ function existingAnnotationCoversAiQuote(
   documentUri: string,
   schemaTagTrim: string,
   normalizedQuoteText: string,
+  documentUriAliases: readonly string[] = [],
 ): boolean {
   for (const ann of annotations) {
-    if (!isSaved(ann) || ann.uri !== documentUri) {
+    if (
+      !isSaved(ann) ||
+      !documentUriMatches(ann.uri, documentUri, documentUriAliases)
+    ) {
       continue;
     }
     if (isReply(ann)) {
@@ -332,6 +337,7 @@ export function filterAiSearchQuotesAgainstExisting(
   savedAnnotations: SavedAnnotation[],
   documentUri: string,
   schemaTagTrim: string,
+  documentUriAliases: readonly string[] = [],
 ): AiSearchQuoteItem[] {
   return quotes.filter(item => {
     const t = item.text?.trim();
@@ -343,6 +349,7 @@ export function filterAiSearchQuotesAgainstExisting(
       documentUri,
       schemaTagTrim,
       norm(t),
+      documentUriAliases,
     );
   });
 }
@@ -369,8 +376,12 @@ export function savedAnnotationMatchesTagInventoryRow(
   documentUri: string,
   schemaTag: string,
   query: string,
+  documentUriAliases: readonly string[] = [],
 ): boolean {
-  if (!isSaved(ann) || ann.uri !== documentUri) {
+  if (
+    !isSaved(ann) ||
+    !documentUriMatches(ann.uri, documentUri, documentUriAliases)
+  ) {
     return false;
   }
   if (isReply(ann)) {
@@ -401,6 +412,7 @@ export function annotationMatchesHiddenTagInventoryRow(
   ann: SavedAnnotation,
   documentUri: string,
   hiddenRows: HiddenTagInventoryRowMatch[],
+  documentUriAliases: readonly string[] = [],
 ): boolean {
   return hiddenRows.some(row =>
     savedAnnotationMatchesTagInventoryRow(
@@ -408,6 +420,7 @@ export function annotationMatchesHiddenTagInventoryRow(
       documentUri,
       row.schemaTag,
       row.query,
+      documentUriAliases,
     ),
   );
 }
@@ -444,8 +457,12 @@ export function savedAnnotationIsStrictAISearchPending(
   documentUri: string,
   schemaTag: string,
   query: string,
+  documentUriAliases: readonly string[] = [],
 ): boolean {
-  if (!isSaved(ann) || ann.uri !== documentUri) {
+  if (
+    !isSaved(ann) ||
+    !documentUriMatches(ann.uri, documentUri, documentUriAliases)
+  ) {
     return false;
   }
   const schemaTagTrim = norm(schemaTag);
@@ -463,9 +480,16 @@ export function countTagInventoryRowPendingAnnotations(
   documentUri: string,
   schemaTag: string,
   query: string,
+  documentUriAliases: readonly string[] = [],
 ): number {
   return countIf(annotations, ann =>
-    savedAnnotationIsStrictAISearchPending(ann, documentUri, schemaTag, query),
+    savedAnnotationIsStrictAISearchPending(
+      ann,
+      documentUri,
+      schemaTag,
+      query,
+      documentUriAliases,
+    ),
   );
 }
 
@@ -477,9 +501,16 @@ export function listSavedAnnotationsMatchingTagInventoryRow(
   documentUri: string,
   schemaTag: string,
   query: string,
+  documentUriAliases: readonly string[] = [],
 ): SavedAnnotation[] {
   return annotations.filter(ann =>
-    savedAnnotationMatchesTagInventoryRow(ann, documentUri, schemaTag, query),
+    savedAnnotationMatchesTagInventoryRow(
+      ann,
+      documentUri,
+      schemaTag,
+      query,
+      documentUriAliases,
+    ),
   );
 }
 
@@ -491,9 +522,16 @@ export function listStrictTagInventoryRowPendingAnnotations(
   documentUri: string,
   schemaTag: string,
   query: string,
+  documentUriAliases: readonly string[] = [],
 ): SavedAnnotation[] {
   return annotations.filter(ann =>
-    savedAnnotationIsStrictAISearchPending(ann, documentUri, schemaTag, query),
+    savedAnnotationIsStrictAISearchPending(
+      ann,
+      documentUri,
+      schemaTag,
+      query,
+      documentUriAliases,
+    ),
   );
 }
 
@@ -539,9 +577,16 @@ export function countTagInventoryRowTotalAnnotations(
   documentUri: string,
   schemaTag: string,
   query: string,
+  documentUriAliases: readonly string[] = [],
 ): number {
   return countIf(annotations, ann =>
-    savedAnnotationMatchesTagInventoryRow(ann, documentUri, schemaTag, query),
+    savedAnnotationMatchesTagInventoryRow(
+      ann,
+      documentUri,
+      schemaTag,
+      query,
+      documentUriAliases,
+    ),
   );
 }
 

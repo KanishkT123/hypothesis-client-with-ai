@@ -31,6 +31,15 @@ describe('shared/tag-highlight-styles', () => {
     );
   });
 
+  it('injects a rule to hide highlights marked with h-row-hidden', () => {
+    applyTagHighlightPalette(document, {});
+
+    const style = getDynamicStyle();
+    assert.ok(style);
+    assert.include(style.textContent, '.hypothesis-highlight.h-row-hidden');
+    assert.include(style.textContent, 'opacity: 0 !important');
+  });
+
   it('skips empty tags and colors', () => {
     applyTagHighlightPalette(document, {
       '': 'rgba(1, 2, 3, 0.38)',
@@ -42,5 +51,32 @@ describe('shared/tag-highlight-styles', () => {
     assert.ok(style);
     assert.notInclude(style.textContent, '.h-tag-valid');
     assert.include(style.textContent, 'h-tag-okay');
+  });
+
+  it('does not rewrite the stylesheet when the palette is unchanged', () => {
+    const palette = { TopicA: 'rgba(1, 2, 3, 0.38)' };
+    applyTagHighlightPalette(document, palette);
+    const style = getDynamicStyle();
+    const firstContent = style.textContent;
+
+    applyTagHighlightPalette(document, palette);
+
+    assert.equal(style.textContent, firstContent);
+  });
+
+  it('produces identical CSS regardless of palette key order', () => {
+    applyTagHighlightPalette(document, {
+      zebra: 'rgba(1, 2, 3, 0.38)',
+      alpha: 'rgba(4, 5, 6, 0.38)',
+    });
+    const style = getDynamicStyle();
+    const firstContent = style.textContent;
+
+    applyTagHighlightPalette(document, {
+      alpha: 'rgba(4, 5, 6, 0.38)',
+      zebra: 'rgba(1, 2, 3, 0.38)',
+    });
+
+    assert.equal(style.textContent, firstContent);
   });
 });

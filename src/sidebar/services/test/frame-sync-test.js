@@ -6,6 +6,7 @@ import { Injector } from '../../../shared/injector';
 import * as annotationFixtures from '../../test/annotation-fixtures';
 import { fakeReduxStore } from '../../test/fake-redux-store';
 import { FrameSyncService, $imports, formatAnnot } from '../frame-sync';
+import { tagInventoryRowId } from '../../store/modules/sidebar-panels';
 
 class FakeWindow extends EventTarget {
   constructor() {
@@ -76,7 +77,10 @@ describe('FrameSyncService', () => {
   let setupPortRPC;
 
   beforeEach(() => {
-    fakeAnnotationsService = { create: sinon.stub() };
+    fakeAnnotationsService = {
+      create: sinon.stub(),
+      persistEnrichedTargetIfChanged: sinon.stub(),
+    };
     fakeToastMessenger = new EventEmitter();
     fakePortRPCs = [];
     setupPortRPC = null;
@@ -181,7 +185,6 @@ describe('FrameSyncService', () => {
         getFocusFilters: sinon.stub().returns({}),
         hoverAnnotations: sinon.stub(),
         isLoggedIn: sinon.stub().returns(false),
-        mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
         openSidebarPanel: sinon.stub(),
         selectAnnotations: sinon.stub(),
         selectTab: sinon.stub(),
@@ -239,6 +242,11 @@ describe('FrameSyncService', () => {
 
   function emitGuestEvent(event, ...args) {
     guestRPC().emit(event, ...args);
+  }
+
+  /** Flush microtasks after async guest RPC handlers (e.g. createAnnotation). */
+  async function flushGuestHandlers() {
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 
   /**
@@ -680,6 +688,7 @@ describe('FrameSyncService', () => {
       fakeStore.isLoggedIn.returns(true);
 
       emitGuestEvent('createAnnotation', { $tag: 't1', target: [] });
+      await flushGuestHandlers();
 
       assert.calledWith(hostRPC().call, 'showHighlights');
     });
@@ -695,65 +704,41 @@ describe('FrameSyncService', () => {
         const ann = { $tag: 't1', target: [] };
 
         emitGuestEvent('createAnnotation', ann);
+        await flushGuestHandlers();
 
         assert.calledWith(fakeAnnotationsService.create, ann);
       });
 
-      it('injects schema tag and creates history row when manual annotate toggle is enabled', () => {
+      it('injects schema tag and upserts history row when manual annotate toggle is enabled', async () => {
         fakeStore.isLoggedIn.returns(true);
         fakeStore.aiSearchPanelAnnotateManually.returns(true);
         fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
         fakeStore.aiSearchPanelQueryInput.returns('query');
-        fakeStore.tagInventoryRows.returns([]);
         const ann = { $tag: 't1', target: [], tags: [] };
 
         emitGuestEvent('createAnnotation', ann);
+        await flushGuestHandlers();
 
         assert.deepEqual(ann.tags, ['methods']);
         assert.calledWith(fakeStore.addTagInventoryRow, {
-          id: 'manual-t1',
+          id: tagInventoryRowId('methods', 'query', 'foobar'),
           groupId: 'foobar',
           schemaTag: 'methods',
           query: 'query',
           annotationIds: [],
         });
-        assert.calledWith(fakeStore.mergeTagInventoryRowsWithSameTagQuery, 'manual-t1');
-      });
-
-      it('reuses and merges existing matching history row instead of creating another', () => {
-        fakeStore.isLoggedIn.returns(true);
-        fakeStore.aiSearchPanelAnnotateManually.returns(true);
-        fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
-        fakeStore.aiSearchPanelQueryInput.returns('query');
-        fakeStore.tagInventoryRows.returns([
-          {
-            id: 'existing',
-            groupId: 'foobar',
-            schemaTag: 'methods',
-            query: 'query',
-            annotationIds: [],
-          },
-        ]);
-        const ann = { $tag: 't1', target: [], tags: [] };
-
-        emitGuestEvent('createAnnotation', ann);
-
-        assert.notCalled(fakeStore.addTagInventoryRow);
-        assert.calledWith(
-          fakeStore.mergeTagInventoryRowsWithSameTagQuery,
-          'existing',
-        );
       });
 
       it('opens the sidebar ready for the user to edit the draft', async () => {
         fakeStore.isLoggedIn.returns(true);
 
         emitGuestEvent('createAnnotation', { $tag: 't1', target: [] });
+        await flushGuestHandlers();
 
         assert.calledWith(hostRPC().call, 'openSidebar');
       });
 
-      it('does not open the sidebar if the annotation is a highlight', () => {
+      it('does not open the sidebar if the annotation is a highlight', async () => {
         fakeStore.isLoggedIn.returns(true);
 
         emitGuestEvent('createAnnotation', {
@@ -761,26 +746,30 @@ describe('FrameSyncService', () => {
           $highlight: true,
           target: [],
         });
+        await flushGuestHandlers();
 
         assert.neverCalledWith(hostRPC().call, 'openSidebar');
       });
     });
 
     const addCommonNotReadyTests = () => {
-      it('should not create an annotation in the sidebar', () => {
+      it('should not create an annotation in the sidebar', async () => {
         emitGuestEvent('createAnnotation', { $tag: 't1', target: [] });
+        await flushGuestHandlers();
 
         assert.notCalled(fakeAnnotationsService.create);
       });
 
-      it('should open the sidebar', () => {
+      it('should open the sidebar', async () => {
         emitGuestEvent('createAnnotation', { $tag: 't1', target: [] });
+        await flushGuestHandlers();
 
         assert.calledWith(hostRPC().call, 'openSidebar');
       });
 
-      it('should send a "deleteAnnotation" message to the frame', () => {
+      it('should send a "deleteAnnotation" message to the frame', async () => {
         emitGuestEvent('createAnnotation', { $tag: 't1', target: [] });
+        await flushGuestHandlers();
 
         assert.calledWith(guestRPC().call, 'deleteAnnotation');
       });
@@ -871,6 +860,43 @@ describe('FrameSyncService', () => {
             target: ann.target,
           }),
         ]),
+      );
+    });
+
+    it('persists enriched target when location selectors are merged', () => {
+      const before = {
+        id: 'id1',
+        $tag: 't1',
+        $orphan: false,
+        tags: [],
+        text: '',
+        target: [
+          {
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      fakeStore.findAnnotationByID = sinon.stub().withArgs('id1').returns(before);
+
+      const ann = {
+        $tag: 't1',
+        $orphan: false,
+        id: 'id1',
+        target: [
+          {
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+      emitGuestEvent('syncAnchoringStatus', ann);
+
+      assert.calledWith(
+        fakeAnnotationsService.persistEnrichedTargetIfChanged,
+        before,
+        sinon.match({ id: 'id1', target: ann.target }),
       );
     });
 
@@ -1440,7 +1466,7 @@ describe('FrameSyncService', () => {
 
       await connectGuest();
 
-      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette);
+      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette, []);
     });
 
     it('sends updated palettes to connected guests immediately', async () => {
@@ -1449,7 +1475,27 @@ describe('FrameSyncService', () => {
 
       frameSync.setTagHighlightPalette(palette);
 
-      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette);
+      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette, []);
+    });
+
+    it('forwards hidden annotation tags to connected guests', async () => {
+      fakeStore.setState({
+        annotations: [
+          { id: 'ann-1', $tag: 'guest-tag-1' },
+          { id: 'ann-2', $tag: 'guest-tag-2' },
+        ],
+      });
+      await connectGuest();
+      guestRPC().call.resetHistory();
+
+      frameSync.setTagHighlightPalette(palette, ['ann-1', 'ann-2']);
+
+      assert.calledWith(
+        guestRPC().call,
+        'setTagHighlightPalette',
+        palette,
+        ['guest-tag-1', 'guest-tag-2'],
+      );
     });
 
     it('replays cached palette to later guest connections', async () => {
@@ -1458,7 +1504,7 @@ describe('FrameSyncService', () => {
 
       await connectGuest('iframe');
 
-      assert.calledWith(guestRPC(1).call, 'setTagHighlightPalette', palette);
+      assert.calledWith(guestRPC(1).call, 'setTagHighlightPalette', palette, []);
     });
   });
 

@@ -16,6 +16,8 @@ describe('AnnotationsService', () => {
   let fakeSharedPermissions;
   let fakeIsPrivate;
 
+  let fakeExperimentLog;
+  let fakeClaude;
   let svc;
 
   function setLoggedIn(loggedIn) {
@@ -86,7 +88,6 @@ describe('AnnotationsService', () => {
       removeAnnotationIdsFromTagInventoryRows: sinon.stub(),
       addTagInventoryRow: sinon.stub(),
       tagInventoryRows: sinon.stub().returns([]),
-      mergeTagInventoryRowsWithSameTagQuery: sinon.stub(),
       removeDraft: sinon.stub(),
       selectTab: sinon.stub(),
       setExpanded: sinon.stub(),
@@ -97,10 +98,16 @@ describe('AnnotationsService', () => {
 
     setLoggedIn(true);
 
-    const fakeExperimentLog = {
+    fakeExperimentLog = {
       logAccept: sinon.stub(),
       logReject: sinon.stub(),
       logAnnotationDeleted: sinon.stub(),
+      logReclassifyAsManual: sinon.stub(),
+    };
+
+    fakeClaude = {
+      apiKey: sinon.stub().returns(''),
+      resolvePdfLineBreakHyphens: sinon.stub().resolves([]),
     };
 
     $imports.$mock({
@@ -117,6 +124,7 @@ describe('AnnotationsService', () => {
       fakeAnnotationActivity,
       fakeTagInventoryGroupSync,
       fakeApi,
+      fakeClaude,
       fakeExperimentLog,
       fakeSettings,
       fakeStore,
@@ -480,6 +488,84 @@ describe('AnnotationsService', () => {
       });
     });
 
+    it('enriches PDF quote display on save when Claude key and hyphen cases exist', async () => {
+      fakeMetadata.isSaved.returns(false);
+      fakeMetadata.quote.callsFake(ann => {
+        const sel = ann.target?.[0]?.selector?.find(
+          s => s.type === 'TextQuoteSelector',
+        );
+        return sel ? (sel.displayExact ?? sel.exact) : null;
+      });
+      fakeClaude.apiKey.returns('test-key');
+      fakeClaude.resolvePdfLineBreakHyphens.resolves([
+        { before: 'analy', after: 'sis', action: 'drop' },
+      ]);
+      fakeApi.annotation.create.callsFake((_params, payload) =>
+        Promise.resolve({
+          ...fixtures.defaultAnnotation(),
+          ...payload,
+          id: 'deadbeef',
+        }),
+      );
+
+      const annotation = fixtures.newAnnotation();
+      annotation.target = [
+        {
+          source: annotation.uri,
+          selector: [
+            {
+              type: 'TextQuoteSelector',
+              exact: 'analy-sis of',
+              displayExact: 'analy-sis of',
+              pdfLineBreakHyphens: [{ before: 'analy', after: 'sis' }],
+            },
+          ],
+        },
+      ];
+
+      await svc.save(annotation);
+
+      assert.calledOnce(fakeClaude.resolvePdfLineBreakHyphens);
+      const savedPayload = fakeApi.annotation.create.getCall(0).args[1];
+      const quote = savedPayload.target[0].selector[0];
+      assert.equal(quote.displayExact, 'analysis of');
+      assert.isUndefined(quote.pdfLineBreakHyphens);
+
+      const storedAnnotation = fakeStore.addAnnotations.getCall(0).args[0][0];
+      const storedQuote = storedAnnotation.target[0].selector.find(
+        s => s.type === 'TextQuoteSelector',
+      );
+      assert.equal(storedQuote.displayExact, 'analysis of');
+    });
+
+    it('skips Claude enrichment on save when API key is not set', async () => {
+      fakeMetadata.isSaved.returns(false);
+      fakeClaude.apiKey.returns('');
+
+      const annotation = fixtures.newAnnotation();
+      annotation.target = [
+        {
+          source: annotation.uri,
+          selector: [
+            {
+              type: 'TextQuoteSelector',
+              exact: 'analy-sis of',
+              displayExact: 'analy-sis of',
+              pdfLineBreakHyphens: [{ before: 'analy', after: 'sis' }],
+            },
+          ],
+        },
+      ];
+
+      await svc.save(annotation);
+
+      assert.notCalled(fakeClaude.resolvePdfLineBreakHyphens);
+      const savedPayload = fakeApi.annotation.create.getCall(0).args[1];
+      const quote = savedPayload.target[0].selector[0];
+      assert.equal(quote.displayExact, 'analy-sis of');
+      assert.isUndefined(quote.pdfLineBreakHyphens);
+    });
+
     it('reports create-annotation activity for new annotations', async () => {
       fakeMetadata.isSaved.returns(false);
       const annotation = fixtures.newAnnotation();
@@ -672,6 +758,126 @@ describe('AnnotationsService', () => {
         await svc.save(annotation);
 
         assert.calledOnce(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
+      });
+    });
+
+    context('AI reclassify on manual detachment', () => {
+      it('strips AI tags and logs text-change when comment text changes', async () => {
+        fakeMetadata.isSaved.returns(true);
+        fakeMetadata.quote.returns('quoted passage');
+        const annotation = fixtures.defaultAnnotation();
+        annotation.tags = ['ai-pending', 'methods'];
+        annotation.text = 'find stats';
+        fakeStore.getDraft.returns({
+          annotation,
+          tags: ['ai-pending', 'methods'],
+          text: 'edited comment',
+          isPrivate: false,
+          description: annotation.target[0]?.description,
+        });
+        const savedAnnotation = {
+          ...annotation,
+          tags: ['methods'],
+          text: 'edited comment',
+        };
+        fakeApi.annotation.update.resolves(savedAnnotation);
+
+        await svc.save(annotation);
+
+        const sent = fakeApi.annotation.update.getCall(0).args[1];
+        assert.notInclude(sent.tags, 'ai-pending');
+        assert.notInclude(sent.tags, 'ai-user-approved');
+        assert.calledOnce(fakeExperimentLog.logReclassifyAsManual);
+        assert.calledWith(
+          fakeExperimentLog.logReclassifyAsManual,
+          sinon.match({
+            reason: 'text-change',
+            schemaTag: 'methods',
+            originalQuery: 'find stats',
+            newText: 'edited comment',
+            quoteText: 'quoted passage',
+          }),
+        );
+      });
+
+      it('strips AI tags and logs schema-tag-removed when schema tag is removed', async () => {
+        fakeMetadata.isSaved.returns(true);
+        const annotation = fixtures.defaultAnnotation();
+        annotation.tags = ['ai-pending', 'methods'];
+        annotation.text = 'find stats';
+        fakeStore.getDraft.returns({
+          annotation,
+          tags: ['ai-pending'],
+          text: 'find stats',
+          isPrivate: false,
+          description: annotation.target[0]?.description,
+        });
+        const savedAnnotation = {
+          ...annotation,
+          tags: [],
+          text: 'find stats',
+        };
+        fakeApi.annotation.update.resolves(savedAnnotation);
+
+        await svc.save(annotation);
+
+        const sent = fakeApi.annotation.update.getCall(0).args[1];
+        assert.notInclude(sent.tags, 'ai-pending');
+        assert.calledWith(
+          fakeExperimentLog.logReclassifyAsManual,
+          sinon.match({
+            reason: 'schema-tag-removed',
+            removedSchemaTags: ['methods'],
+          }),
+        );
+      });
+
+      it('strips AI tags when swapping schema tag methods to results', async () => {
+        fakeMetadata.isSaved.returns(true);
+        const annotation = fixtures.defaultAnnotation();
+        annotation.tags = ['ai-user-approved', 'methods'];
+        annotation.text = 'find stats';
+        fakeStore.getDraft.returns({
+          annotation,
+          tags: ['ai-user-approved', 'results'],
+          text: 'find stats',
+          isPrivate: false,
+          description: annotation.target[0]?.description,
+        });
+        fakeApi.annotation.update.resolves({
+          ...annotation,
+          tags: ['results'],
+        });
+
+        await svc.save(annotation);
+
+        const sent = fakeApi.annotation.update.getCall(0).args[1];
+        assert.notInclude(sent.tags, 'ai-user-approved');
+        assert.calledOnce(fakeExperimentLog.logReclassifyAsManual);
+      });
+
+      it('does not auto-strip when user removes only ai-pending tag', async () => {
+        fakeMetadata.isSaved.returns(true);
+        const annotation = fixtures.defaultAnnotation();
+        annotation.tags = ['ai-pending', 'methods'];
+        annotation.text = 'find stats';
+        fakeStore.getDraft.returns({
+          annotation,
+          tags: ['methods'],
+          text: 'find stats',
+          isPrivate: false,
+          description: annotation.target[0]?.description,
+        });
+        fakeApi.annotation.update.resolves({
+          ...annotation,
+          tags: ['methods'],
+        });
+
+        await svc.save(annotation);
+
+        const sent = fakeApi.annotation.update.getCall(0).args[1];
+        assert.sameMembers(sent.tags, ['methods']);
+        assert.notCalled(fakeExperimentLog.logReclassifyAsManual);
       });
     });
 
@@ -917,6 +1123,95 @@ describe('AnnotationsService', () => {
       const savedAnnotation =
         await fakeApi.annotation.read.lastCall.returnValue;
       assert.calledWith(fakeStore.addAnnotations, [savedAnnotation]);
+    });
+  });
+
+  describe('persistEnrichedTargetIfChanged', () => {
+    const userId = 'acct:foo@bar.com';
+
+    beforeEach(() => {
+      fakeMetadata.isSaved.returns(true);
+      fakeStore.profile.returns({ userid: userId });
+    });
+
+    it('updates the API when location selectors are newly enriched', async () => {
+      const before = {
+        ...fixtures.defaultAnnotation(),
+        $orphan: false,
+        permissions: { read: [], update: [userId], delete: [userId] },
+        target: [
+          {
+            source: 'https://example.com',
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      const after = {
+        ...before,
+        target: [
+          {
+            source: 'https://example.com',
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+      const saved = { ...after, updated: '2020-01-02' };
+      fakeApi.annotation.update.resolves(saved);
+
+      svc.persistEnrichedTargetIfChanged(before, after);
+      await fakeApi.annotation.update.returnValues[0];
+
+      assert.calledWith(
+        fakeApi.annotation.update,
+        { id: before.id },
+        { target: after.target },
+      );
+      assert.calledWith(fakeStore.addAnnotations, [saved]);
+    });
+
+    it('does not update when location and quote display are unchanged', () => {
+      const ann = {
+        ...fixtures.defaultAnnotation(),
+        $orphan: false,
+        permissions: { read: [], update: [userId], delete: [userId] },
+        target: [
+          {
+            source: 'https://example.com',
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+
+      svc.persistEnrichedTargetIfChanged(ann, ann);
+
+      assert.notCalled(fakeApi.annotation.update);
+    });
+
+    it('skips unsaved annotations', () => {
+      fakeMetadata.isSaved.returns(false);
+      const before = fixtures.defaultAnnotation();
+      const after = {
+        ...before,
+        target: [
+          {
+            source: 'https://example.com',
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+
+      svc.persistEnrichedTargetIfChanged(before, after);
+
+      assert.notCalled(fakeApi.annotation.update);
     });
   });
 });

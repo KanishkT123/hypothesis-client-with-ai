@@ -257,6 +257,14 @@ export type IntegrationBase = {
   ): Selector[] | Promise<Selector[]>;
 
   /**
+   * Derive position/page selectors from quote-only selectors without a DOM
+   * range. Implemented for PDF; optional on other integrations.
+   */
+  describeQuoteOnly?(
+    selectors: Selector[],
+  ): Selector[] | Promise<Selector[]>;
+
+  /**
    * Return the main element that contains the document content. This is used
    * by controls such as the bucket bar to know when the content might have scrolled.
    */
@@ -345,6 +353,12 @@ export type IntegrationBase = {
     anchor: Anchor,
     opts: RenderToBitmapOptions,
   ): Promise<ImageBitmap>;
+
+  /**
+   * Return the loaded PDF as raw bytes. Only implemented for PDF documents.
+   * Used to send paywalled or session-gated PDFs to Claude from the browser.
+   */
+  getPdfBytes?(): Promise<Uint8Array>;
 };
 
 /** Events which {@link Integration}s may emit. */

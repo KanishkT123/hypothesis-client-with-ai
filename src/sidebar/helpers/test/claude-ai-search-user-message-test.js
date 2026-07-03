@@ -198,6 +198,28 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       assert.deepEqual(out, [{ text: 'new quote' }]);
     });
 
+    it('drops quote when annotation URN matches HTTPS canonical via aliases', () => {
+      const urn = 'urn:x-pdf:abc';
+      const https = 'https://example.com/paper.pdf';
+      const saved = [
+        textQuoteAnn({
+          id: 'a1',
+          uri: urn,
+          tags: ['methods', 'ai-user-approved'],
+          text: 'prior query',
+          exact: 'same quote text',
+        }),
+      ];
+      const out = filterAiSearchQuotesAgainstExisting(
+        [{ text: 'same quote text' }, { text: 'new quote' }],
+        saved,
+        https,
+        'methods',
+        [urn, https],
+      );
+      assert.deepEqual(out, [{ text: 'new quote' }]);
+    });
+
     it('drops quote when ai-pending annotation has same tag and quote', () => {
       const saved = [
         textQuoteAnn({

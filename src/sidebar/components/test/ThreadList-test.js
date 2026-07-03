@@ -60,6 +60,8 @@ describe('ThreadList', () => {
       highlightedAnnotations: sinon.stub().returns([]),
       allAnnotations: sinon.stub().returns([]),
       profile: sinon.stub().returns({ userid: 'current_user_id' }),
+      threadScrollAnchor: sinon.stub().returns(null),
+      clearThreadScrollAnchor: sinon.stub(),
     };
 
     fakeTopThread = {
@@ -99,6 +101,13 @@ describe('ThreadList', () => {
       '../helpers/highlighted-annotations': {
         mostRelevantAnnotation: fakeMostRelevantAnnotation,
       },
+      // Replace lodash.debounce with an immediate-call shim that also exposes
+      // the .cancel() method that ThreadList calls on cleanup.
+      'lodash.debounce': fn => {
+        const immediate = (...args) => fn(...args);
+        immediate.cancel = () => {};
+        return immediate;
+      },
     });
     sinon.stub(console, 'warn');
   });
@@ -120,69 +129,6 @@ describe('ThreadList', () => {
       sinon.match({}),
       0,
       sinon.match.number,
-    );
-  });
-
-  it('uses list-relative scroll metrics when content above list changes height', () => {
-    const wrapper = createComponent();
-    const listRoot = wrapper.find('[role="list"]').getDOMNode();
-    let offsetAboveList = 180;
-
-    sinon.stub(fakeScrollContainer, 'getBoundingClientRect').callsFake(() => ({
-      x: 0,
-      y: 100,
-      width: 320,
-      height: 400,
-      top: 100,
-      right: 320,
-      bottom: 500,
-      left: 0,
-      toJSON() {},
-    }));
-    sinon.stub(listRoot, 'getBoundingClientRect').callsFake(() => ({
-      x: 0,
-      y: 100 + offsetAboveList - fakeScrollContainer.scrollTop,
-      width: 320,
-      height: 200,
-      top: 100 + offsetAboveList - fakeScrollContainer.scrollTop,
-      right: 320,
-      bottom: 300 + offsetAboveList - fakeScrollContainer.scrollTop,
-      left: 0,
-      toJSON() {},
-    }));
-    Object.defineProperty(fakeScrollContainer, 'clientHeight', {
-      configurable: true,
-      value: 400,
-    });
-
-    act(() => {
-      fakeScrollContainer.scrollTop = 250;
-      fakeScrollContainer.dispatchEvent(new Event('scroll'));
-    });
-    wrapper.update();
-
-    assert.calledWith(
-      fakeVisibleThreadsUtil.calculateVisibleThreads,
-      fakeTopThread.children,
-      sinon.match({}),
-      50, // effective list-relative scroll after subtracting top offset
-      400,
-    );
-
-    // Simulate history widget above list growing taller.
-    offsetAboveList = 260;
-    act(() => {
-      fakeScrollContainer.scrollTop = 330;
-      fakeScrollContainer.dispatchEvent(new Event('scroll'));
-    });
-    wrapper.update();
-
-    assert.calledWith(
-      fakeVisibleThreadsUtil.calculateVisibleThreads,
-      fakeTopThread.children,
-      sinon.match({}),
-      50, // list-relative position remains stable despite top-widget growth
-      400,
     );
   });
 

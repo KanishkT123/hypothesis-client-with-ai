@@ -1,6 +1,7 @@
 import { useMemo } from 'preact/hooks';
 
-import { isTagInventoryRowVisibleInScope } from '../../helpers/tag-inventory-group';
+import { resolveDocumentUriFromCandidates, documentUriAliases } from '../../helpers/document-uri';
+import { computeTagInventoryHighlightState } from '../../helpers/tag-palette';
 import { threadAnnotations } from '../../helpers/thread-annotations';
 import type {
   ThreadAnnotationsResult,
@@ -22,40 +23,25 @@ export function useRootThread(): ThreadAnnotationsResult {
   const showTabs = route === 'sidebar';
   const focusedGroupId = store.focusedGroupId();
   const tagInventoryRows = store.tagInventoryRows();
-  const publicScope = store.tagInventoryPublicDocumentScope();
-  const publicDocumentDescriptorKeys = useMemo(
-    () =>
-      publicScope?.visibleDescriptorKeys
-        ? new Set(publicScope.visibleDescriptorKeys)
-        : null,
-    [publicScope],
-  );
-  const documentUri =
-    store.mainFrame()?.uri ?? store.searchUris()[0] ?? null;
+  const uriAliases = documentUriAliases(store);
+  const documentUri = resolveDocumentUriFromCandidates(store, [...uriAliases]);
 
   const threadState = useMemo((): ThreadState => {
     const selection = { ...selectionState, filterQuery: query, filters };
-    const hiddenTagInventoryRows = focusedGroupId
-      ? tagInventoryRows
-          .filter(
-            row =>
-              row.hidden &&
-              isTagInventoryRowVisibleInScope(row, {
-                focusedGroupId,
-                publicDocumentDescriptorKeys,
-              }),
-          )
-          .map(row => ({
-            schemaTag: row.schemaTag,
-            query: row.query,
-          }))
-      : [];
+    const hiddenAnnotationIds = focusedGroupId
+      ? new Set(
+          computeTagInventoryHighlightState(tagInventoryRows, {
+            focusedGroupId,
+            currentDocumentUri: documentUri,
+            documentUriAliases: uriAliases,
+          }).hiddenAnnotationIds,
+        )
+      : new Set<string>();
     return {
       annotations,
       selection,
       showTabs,
-      hiddenTagInventoryRows,
-      documentUri,
+      hiddenAnnotationIds,
     };
   }, [
     selectionState,
@@ -65,8 +51,8 @@ export function useRootThread(): ThreadAnnotationsResult {
     showTabs,
     focusedGroupId,
     tagInventoryRows,
-    publicDocumentDescriptorKeys,
     documentUri,
+    uriAliases,
   ]);
 
   return threadAnnotations(threadState);

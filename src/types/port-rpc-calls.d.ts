@@ -221,7 +221,7 @@ export type SidebarToGuestCalls = {
    * Replace tag highlight colors in this guest (full map). Keys are tag names
    * (e.g. `ai-pending`); values are CSS colors (e.g. `rgba(...)`).
    */
-  setTagHighlightPalette(palette: Record<string, string>): void;
+  setTagHighlightPalette(palette: Record<string, string>, hiddenAnnotationIds: string[]): void;
 
   /** Navigate to the segment of a book associated with an annotation. */
   navigateToSegment(ann: AnnotationData): void;
@@ -256,6 +256,12 @@ export type SidebarToGuestCalls = {
    * Expose the guest document info to the sidebar
    */
   getDocumentInfo(callback: (info: DocumentInfo) => void): void;
+
+  /**
+   * Return the loaded PDF as a base64 string for Claude document search.
+   * Only available for PDF documents.
+   */
+  getPdfBytes(callback: (result: Result<string>) => void): void;
 };
 
 /** Calls that the sidebar makes to the host. */

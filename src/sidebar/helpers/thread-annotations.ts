@@ -1,9 +1,7 @@
-import type { Annotation, SavedAnnotation } from '../../types/api';
+import type { Annotation } from '../../types/api';
 import type { TabName } from '../../types/sidebar';
 import { memoize } from '../util/memoize';
-import { isWaitingToAnchor } from './annotation-metadata';
-import type { HiddenTagInventoryRowMatch } from './claude-ai-search-user-message';
-import { annotationMatchesHiddenTagInventoryRow } from './claude-ai-search-user-message';
+import { isWaitingToAnchor, isPendingLocationEnrichment } from './annotation-metadata';
 import { buildThread } from './build-thread';
 import type { Thread, BuildThreadOptions } from './build-thread';
 import { filterAnnotations } from './filter-annotations';
@@ -26,11 +24,8 @@ export type ThreadState = {
     selectedTab: 'annotation' | 'note' | 'orphan';
   };
 
-  /** Hidden AI search rows visible in the focused group (thread-list filter). */
-  hiddenTagInventoryRows?: HiddenTagInventoryRowMatch[];
-
-  /** Current document URI for hidden-row matching. */
-  documentUri?: string | null;
+  /** Annotation IDs from hidden inventory rows (thread-list filter). */
+  hiddenAnnotationIds?: ReadonlySet<string>;
 };
 
 export type ThreadAnnotationsResult = {
@@ -101,18 +96,11 @@ function threadAnnotationsImpl(
     }
   }
 
-  const hiddenRows = threadState.hiddenTagInventoryRows ?? [];
-  const documentUri = threadState.documentUri;
-  if (hiddenRows.length > 0 && documentUri) {
+  const hiddenIds = threadState.hiddenAnnotationIds;
+  if (hiddenIds && hiddenIds.size > 0) {
     const priorFilterFn = options.filterFn;
     options.filterFn = ann => {
-      if (
-        annotationMatchesHiddenTagInventoryRow(
-          ann as SavedAnnotation,
-          documentUri,
-          hiddenRows,
-        )
-      ) {
+      if (ann.id && hiddenIds.has(ann.id)) {
         return false;
       }
       return priorFilterFn ? priorFilterFn(ann) : true;
@@ -132,6 +120,10 @@ function threadAnnotationsImpl(
       // If this annotation is still anchoring, we do not know whether it should
       // appear in the "Annotations" or "Orphans" tab.
       if (thread.annotation && isWaitingToAnchor(thread.annotation)) {
+        return false;
+      }
+
+      if (thread.annotation && isPendingLocationEnrichment(thread.annotation)) {
         return false;
       }
 

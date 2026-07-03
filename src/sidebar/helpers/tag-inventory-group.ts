@@ -1,6 +1,7 @@
 import type { SavedAnnotation } from '../../types/api';
 import type { TagInventoryRow } from '../store/modules/sidebar-panels';
 import { isReply, isSaved } from './annotation-metadata';
+import { documentUriMatches } from './document-uri';
 import { PUBLIC_GROUP_ID } from './groups';
 
 /**
@@ -152,11 +153,11 @@ export function negativeSchemaTagForPositiveTag(positiveSchemaTag: string): stri
 }
 
 /**
- * Positive schema tags on an annotation: not system tags, not negative schema tags.
+ * Positive schema tags on an annotation: non-empty, not system tags, not negative schema tags.
  */
 export function positiveSchemaTags(annotationTags: string[]): string[] {
   return annotationTags.filter(
-    tag => !isAiSearchSystemTag(tag) && !isNegativeSchemaTag(tag),
+    tag => tag.trim() && !isAiSearchSystemTag(tag) && !isNegativeSchemaTag(tag),
   );
 }
 
@@ -170,6 +171,188 @@ export function negativeSchemaTags(annotationTags: string[]): string[] {
 /** Stable key for an inventory row: `(schemaTag, query)` within one group. */
 export function rowDescriptorKey(schemaTag: string, query: string): string {
   return `${norm(schemaTag)}${DESCRIPTOR_SEP}${norm(query)}`;
+}
+
+function schemaTagMatchesInventoryRow(
+  schemaTagTrim: string,
+  annTags: string[],
+): boolean {
+  if (schemaTagTrim) {
+    return annTags.includes(schemaTagTrim);
+  }
+  return positiveSchemaTags(annTags).length === 0 && negativeSchemaTags(annTags).length === 0;
+}
+
+/**
+ * Inventory row descriptors for a single annotation (may be multiple per tag).
+ * Branch order: negative → ai-user-approved → ai-pending → manual.
+ */
+export function tagInventoryRowDescriptorsForAnnotation(
+  ann: SavedAnnotation,
+): TagInventoryRowDescriptor[] {
+  if (!isSaved(ann) || isReply(ann)) {
+    return [];
+  }
+
+  const tags = ann.tags ?? [];
+  const textQuery = norm(ann.text ?? '');
+  const out: TagInventoryRowDescriptor[] = [];
+
+  const negativeTags = negativeSchemaTags(tags);
+  if (negativeTags.length > 0) {
+    for (const schemaTag of negativeTags) {
+      out.push({ schemaTag, query: '' });
+    }
+    return out;
+  }
+
+  if (tags.includes(AI_USER_APPROVED)) {
+    for (const schemaTag of positiveSchemaTags(tags)) {
+      out.push({ schemaTag, query: textQuery });
+    }
+    return out;
+  }
+
+  if (tags.includes(AI_PENDING)) {
+    for (const schemaTag of positiveSchemaTags(tags)) {
+      out.push({ schemaTag, query: textQuery });
+    }
+    return out;
+  }
+
+  for (const schemaTag of positiveSchemaTags(tags)) {
+    out.push({ schemaTag, query: '' });
+  }
+
+  return out;
+}
+
+/**
+ * True when `ann` on `documentUri` belongs to the inventory row `(schemaTag, query)`
+ * under derive-aligned membership rules.
+ */
+export function annotationBelongsToTagInventoryRow(
+  ann: SavedAnnotation,
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+  documentUriAliases: readonly string[] = [],
+): boolean {
+  if (
+    !isSaved(ann) ||
+    !documentUriMatches(ann.uri, documentUri, documentUriAliases)
+  ) {
+    return false;
+  }
+  if (isReply(ann)) {
+    return false;
+  }
+
+  const schemaTrim = norm(schemaTag);
+  const queryTrim = norm(query);
+  const annTags = ann.tags ?? [];
+
+  if (!schemaTagMatchesInventoryRow(schemaTrim, annTags)) {
+    return false;
+  }
+
+  const descriptors = tagInventoryRowDescriptorsForAnnotation(ann);
+  if (
+    descriptors.some(
+      d => norm(d.schemaTag) === schemaTrim && norm(d.query) === queryTrim,
+    )
+  ) {
+    return true;
+  }
+
+  // Empty-schema rows (not produced by per-annotation descriptors).
+  if (!schemaTrim) {
+    if (queryTrim !== '' && norm(ann.text ?? '') !== queryTrim) {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/** Saved annotations belonging to an inventory row (derive-aligned membership). */
+export function listAnnotationsBelongingToTagInventoryRow(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+  documentUriAliases: readonly string[] = [],
+): SavedAnnotation[] {
+  return annotations.filter(ann =>
+    annotationBelongsToTagInventoryRow(
+      ann,
+      documentUri,
+      schemaTag,
+      query,
+      documentUriAliases,
+    ),
+  );
+}
+
+/**
+ * Saved annotations that belong to an inventory row under reconcile-aligned
+ * membership rules (document-scoped for Public, group-wide for private).
+ */
+export function listAnnotationsForTagInventoryRow(
+  annotations: SavedAnnotation[],
+  row: Pick<TagInventoryRow, 'schemaTag' | 'query' | 'groupId'>,
+  {
+    focusedGroupId,
+    documentUri,
+    documentUriAliases = [],
+  }: {
+    focusedGroupId: string;
+    documentUri?: string | null;
+    documentUriAliases?: readonly string[];
+  },
+): SavedAnnotation[] {
+  const groupId = row.groupId ?? focusedGroupId;
+  if (groupId === PUBLIC_GROUP_ID) {
+    if (!documentUri) {
+      return [];
+    }
+    return listAnnotationsBelongingToTagInventoryRow(
+      annotations.filter(ann => ann.group === groupId),
+      documentUri,
+      row.schemaTag,
+      row.query,
+      documentUriAliases,
+    );
+  }
+
+  const schemaTrim = norm(row.schemaTag);
+  const queryTrim = norm(row.query);
+  return annotations.filter(ann => {
+    if (!isSaved(ann) || isReply(ann) || ann.group !== groupId) {
+      return false;
+    }
+    return tagInventoryRowDescriptorsForAnnotation(ann).some(
+      d => norm(d.schemaTag) === schemaTrim && norm(d.query) === queryTrim,
+    );
+  });
+}
+
+/**
+ * Count annotations for an inventory row using the same membership rules as
+ * reconcile (`annotationIds`). Public rows are document-scoped; private rows
+ * are group-wide (no document filter).
+ */
+export function countAnnotationsForTagInventoryRow(
+  annotations: SavedAnnotation[],
+  row: Pick<TagInventoryRow, 'schemaTag' | 'query' | 'groupId'>,
+  scope: {
+    focusedGroupId: string;
+    documentUri?: string | null;
+    documentUriAliases?: readonly string[];
+  },
+): number {
+  return listAnnotationsForTagInventoryRow(annotations, row, scope).length;
 }
 
 /**
@@ -193,34 +376,8 @@ export function deriveTagInventoryRowDescriptors(
   };
 
   for (const ann of annotations) {
-    if (!isSaved(ann) || isReply(ann)) {
-      continue;
-    }
-
-    const tags = ann.tags ?? [];
-    const textQuery = norm(ann.text ?? '');
-
-    if (tags.includes(AI_USER_APPROVED)) {
-      for (const schemaTag of positiveSchemaTags(tags)) {
-        push({ schemaTag, query: textQuery });
-      }
-      continue;
-    }
-
-    const negativeTags = negativeSchemaTags(tags);
-    if (negativeTags.length > 0) {
-      for (const schemaTag of negativeTags) {
-        push({ schemaTag, query: textQuery });
-      }
-      continue;
-    }
-
-    if (tags.includes(AI_PENDING)) {
-      continue;
-    }
-
-    for (const schemaTag of positiveSchemaTags(tags)) {
-      push({ schemaTag, query: '' });
+    for (const descriptor of tagInventoryRowDescriptorsForAnnotation(ann)) {
+      push(descriptor);
     }
   }
 
@@ -233,21 +390,31 @@ export function isTagInventoryRowVisibleInScope(
   scope: {
     focusedGroupId: string;
     /**
-     * Public (`__world__`) only: descriptor keys derived/upserted for the
-     * **current document**. Rows outside this set stay stored (colors) but hidden.
+     * Public group only: URI of the current document. Public group rows carry a
+     * `documentUri` field and are only shown when it matches this value (or an
+     * alias in `documentUriAliases`).
+     * Private groups omit this; they use the prune mechanism instead.
      */
-    publicDocumentDescriptorKeys?: ReadonlySet<string> | null;
+    currentDocumentUri?: string | null;
+    /** Public group only: URIs equivalent to the current document (e.g. URN + HTTPS). */
+    documentUriAliases?: readonly string[];
   },
 ): boolean {
   if (row.groupId !== scope.focusedGroupId) {
     return false;
   }
   if (scope.focusedGroupId === PUBLIC_GROUP_ID) {
-    if (!scope.publicDocumentDescriptorKeys) {
+    if (!scope.currentDocumentUri) {
+      const aliases = scope.documentUriAliases ?? [];
+      if (row.documentUri && aliases.includes(row.documentUri)) {
+        return true;
+      }
       return false;
     }
-    return scope.publicDocumentDescriptorKeys.has(
-      rowDescriptorKey(row.schemaTag, row.query),
+    return documentUriMatches(
+      row.documentUri ?? '',
+      scope.currentDocumentUri,
+      scope.documentUriAliases ?? [],
     );
   }
   return true;

@@ -32,7 +32,6 @@ import { LocalStorageService } from './services/local-storage';
 import { PersistedTagInventoryService } from './services/persisted-tag-inventory';
 import { PersistedDefaultsService } from './services/persisted-defaults';
 import { RouterService } from './services/router';
-// import { ReductoService } from './services/reducto';
 import { ClaudeService } from './services/claude';
 import { ExperimentLogService } from './services/experiment-log';
 import { ServiceURLService } from './services/service-url';
@@ -169,7 +168,6 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('persistedDefaults', PersistedDefaultsService)
     .register('persistedTagInventory', PersistedTagInventoryService)
     .register('tagInventoryGroupSync', TagInventoryGroupSyncService)
-//    .register('reducto', ReductoService)
     .register('claude', ClaudeService)
     .register('router', RouterService)
     .register('serviceURL', ServiceURLService)

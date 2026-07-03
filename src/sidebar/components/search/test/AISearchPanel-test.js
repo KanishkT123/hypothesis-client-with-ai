@@ -7,6 +7,7 @@ import AISearchPanel, { $imports } from '../AISearchPanel';
 describe('AISearchPanel', () => {
   let fakeStore;
   let fakeTagInventoryGroupSync;
+  let fakePersistedTagInventory;
 
   beforeEach(() => {
     fakeStore = {
@@ -16,9 +17,10 @@ describe('AISearchPanel', () => {
       tagInventoryRows: sinon.stub().returns([]),
       savedAnnotations: sinon.stub().returns([]),
       tagInventorySchemaTagColors: sinon.stub().returns({}),
+      mainFrame: sinon.stub().returns(null),
+      defaultContentFrame: sinon.stub().returns(null),
       searchUris: sinon.stub().returns([]),
       focusedGroupId: sinon.stub().returns('group-1'),
-      tagInventoryPublicDocumentScope: sinon.stub().returns(null),
       closeSidebarPanel: sinon.stub(),
       setAISearchPanelQueryInput: sinon.stub(),
       setFilterQuery: sinon.stub(),
@@ -30,6 +32,11 @@ describe('AISearchPanel', () => {
 
     fakeTagInventoryGroupSync = {
       getGroupAnnotations: sinon.stub().resolves([]),
+      runWithDeferredInventorySync: sinon.stub().callsFake(work => work()),
+    };
+
+    fakePersistedTagInventory = {
+      runWithDeferredPersist: sinon.stub().callsFake(work => work()),
     };
 
     $imports.$mock(mockImportedComponents());
@@ -50,10 +57,11 @@ describe('AISearchPanel', () => {
         annotationsService={{}}
         experimentLog={{}}
         frameSync={{ setTagHighlightPalette: sinon.stub() }}
-        claude={{ firstPDFURI: sinon.stub().returns(null) }}
+        claude={{}}
         api={{}}
         toastMessenger={{}}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
       />,
     );
   }
@@ -152,6 +160,171 @@ describe('AISearchPanel', () => {
     );
   });
 
+  it('shows a sign-in error when AI search is submitted while logged out', async () => {
+    fakeStore.profile = sinon.stub().returns({});
+    fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+    const fakeClaude = {
+      AISearchDocument: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={{}}
+        experimentLog={{}}
+        frameSync={{ setTagHighlightPalette: sinon.stub() }}
+        claude={fakeClaude}
+        api={{}}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
+      />,
+    );
+
+    await wrapper.find('SearchField').props().onSearch('find methods');
+
+    assert.calledWith(
+      fakeToastMessenger.error,
+      'Not signed in — please sign in to use AI search.',
+    );
+    assert.notCalled(fakeClaude.AISearchDocument);
+  });
+
+  it('passes the resolved document URL to Claude when search is submitted', async () => {
+    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.mainFrame = sinon.stub().returns({
+      uri: 'http://example.com/paper.pdf',
+    });
+    fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+    const fakeClaude = {
+      AISearchDocument: sinon.stub().rejects(new Error('stop after claude')),
+    };
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={{}}
+        experimentLog={{}}
+        frameSync={{ setTagHighlightPalette: sinon.stub() }}
+        claude={fakeClaude}
+        api={{}}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
+      />,
+    );
+
+    await wrapper.find('SearchField').props().onSearch('find methods');
+
+    assert.calledWith(
+      fakeClaude.AISearchDocument,
+      sinon.match({ documentUri: 'https://example.com/paper.pdf' }),
+    );
+  });
+
+  it('retries with PDF bytes when Claude cannot download the document URL', async () => {
+    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.mainFrame = sinon.stub().returns({ uri: 'urn:x-pdf:abc' });
+    fakeStore.searchUris = sinon
+      .stub()
+      .returns(['urn:x-pdf:abc', 'https://dl.acm.org/doi/pdf/10.1145/example']);
+    fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+    const downloadError = new Error(
+      'Failed to extract quotes from document: 400 {"error":{"message":"Unable to download the file. Please verify the URL and try again."}}',
+    );
+    const fakeClaude = {
+      apiKey: sinon.stub().returns('test-key'),
+      AISearchDocument: sinon
+        .stub()
+        .onFirstCall()
+        .rejects(downloadError)
+        .onSecondCall()
+        .rejects(new Error('stop after retry')),
+    };
+    const fakeFrameSync = {
+      setTagHighlightPalette: sinon.stub(),
+      getPdfBytes: sinon.stub().resolves('base64-pdf-bytes'),
+    };
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={{}}
+        experimentLog={{}}
+        frameSync={fakeFrameSync}
+        claude={fakeClaude}
+        api={{}}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
+      />,
+    );
+
+    await wrapper.find('SearchField').props().onSearch('find methods');
+
+    assert.calledTwice(fakeClaude.AISearchDocument);
+    assert.calledWith(
+      fakeClaude.AISearchDocument.firstCall,
+      sinon.match({
+        documentUri: 'https://dl.acm.org/doi/pdf/10.1145/example',
+      }),
+    );
+    assert.calledWith(
+      fakeClaude.AISearchDocument.secondCall,
+      sinon.match({ documentPdfBase64: 'base64-pdf-bytes' }),
+    );
+    assert.calledOnce(fakeFrameSync.getPdfBytes);
+  });
+
+  it('passes the HTTPS PDF alias to Claude when the frame URI is a URN', async () => {
+    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.mainFrame = sinon.stub().returns({ uri: 'urn:x-pdf:abc' });
+    fakeStore.searchUris = sinon
+      .stub()
+      .returns(['urn:x-pdf:abc', 'https://example.com/paper.pdf']);
+    fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+    const fakeClaude = {
+      AISearchDocument: sinon.stub().rejects(new Error('stop after claude')),
+    };
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={{}}
+        experimentLog={{}}
+        frameSync={{ setTagHighlightPalette: sinon.stub() }}
+        claude={fakeClaude}
+        api={{}}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
+      />,
+    );
+
+    await wrapper.find('SearchField').props().onSearch('find methods');
+
+    assert.calledWith(
+      fakeClaude.AISearchDocument,
+      sinon.match({ documentUri: 'https://example.com/paper.pdf' }),
+    );
+  });
+
   it('calls getGroupAnnotations when rerun is triggered on a row', async () => {
     fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
     fakeStore.focusedGroupId.returns('group-1');
@@ -165,11 +338,9 @@ describe('AISearchPanel', () => {
         annotationIds: [],
       },
     ]);
-    fakeStore.mergeTagInventoryRowsWithSameTagQuery = sinon.stub();
     fakeStore.removeAnnotationIdsFromTagInventoryRows = sinon.stub();
 
     const fakeClaude = {
-      firstPDFURI: sinon.stub().returns('http://example.com/doc.pdf'),
       AISearchDocument: sinon.stub().rejects(new Error('stop after cache')),
     };
     const fakeAnnotationsService = {
@@ -193,6 +364,7 @@ describe('AISearchPanel', () => {
         api={{}}
         toastMessenger={fakeToastMessenger}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
       />,
     );
 
