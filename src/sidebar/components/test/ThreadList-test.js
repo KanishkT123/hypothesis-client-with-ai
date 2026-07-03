@@ -60,6 +60,8 @@ describe('ThreadList', () => {
       highlightedAnnotations: sinon.stub().returns([]),
       allAnnotations: sinon.stub().returns([]),
       profile: sinon.stub().returns({ userid: 'current_user_id' }),
+      threadScrollAnchor: sinon.stub().returns(null),
+      clearThreadScrollAnchor: sinon.stub(),
     };
 
     fakeTopThread = {
