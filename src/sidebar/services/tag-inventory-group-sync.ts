@@ -390,10 +390,12 @@ export class TagInventoryGroupSyncService {
     annotations: SavedAnnotation[],
     options?: {
       documentUri?: string;
+      documentUriAliases?: readonly string[];
       idSourceAnnotations?: SavedAnnotation[];
     },
   ) {
-    const aliases = documentUriAliases(this._store);
+    const aliases =
+      options?.documentUriAliases ?? documentUriAliases(this._store);
     const documentUri =
       options?.documentUri ??
       resolveDocumentUriFromCandidates(this._store, [...aliases]) ??
