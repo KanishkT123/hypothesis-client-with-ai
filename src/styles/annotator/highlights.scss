@@ -175,14 +175,44 @@
 // The `.hypothesis-highlights-always-on` class is managed by `highlighter`
 .hypothesis-highlights-always-on .hypothesis-svg-highlight {
   fill: var(--highlight-color);
+  stroke: transparent;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+
+  &[data-has-tag-overlays] {
+    fill: transparent;
+  }
 
   &.is-opaque {
     fill: yellow;
   }
 
   &[data-is-focused] {
-    fill: var(--highlight-color-focused);
+    // Keep fill stable so overlapping highlights do not flicker; show focus
+    // with a stroke instead of changing the blended fill color.
+    fill: var(--highlight-color);
+    stroke: rgba(0, 0, 0, 0.5);
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+    paint-order: stroke fill;
   }
+}
+
+.hypothesis-highlights-always-on .hypothesis-svg-highlight-overlay {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+
+  &[data-is-focused] {
+    fill: var(--highlight-overlay-color, transparent);
+    stroke: rgba(0, 0, 0, 0.5);
+  }
+}
+
+.hypothesis-highlights-always-on .hypothesis-svg-highlight-focus-tint {
+  fill: black;
+  fill-opacity: 0.22;
 }
 
 .hypothesis-highlights-always-on .hypothesis-highlight {

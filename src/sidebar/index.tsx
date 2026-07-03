@@ -29,8 +29,11 @@ import { GroupsService } from './services/groups';
 import { ImportAnnotationsService } from './services/import-annotations';
 import { LoadAnnotationsService } from './services/load-annotations';
 import { LocalStorageService } from './services/local-storage';
+import { PersistedTagInventoryService } from './services/persisted-tag-inventory';
 import { PersistedDefaultsService } from './services/persisted-defaults';
 import { RouterService } from './services/router';
+import { ClaudeService } from './services/claude';
+import { ExperimentLogService } from './services/experiment-log';
 import { ServiceURLService } from './services/service-url';
 import { SessionService } from './services/session';
 import { StreamFilter } from './services/stream-filter';
@@ -41,6 +44,8 @@ import { ThumbnailService } from './services/thumbnail';
 import { ToastMessengerService } from './services/toast-messenger';
 import { createSidebarStore } from './store';
 import type { SidebarStore } from './store';
+import { setupTagPaletteSync } from './services/tag-palette-sync';
+import { TagInventoryGroupSyncService } from './services/tag-inventory-group-sync';
 import { disableOpenerForExternalLinks } from './util/disable-opener-for-external-links';
 import * as sentry from './util/sentry';
 
@@ -101,10 +106,14 @@ function loadGroupsAndProfile(groups: GroupsService, session: SessionService) {
 function initServices(
   autosaveService: AutosaveService,
   persistedDefaults: PersistedDefaultsService,
+  persistedTagInventory: PersistedTagInventoryService,
+  tagInventoryGroupSync: TagInventoryGroupSyncService,
   serviceURL: ServiceURLService,
 ) {
   autosaveService.init();
   persistedDefaults.init();
+  persistedTagInventory.init();
+  tagInventoryGroupSync.init();
   serviceURL.init();
 }
 
@@ -118,6 +127,8 @@ function setupFrameSync(
   store: SidebarStore,
   toastMessenger: ToastMessengerService,
 ) {
+  setupTagPaletteSync(frameSync, store);
+
   if (store.route() === 'sidebar') {
     frameSync.connect().catch(() => {
       toastMessenger.error(
@@ -155,6 +166,9 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('loadAnnotationsService', LoadAnnotationsService)
     .register('localStorage', LocalStorageService)
     .register('persistedDefaults', PersistedDefaultsService)
+    .register('persistedTagInventory', PersistedTagInventoryService)
+    .register('tagInventoryGroupSync', TagInventoryGroupSyncService)
+    .register('claude', ClaudeService)
     .register('router', RouterService)
     .register('serviceURL', ServiceURLService)
     .register('session', SessionService)
@@ -164,7 +178,8 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('threadsService', ThreadsService)
     .register('thumbnailService', ThumbnailService)
     .register('toastMessenger', ToastMessengerService)
-    .register('store', { factory: createSidebarStore });
+    .register('store', { factory: createSidebarStore })
+    .register('experimentLog', ExperimentLogService);
 
   // Register utility values/classes.
   //
@@ -173,6 +188,11 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
   container
     .register('$window', { value: window })
     .register('settings', { value: settings });
+
+  //if (process.env.NODE_ENV !== 'production') {
+  (window as Window & { __sidebarStore?: SidebarStore }).__sidebarStore =
+      container.get('store') as SidebarStore;
+  //}
 
   // Initialize services.
   //

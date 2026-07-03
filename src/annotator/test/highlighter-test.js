@@ -3,6 +3,7 @@ import { render } from 'preact';
 import {
   getBoundingClientRect,
   Highlighter,
+  setHighlightsHidden,
   updateClusters,
 } from '../highlighter';
 
@@ -64,12 +65,17 @@ function PDFPage({ showPlaceholder = false }) {
  *   and SVG rect elements
  * @return {HighlightElement[]} - `<hypothesis-highlight>` element
  */
-function highlightPDFRange(highlighter, pageContainer, cssClass = '') {
+function highlightPDFRange(
+  highlighter,
+  pageContainer,
+  cssClass = '',
+  annotationTags = [],
+) {
   const textSpan = pageContainer.querySelector('.testText');
   const range = new Range();
   range.setStartBefore(textSpan.childNodes[0]);
   range.setEndAfter(textSpan.childNodes[0]);
-  return highlighter.highlightRange(range, cssClass);
+  return highlighter.highlightRange(range, cssClass, annotationTags);
 }
 
 describe('annotator/highlighter', () => {
@@ -82,14 +88,18 @@ describe('annotator/highlighter', () => {
    *   and SVG rect elements
    * @return {HTMLElement}
    */
-  function createPDFPageWithHighlight(highlighter, cssClass = '') {
+  function createPDFPageWithHighlight(
+    highlighter,
+    cssClass = '',
+    annotationTags = [],
+  ) {
     const container = document.createElement('div');
     containers.push(container);
     document.body.append(container);
 
     render(<PDFPage />, container);
 
-    highlightPDFRange(highlighter, container, cssClass);
+    highlightPDFRange(highlighter, container, cssClass, annotationTags);
 
     return container;
   }
@@ -356,6 +366,20 @@ describe('annotator/highlighter', () => {
         assert.closeTo(svgRectBox.top, highlightBox.top, 1);
         assert.closeTo(svgRectBox.width, highlightBox.width, 1);
         assert.closeTo(svgRectBox.height, highlightBox.height, 1);
+      });
+
+      it('creates SVG overlay layers for multi-tag highlights', () => {
+        const hl = new Highlighter();
+        const page = createPDFPageWithHighlight(hl, '', ['tag-a', 'tag-b']);
+        const baseRect = page.querySelector(
+          'rect.hypothesis-svg-highlight[data-has-tag-overlays]',
+        );
+        const overlays = page.querySelectorAll('rect.hypothesis-svg-highlight-overlay');
+
+        assert.ok(baseRect);
+        assert.equal(overlays.length, 2);
+        assert.isTrue(overlays[0].classList.contains('h-tag-tag-a'));
+        assert.isTrue(overlays[1].classList.contains('h-tag-tag-b'));
       });
 
       it('re-uses the existing SVG layer for the page if present', () => {
@@ -729,7 +753,7 @@ describe('annotator/highlighter', () => {
       );
     });
 
-    it('clones and sets focus class on focused SVG highlights in PDFs', () => {
+    it('sets in-place focus attributes on PDF SVG highlights', () => {
       const root = document.createElement('div');
       const hl = new Highlighter();
       render(<PDFPage />, root);
@@ -739,65 +763,53 @@ describe('annotator/highlighter', () => {
       ];
       const svgLayer = root.querySelector('svg');
 
-      assert.equal(svgLayer.lastChild, highlights[1].svgHighlight);
+      hl.setHighlightsFocused([highlights[0]], true);
+
       assert.equal(svgLayer.children.length, highlights.length);
-
-      hl.setHighlightsFocused([highlights[0]], true);
-
-      assert.equal(svgLayer.children.length, highlights.length + 1);
-      assert.isTrue(svgLayer.lastChild.hasAttribute('data-is-focused'));
-      assert.equal(
-        svgLayer.lastChild.getAttribute('data-focused-id'),
-        highlights[0].svgHighlight.getAttribute('data-focused-id'),
-      );
+      assert.isTrue(highlights[0].svgHighlight.hasAttribute('data-is-focused'));
+      assert.ok(highlights[0].svgHighlight.getAttribute('data-focused-id'));
     });
 
-    it('leaves SVG highlights focused if highlights are focused again', () => {
+    it('clears PDF SVG focus attributes on unfocus', () => {
       const root = document.createElement('div');
       const hl = new Highlighter(root);
       render(<PDFPage />, root);
-      const highlights = [
-        ...highlightPDFRange(hl, root),
-        ...highlightPDFRange(hl, root),
-      ];
-      const svgLayer = root.querySelector('svg');
+      const [highlight] = highlightPDFRange(hl, root);
+      highlight.svgHighlight.setAttribute('data-focused-id', 'legacy');
+      highlight.svgHighlight.setAttribute('data-is-focused', 'data-is-focused');
 
-      hl.setHighlightsFocused([highlights[0]], true);
+      hl.setHighlightsFocused([highlight], false);
 
-      assert.equal(svgLayer.children.length, highlights.length + 1);
-
-      hl.setHighlightsFocused([highlights[0]], true);
-
-      assert.equal(
-        svgLayer.children.length,
-        highlights.length + 1,
-        'No additional cloned highlights are added',
-      );
-      assert.equal(
-        svgLayer.lastChild.getAttribute('data-focused-id'),
-        highlights[0].svgHighlight.getAttribute('data-focused-id'),
-      );
+      assert.isFalse(highlight.svgHighlight.hasAttribute('data-is-focused'));
+      assert.isFalse(highlight.svgHighlight.hasAttribute('data-focused-id'));
     });
 
-    it('removes cloned SVG highlights when associated highlight is unfocused', () => {
+    it('marks multi-tag PDF SVG overlay rects focused in-place', () => {
       const root = document.createElement('div');
       const hl = new Highlighter(root);
       render(<PDFPage />, root);
-      const highlights = [
-        ...highlightPDFRange(hl, root),
-        ...highlightPDFRange(hl, root),
-      ];
+      const [highlight] = highlightPDFRange(hl, root, '', ['tag-a', 'tag-b']);
       const svgLayer = root.querySelector('svg');
 
-      hl.setHighlightsFocused([highlights[0]], true);
-      hl.setHighlightsFocused([highlights[0]], false);
+      assert.equal(svgLayer.querySelectorAll('rect').length, 3);
 
-      assert.equal(svgLayer.querySelectorAll('rect').length, highlights.length);
-      assert.equal(svgLayer.querySelectorAll('[data-focused-id]').length, 0);
-      assert.equal(svgLayer.querySelectorAll('[data-is-focused]').length, 0);
+      hl.setHighlightsFocused([highlight], true);
+
+      assert.equal(svgLayer.querySelectorAll('rect').length, 3);
+      assert.equal(svgLayer.querySelectorAll('[data-is-focused]').length, 3);
     });
 
-    it('removes focused SVG highlights when associated highlight is removed', () => {
+    it('uses normal compositing on PDF SVG highlight layers', () => {
+      const root = document.createElement('div');
+      const hl = new Highlighter();
+      render(<PDFPage />, root);
+      highlightPDFRange(hl, root, '', ['tag-a']);
+
+      const svgLayer = root.querySelector('svg');
+      assert.equal(svgLayer.style.mixBlendMode, 'normal');
+    });
+
+    it('removes legacy focused SVG state when associated highlight is removed', () => {
       const root = document.createElement('div');
       const hl = new Highlighter();
       render(<PDFPage />, root);
@@ -807,13 +819,8 @@ describe('annotator/highlighter', () => {
       ];
       const svgLayer = root.querySelector('svg');
 
-      hl.setHighlightsFocused([highlights[0]], true);
-
-      // Both the "original" SVG highlight and its cloned focused element
-      // get a `data-focused-id` attribute to associate them
-      assert.equal(svgLayer.querySelectorAll('[data-focused-id]').length, 2);
-      // Only the cloned element gets the `data-is-focused` attribute
-      assert.equal(svgLayer.querySelectorAll('[data-is-focused]').length, 1);
+      highlights[0].svgHighlight.setAttribute('data-focused-id', 'legacy');
+      highlights[0].svgHighlight.setAttribute('data-is-focused', 'data-is-focused');
 
       // Removing a highlight without unfocusing it first
       hl.removeHighlights([highlights[0]]);
@@ -900,6 +907,86 @@ describe('annotator/highlighter', () => {
       } finally {
         container.remove();
       }
+    });
+
+    it('returns an associated highlight once when SVG base and overlay are hit', () => {
+      const container = document.createElement('div');
+      const hl = new Highlighter(container);
+      document.body.append(container);
+
+      const textHighlight = document.createElement('hypothesis-highlight');
+      const svgLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svgLayer.setAttribute('class', 'hypothesis-highlight-layer');
+
+      const baseRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      baseRect.setAttribute('class', 'hypothesis-svg-highlight');
+      baseRect.setAttribute('data-highlight-id', 'h1');
+      baseRect.getBoundingClientRect = () => ({
+        left: 100,
+        top: 200,
+        right: 110,
+        bottom: 210,
+      });
+
+      const overlayRect = baseRect.cloneNode();
+      overlayRect.setAttribute('class', 'hypothesis-svg-highlight-overlay');
+      overlayRect.getBoundingClientRect = () => ({
+        left: 100,
+        top: 200,
+        right: 110,
+        bottom: 210,
+      });
+
+      textHighlight.svgHighlight = baseRect;
+
+      container.append(textHighlight);
+      container.append(svgLayer);
+      svgLayer.append(baseRect, overlayRect);
+
+      try {
+        hl.setHighlightsVisible(true);
+
+        const hits = hl.getHighlightsFromPoint(105, 205);
+        assert.include(hits, textHighlight);
+        assert.equal(
+          hits.filter(hit => hit === textHighlight).length,
+          1,
+          'expected one hit for a single annotation highlight',
+        );
+      } finally {
+        container.remove();
+      }
+    });
+  });
+
+  describe('setHighlightsHidden', () => {
+    it('applies h-row-hidden to PDF SVG highlights and overlays', () => {
+      const svgLayer = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'svg',
+      );
+      const textHighlight = document.createElement('hypothesis-highlight');
+      const baseRect = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'rect',
+      );
+      baseRect.setAttribute('data-highlight-id', 'h1');
+      const overlayRect = baseRect.cloneNode();
+      overlayRect.setAttribute('class', 'hypothesis-svg-highlight-overlay');
+      textHighlight.svgHighlight = baseRect;
+      svgLayer.append(baseRect, overlayRect);
+
+      setHighlightsHidden([textHighlight], true);
+
+      assert.isTrue(textHighlight.classList.contains('h-row-hidden'));
+      assert.isTrue(baseRect.classList.contains('h-row-hidden'));
+      assert.isTrue(overlayRect.classList.contains('h-row-hidden'));
+
+      setHighlightsHidden([textHighlight], false);
+
+      assert.isFalse(textHighlight.classList.contains('h-row-hidden'));
+      assert.isFalse(baseRect.classList.contains('h-row-hidden'));
+      assert.isFalse(overlayRect.classList.contains('h-row-hidden'));
     });
   });
 

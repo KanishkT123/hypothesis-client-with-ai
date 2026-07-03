@@ -1,5 +1,6 @@
 import classnames from 'classnames';
 
+import { highlightTagClass } from '../shared/highlight-tag-class';
 import { generateHexString } from '../shared/random';
 import type { ShapeAnchor } from '../types/annotator';
 import type { HighlightCluster } from '../types/shared';
@@ -76,7 +77,11 @@ export class Highlighter {
    * @param [cssClass] - CSS class(es) to add to the highlight elements
    * @return Elements wrapping text in `normedRange` to add a highlight effect
    */
-  highlightRange(range: Range, cssClass?: string): HighlightElement[] {
+  highlightRange(
+    range: Range,
+    cssClass?: string,
+    annotationTags: string[] = [],
+  ): HighlightElement[] {
     const textNodes = wholeTextNodesInRange(range);
 
     // Check if this range refers to a placeholder for not-yet-rendered content in
@@ -117,12 +122,13 @@ export class Highlighter {
 
     // Wrap each text node span with a `<hypothesis-highlight>` element.
     const highlights: HighlightElement[] = [];
+    const tagClasses = annotationTags.map(highlightTagClass);
     textNodeSpans.forEach(nodes => {
       // A custom element name is used here rather than `<span>` to reduce the
       // likelihood of highlights being hidden by page styling.
 
       const highlightEl = document.createElement('hypothesis-highlight');
-      highlightEl.className = classnames('hypothesis-highlight', cssClass);
+      highlightEl.className = classnames('hypothesis-highlight', cssClass, ...tagClasses);
 
       const parent = nodes[0].parentNode as ParentNode;
       parent.replaceChild(highlightEl, nodes[0]);
@@ -141,7 +147,7 @@ export class Highlighter {
     // to reduce the number of forced reflows. We also skip creating them for
     // unrendered pages for performance reasons.
     if (!inPlaceholder) {
-      drawHighlightsAbovePDFCanvas(highlights, cssClass);
+      drawHighlightsAbovePDFCanvas(highlights, cssClass, tagClasses);
     }
 
     return highlights;
@@ -170,7 +176,7 @@ export class Highlighter {
         replaceWith(h, children);
       }
       if (h.svgHighlight) {
-        h.svgHighlight.remove();
+        removeAssociatedSVGHighlights(h.svgHighlight);
       }
     }
   }
@@ -258,6 +264,7 @@ function getPDFCanvas(highlightEl: HighlightElement): HTMLCanvasElement | null {
 function drawHighlightsAbovePDFCanvas(
   highlightEls: HighlightElement[],
   cssClass?: string,
+  tagClasses: string[] = [],
 ) {
   if (highlightEls.length === 0) {
     return;
@@ -270,20 +277,21 @@ function drawHighlightsAbovePDFCanvas(
     return;
   }
 
-  let svgHighlightLayer = canvasEl.parentElement.querySelector(
-    '.hypothesis-highlight-layer',
-  ) as SVGSVGElement | null;
+  const canvasParent = canvasEl.parentElement;
+  let svgHighlightLayer =
+    (canvasParent.querySelector(
+      '.hypothesis-highlight-layer',
+    ) as SVGSVGElement | null) ??
+    (canvasParent.querySelector(
+      '.hypothesis-tag-highlight-layer',
+    ) as SVGSVGElement | null);
 
   if (!svgHighlightLayer) {
-    // Create SVG layer. This must be in the same stacking context as
-    // the canvas so that CSS `mix-blend-mode` can be used to control how SVG
-    // content blends with the canvas below.
     svgHighlightLayer = document.createElementNS(SVG_NAMESPACE, 'svg');
     svgHighlightLayer.setAttribute('class', 'hypothesis-highlight-layer');
-    canvasEl.parentElement.appendChild(svgHighlightLayer);
+    canvasParent.appendChild(svgHighlightLayer);
 
-    // Overlay SVG layer above canvas.
-    canvasEl.parentElement.style.position = 'relative';
+    canvasParent.style.position = 'relative';
 
     const svgStyle = svgHighlightLayer.style;
     svgStyle.position = 'absolute';
@@ -291,14 +299,11 @@ function drawHighlightsAbovePDFCanvas(
     svgStyle.top = '0';
     svgStyle.width = '100%';
     svgStyle.height = '100%';
-
-    // Use multiply blending so that highlights drawn on top of text darken it
-    // rather than making it lighter. This improves contrast and thus readability
-    // of highlighted text, especially for overlapping highlights.
-    //
-    // This choice optimizes for the common case of dark text on a light background.
-    svgStyle.mixBlendMode = 'multiply';
   }
+
+  // Standard alpha compositing is stable when differently-colored translucent
+  // highlights overlap. `multiply` causes compositor flicker in those regions.
+  svgHighlightLayer.style.mixBlendMode = 'normal';
 
   const canvasRect = canvasEl.getBoundingClientRect();
   const highlightRects = highlightEls.map(highlightEl => {
@@ -316,10 +321,25 @@ function drawHighlightsAbovePDFCanvas(
     rect.setAttribute('y', `${y * 100}%`);
     rect.setAttribute('width', `${width * 100}%`);
     rect.setAttribute('height', `${height * 100}%`);
+    const highlightID = generateHexString(8);
+    // TODO: Consider always rendering tag overlays (even for a single tag) so
+    // PDF highlighting uses one unified overlay path instead of branching
+    // between legacy single-tag and multi-tag behavior.
+    // TODO: If overlay colors are temporarily unavailable, consider keeping the
+    // base rect visible for multi-tag highlights until overlay colors are ready.
+    const hasTagOverlays = tagClasses.length > 1;
     rect.setAttribute(
       'class',
-      classnames('hypothesis-svg-highlight', cssClass),
+      classnames(
+        'hypothesis-svg-highlight',
+        cssClass,
+        ...(!hasTagOverlays ? tagClasses : []),
+      ),
     );
+    rect.setAttribute('data-highlight-id', highlightID);
+    if (hasTagOverlays) {
+      rect.setAttribute('data-has-tag-overlays', 'data-has-tag-overlays');
+    }
 
     // Make the highlight in the text layer transparent.
     highlightEl.classList.add('is-transparent');
@@ -327,10 +347,21 @@ function drawHighlightsAbovePDFCanvas(
     // Associate SVG element with highlight for use by `removeHighlights`.
     highlightEl.svgHighlight = rect;
 
-    return rect;
+    const overlays = hasTagOverlays
+      ? tagClasses.map(tagClass => {
+          const overlayRect = rect.cloneNode() as SVGRectElement;
+          overlayRect.setAttribute(
+            'class',
+            classnames('hypothesis-svg-highlight-overlay', tagClass),
+          );
+          return overlayRect;
+        })
+      : [];
+
+    return [rect, ...overlays];
   });
 
-  svgHighlightLayer.append(...highlightRects);
+  svgHighlightLayer.append(...highlightRects.flat());
 }
 
 /**
@@ -406,18 +437,12 @@ function replaceWith(node: ChildNode, replacements: Node[]) {
 /**
  * Focus or un-focus an individual SVG highlight element.
  *
- * When focusing an SVG highlight, make sure it is not obscured by other SVG
- * highlight elements. As SVG highlights are siblings, this can be accomplished
- * by putting the highlight at the end the set of highlights contained its
- * parent. SVG highlight elements are cloned instead of moved so that their
- * original stacking (nesting) order is not lost when later unfocused. A data
- * attribute is added to associate the original SVG highlight element with its
- * clone.
+ * Focus styling is applied in-place via `data-is-focused` so SVG stacking
+ * order stays stable. Visual emphasis uses CSS stroke (not fill) so overlap
+ * regions do not flicker.
  */
 function setSVGHighlightFocused(svgEl: SVGElement, focused: boolean) {
   const parent = svgEl.parentNode as SVGElement;
-  // This attribute allows lookup of an associated, "focused" element. It is
-  // set if the highlight is already focused.
   const focusedId = svgEl.getAttribute('data-focused-id');
 
   const isFocused = Boolean(focusedId);
@@ -426,20 +451,47 @@ function setSVGHighlightFocused(svgEl: SVGElement, focused: boolean) {
   }
 
   if (focused) {
-    svgEl.setAttribute('data-focused-id', generateHexString(8));
-    const focusedHighlight = svgEl.cloneNode() as SVGElement;
-    // The cloned element will include the `data-focused-id` attribute
-    // for association with its original highlight. Set additional attribute
-    // to mark this as the focused clone of a highlight.
-    focusedHighlight.setAttribute('data-is-focused', 'data-is-focused');
-    parent.append(focusedHighlight);
-  } else {
-    const focusedHighlight = parent.querySelector(
-      `[data-focused-id="${focusedId}"][data-is-focused]`,
+    const focusedID = generateHexString(8);
+    const associatedHighlights = associatedSVGHighlights(svgEl);
+    const sourceHighlights = associatedHighlights.filter(
+      el => !el.classList.contains('hypothesis-svg-highlight-focus-tint'),
     );
-    focusedHighlight?.remove();
-    svgEl.removeAttribute('data-focused-id');
+
+    sourceHighlights.forEach(source => {
+      source.setAttribute('data-focused-id', focusedID);
+      source.setAttribute('data-is-focused', 'data-is-focused');
+    });
+  } else {
+    if (!focusedId) {
+      return;
+    }
+    parent.querySelectorAll(`[data-focused-id="${focusedId}"]`).forEach(el => {
+      if (el.classList.contains('hypothesis-svg-highlight-focus-tint')) {
+        el.remove();
+      } else {
+        el.removeAttribute('data-is-focused');
+        el.removeAttribute('data-focused-id');
+      }
+    });
   }
+}
+
+function highlightID(svgEl: SVGElement): string | null {
+  return svgEl.getAttribute('data-highlight-id');
+}
+
+function associatedSVGHighlights(svgEl: SVGElement): SVGElement[] {
+  const id = highlightID(svgEl);
+  if (!id) {
+    return [svgEl];
+  }
+  return Array.from(
+    (svgEl.parentNode as Element).querySelectorAll(`[data-highlight-id="${id}"]`),
+  ) as SVGElement[];
+}
+
+function removeAssociatedSVGHighlights(svgEl: SVGElement) {
+  associatedSVGHighlights(svgEl).forEach(highlight => highlight.remove());
 }
 
 function setHighlightsFocused(
@@ -447,15 +499,32 @@ function setHighlightsFocused(
   focused: boolean,
 ) {
   highlights.forEach(h => {
-    // In PDFs the visible highlight is created by an SVG element, so the focused
-    // effect is applied to that. In other documents the effect is applied to the
-    // `<hypothesis-highlight>` element.
     if (h.svgHighlight) {
       setSVGHighlightFocused(h.svgHighlight, focused);
     } else {
       h.classList.toggle('hypothesis-highlight-focused', focused);
     }
   });
+}
+
+/**
+ * Show or hide highlights (e.g. when a tag inventory row is hidden).
+ *
+ * On PDFs the visible fill is drawn in SVG, so `h-row-hidden` must be applied
+ * to associated SVG elements as well as the text-layer wrappers.
+ */
+export function setHighlightsHidden(
+  highlights: HighlightElement[],
+  hidden: boolean,
+) {
+  for (const h of highlights) {
+    h.classList.toggle('h-row-hidden', hidden);
+    if (h.svgHighlight) {
+      for (const svgEl of associatedSVGHighlights(h.svgHighlight)) {
+        svgEl.classList.toggle('h-row-hidden', hidden);
+      }
+    }
+  }
 }
 
 /** Class set on root element to make highlights visible. */
@@ -499,7 +568,29 @@ export function getHighlightsFromPoint(
     }
   }
 
-  return [...textHighlights, ...shapeHighlights];
+  // In PDFs, visible highlight color may be rendered by SVG <rect> overlays.
+  // Those can be missed by `elementsFromPoint`, so include highlights whose
+  // associated SVG rect(s) contain the point.
+  const svgHighlights = Array.from(
+    document.querySelectorAll('hypothesis-highlight'),
+  )
+    .filter(
+      highlight =>
+        highlight.closest(showHighlightsSelector) &&
+        (highlight as HighlightElement).svgHighlight,
+    )
+    .filter(highlight => {
+      const svgHighlight = (highlight as HighlightElement).svgHighlight;
+      return (
+        svgHighlight &&
+        associatedSVGHighlights(svgHighlight).some(svgRect => {
+          const rect = svgRect.getBoundingClientRect();
+          return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+        })
+      );
+    }) as HighlightElement[];
+
+  return Array.from(new Set([...textHighlights, ...shapeHighlights, ...svgHighlights]));
 }
 
 // Subset of `DOMRect` interface
@@ -579,15 +670,18 @@ function getHighlights(element: Element) {
 function getSVGHighlights(root?: Element): Map<Element, HighlightElement[]> {
   const svgHighlights: Map<Element, HighlightElement[]> = new Map();
 
-  for (const layer of (root ?? document).getElementsByClassName(
+  for (const layerClass of [
     'hypothesis-highlight-layer',
-  )) {
-    svgHighlights.set(
-      layer,
-      Array.from(
-        layer.querySelectorAll('.hypothesis-svg-highlight'),
-      ) as HighlightElement[],
-    );
+    'hypothesis-tag-highlight-layer',
+  ]) {
+    for (const layer of (root ?? document).getElementsByClassName(layerClass)) {
+      svgHighlights.set(
+        layer,
+        Array.from(
+          layer.querySelectorAll('.hypothesis-svg-highlight'),
+        ) as HighlightElement[],
+      );
+    }
   }
 
   return svgHighlights;
@@ -679,6 +773,9 @@ function updateSVGHighlightOrdering(element: Element) {
 
     if (!correctlyOrdered) {
       layerHighlights.sort((a, b) => nestingLevel(a) - nestingLevel(b));
+      // #region agent log
+      {const w=window as Window&{__h1f2R?:{r:number,t:number}};const s=w.__h1f2R??(w.__h1f2R={r:0,t:Date.now()});s.r+=1;const now=Date.now();if(now-s.t>=3000){fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1f2ec9'},body:JSON.stringify({sessionId:'1f2ec9',location:'highlighter.ts:updateSVGHighlightOrdering',message:'svg-reorder-batch',data:{reorders:s.r,rectCount:layerHighlights.length},timestamp:now,hypothesisId:'B',runId:'rest-flicker-1'})}).catch(()=>{});s.r=0;s.t=now}}
+      // #endregion
       layer.replaceChildren(...layerHighlights);
     }
   }
