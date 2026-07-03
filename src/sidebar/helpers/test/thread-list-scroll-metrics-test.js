@@ -1,4 +1,7 @@
-import { measureThreadListScrollMetrics } from '../thread-list-scroll-metrics';
+import {
+  measureThreadListScrollMetrics,
+  scrollTopForThreadViewportOffset,
+} from '../thread-list-scroll-metrics';
 
 describe('thread-list-scroll-metrics', () => {
   it('uses list-relative scroll metrics when content above list changes height', () => {
@@ -47,5 +50,18 @@ describe('thread-list-scroll-metrics', () => {
     metrics = measureThreadListScrollMetrics(scrollContainer, listRoot);
     assert.equal(metrics.scrollPosition, 50);
     assert.equal(metrics.viewportHeight, 400);
+  });
+
+  it('computes scrollTop to preserve a thread viewport offset', () => {
+    const threads = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const heights = new Map([
+      ['a', 100],
+      ['b', 150],
+      ['c', 120],
+    ]);
+    assert.equal(
+      scrollTopForThreadViewportOffset(1, threads, heights, 50, 30, 200),
+      100 + 50 - 30,
+    );
   });
 });
