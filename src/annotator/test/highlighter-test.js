@@ -753,7 +753,7 @@ describe('annotator/highlighter', () => {
       );
     });
 
-    it('clones and sets focus class on focused SVG highlights in PDFs', () => {
+    it('sets in-place focus attributes on PDF SVG highlights', () => {
       const root = document.createElement('div');
       const hl = new Highlighter();
       render(<PDFPage />, root);
@@ -763,20 +763,28 @@ describe('annotator/highlighter', () => {
       ];
       const svgLayer = root.querySelector('svg');
 
-      assert.equal(svgLayer.lastChild, highlights[1].svgHighlight);
-      assert.equal(svgLayer.children.length, highlights.length);
-
       hl.setHighlightsFocused([highlights[0]], true);
 
-      assert.equal(svgLayer.children.length, highlights.length + 1);
-      assert.isTrue(svgLayer.lastChild.hasAttribute('data-is-focused'));
-      assert.equal(
-        svgLayer.lastChild.getAttribute('data-focused-id'),
-        highlights[0].svgHighlight.getAttribute('data-focused-id'),
-      );
+      assert.equal(svgLayer.children.length, highlights.length);
+      assert.isTrue(highlights[0].svgHighlight.hasAttribute('data-is-focused'));
+      assert.ok(highlights[0].svgHighlight.getAttribute('data-focused-id'));
     });
 
-    it('adds tint overlay for focused multi-tag SVG highlights', () => {
+    it('clears PDF SVG focus attributes on unfocus', () => {
+      const root = document.createElement('div');
+      const hl = new Highlighter(root);
+      render(<PDFPage />, root);
+      const [highlight] = highlightPDFRange(hl, root);
+      highlight.svgHighlight.setAttribute('data-focused-id', 'legacy');
+      highlight.svgHighlight.setAttribute('data-is-focused', 'data-is-focused');
+
+      hl.setHighlightsFocused([highlight], false);
+
+      assert.isFalse(highlight.svgHighlight.hasAttribute('data-is-focused'));
+      assert.isFalse(highlight.svgHighlight.hasAttribute('data-focused-id'));
+    });
+
+    it('marks multi-tag PDF SVG overlay rects focused in-place', () => {
       const root = document.createElement('div');
       const hl = new Highlighter(root);
       render(<PDFPage />, root);
@@ -787,65 +795,21 @@ describe('annotator/highlighter', () => {
 
       hl.setHighlightsFocused([highlight], true);
 
-      assert.equal(svgLayer.querySelectorAll('rect').length, 7);
-      assert.equal(
-        svgLayer.querySelectorAll(
-          'rect.hypothesis-svg-highlight-focus-tint[data-is-focused]',
-        ).length,
-        1,
-      );
-
-      hl.setHighlightsFocused([highlight], false);
-
       assert.equal(svgLayer.querySelectorAll('rect').length, 3);
+      assert.equal(svgLayer.querySelectorAll('[data-is-focused]').length, 3);
     });
 
-    it('leaves SVG highlights focused if highlights are focused again', () => {
+    it('uses normal compositing on PDF SVG highlight layers', () => {
       const root = document.createElement('div');
-      const hl = new Highlighter(root);
+      const hl = new Highlighter();
       render(<PDFPage />, root);
-      const highlights = [
-        ...highlightPDFRange(hl, root),
-        ...highlightPDFRange(hl, root),
-      ];
+      highlightPDFRange(hl, root, '', ['tag-a']);
+
       const svgLayer = root.querySelector('svg');
-
-      hl.setHighlightsFocused([highlights[0]], true);
-
-      assert.equal(svgLayer.children.length, highlights.length + 1);
-
-      hl.setHighlightsFocused([highlights[0]], true);
-
-      assert.equal(
-        svgLayer.children.length,
-        highlights.length + 1,
-        'No additional cloned highlights are added',
-      );
-      assert.equal(
-        svgLayer.lastChild.getAttribute('data-focused-id'),
-        highlights[0].svgHighlight.getAttribute('data-focused-id'),
-      );
+      assert.equal(svgLayer.style.mixBlendMode, 'normal');
     });
 
-    it('removes cloned SVG highlights when associated highlight is unfocused', () => {
-      const root = document.createElement('div');
-      const hl = new Highlighter(root);
-      render(<PDFPage />, root);
-      const highlights = [
-        ...highlightPDFRange(hl, root),
-        ...highlightPDFRange(hl, root),
-      ];
-      const svgLayer = root.querySelector('svg');
-
-      hl.setHighlightsFocused([highlights[0]], true);
-      hl.setHighlightsFocused([highlights[0]], false);
-
-      assert.equal(svgLayer.querySelectorAll('rect').length, highlights.length);
-      assert.equal(svgLayer.querySelectorAll('[data-focused-id]').length, 0);
-      assert.equal(svgLayer.querySelectorAll('[data-is-focused]').length, 0);
-    });
-
-    it('removes focused SVG highlights when associated highlight is removed', () => {
+    it('removes legacy focused SVG state when associated highlight is removed', () => {
       const root = document.createElement('div');
       const hl = new Highlighter();
       render(<PDFPage />, root);
@@ -855,13 +819,8 @@ describe('annotator/highlighter', () => {
       ];
       const svgLayer = root.querySelector('svg');
 
-      hl.setHighlightsFocused([highlights[0]], true);
-
-      // Both the "original" SVG highlight and its cloned focused element
-      // get a `data-focused-id` attribute to associate them
-      assert.equal(svgLayer.querySelectorAll('[data-focused-id]').length, 2);
-      // Only the cloned element gets the `data-is-focused` attribute
-      assert.equal(svgLayer.querySelectorAll('[data-is-focused]').length, 1);
+      highlights[0].svgHighlight.setAttribute('data-focused-id', 'legacy');
+      highlights[0].svgHighlight.setAttribute('data-is-focused', 'data-is-focused');
 
       // Removing a highlight without unfocusing it first
       hl.removeHighlights([highlights[0]]);
