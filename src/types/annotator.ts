@@ -257,6 +257,14 @@ export type IntegrationBase = {
   ): Selector[] | Promise<Selector[]>;
 
   /**
+   * Derive position/page selectors from quote-only selectors without a DOM
+   * range. Implemented for PDF; optional on other integrations.
+   */
+  describeQuoteOnly?(
+    selectors: Selector[],
+  ): Selector[] | Promise<Selector[]>;
+
+  /**
    * Return the main element that contains the document content. This is used
    * by controls such as the bucket bar to know when the content might have scrolled.
    */
