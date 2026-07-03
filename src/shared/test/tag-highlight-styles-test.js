@@ -52,4 +52,31 @@ describe('shared/tag-highlight-styles', () => {
     assert.notInclude(style.textContent, '.h-tag-valid');
     assert.include(style.textContent, 'h-tag-okay');
   });
+
+  it('does not rewrite the stylesheet when the palette is unchanged', () => {
+    const palette = { TopicA: 'rgba(1, 2, 3, 0.38)' };
+    applyTagHighlightPalette(document, palette);
+    const style = getDynamicStyle();
+    const firstContent = style.textContent;
+
+    applyTagHighlightPalette(document, palette);
+
+    assert.equal(style.textContent, firstContent);
+  });
+
+  it('produces identical CSS regardless of palette key order', () => {
+    applyTagHighlightPalette(document, {
+      zebra: 'rgba(1, 2, 3, 0.38)',
+      alpha: 'rgba(4, 5, 6, 0.38)',
+    });
+    const style = getDynamicStyle();
+    const firstContent = style.textContent;
+
+    applyTagHighlightPalette(document, {
+      alpha: 'rgba(4, 5, 6, 0.38)',
+      zebra: 'rgba(1, 2, 3, 0.38)',
+    });
+
+    assert.equal(style.textContent, firstContent);
+  });
 });

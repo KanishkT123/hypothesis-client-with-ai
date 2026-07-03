@@ -22,5 +22,5 @@ export function mapHiddenAnnotationIdsToGuestTags(
       tags.push(tag);
     }
   }
-  return tags;
+  return tags.sort();
 }

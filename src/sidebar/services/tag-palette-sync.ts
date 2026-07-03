@@ -10,6 +10,8 @@ import type { FrameSyncService } from './frame-sync';
 import type { SidebarStore } from '../store';
 import { watch } from '../util/watch';
 
+let lastPalettePushSignature: string | null = null;
+
 function savedAnnotationSignature(
   store: Pick<SidebarStore, 'savedAnnotations'>,
 ): string {
@@ -66,13 +68,24 @@ export function pushTagPalette(
     annotations,
   );
 
-  frameSync.setTagHighlightPalette(
-    mergeVisibleTagHighlightPalette(
-      visibleRows,
-      tagInventory.schemaTagColors,
-    ),
-    hiddenAnnotationIds,
+  const palette = mergeVisibleTagHighlightPalette(
+    visibleRows,
+    tagInventory.schemaTagColors,
   );
+
+  const signature = JSON.stringify({
+    focusedGroupId,
+    docUri,
+    palette: Object.entries(palette).sort(([a], [b]) => a.localeCompare(b)),
+    hidden: [...hiddenAnnotationIds].sort(),
+    annSig: savedAnnotationSignature(store),
+  });
+  if (signature === lastPalettePushSignature) {
+    return;
+  }
+  lastPalettePushSignature = signature;
+
+  frameSync.setTagHighlightPalette(palette, hiddenAnnotationIds);
 }
 
 export function setupTagPaletteSync(

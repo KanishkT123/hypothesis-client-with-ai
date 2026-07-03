@@ -67,7 +67,7 @@ export function computeTagInventoryHighlightState(
         .flatMap(row => rowAnnotationIds(row))
         .filter(id => !visibleIdSet.has(id)),
     ),
-  ];
+  ].sort();
 
   return { hiddenAnnotationIds };
 }
