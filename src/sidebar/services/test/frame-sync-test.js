@@ -77,7 +77,10 @@ describe('FrameSyncService', () => {
   let setupPortRPC;
 
   beforeEach(() => {
-    fakeAnnotationsService = { create: sinon.stub() };
+    fakeAnnotationsService = {
+      create: sinon.stub(),
+      persistEnrichedTargetIfChanged: sinon.stub(),
+    };
     fakeToastMessenger = new EventEmitter();
     fakePortRPCs = [];
     setupPortRPC = null;
@@ -857,6 +860,43 @@ describe('FrameSyncService', () => {
             target: ann.target,
           }),
         ]),
+      );
+    });
+
+    it('persists enriched target when location selectors are merged', () => {
+      const before = {
+        id: 'id1',
+        $tag: 't1',
+        $orphan: false,
+        tags: [],
+        text: '',
+        target: [
+          {
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      fakeStore.findAnnotationByID = sinon.stub().withArgs('id1').returns(before);
+
+      const ann = {
+        $tag: 't1',
+        $orphan: false,
+        id: 'id1',
+        target: [
+          {
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+      emitGuestEvent('syncAnchoringStatus', ann);
+
+      assert.calledWith(
+        fakeAnnotationsService.persistEnrichedTargetIfChanged,
+        before,
+        sinon.match({ id: 'id1', target: ann.target }),
       );
     });
 

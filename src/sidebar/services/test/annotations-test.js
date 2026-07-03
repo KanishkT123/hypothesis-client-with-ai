@@ -1125,4 +1125,93 @@ describe('AnnotationsService', () => {
       assert.calledWith(fakeStore.addAnnotations, [savedAnnotation]);
     });
   });
+
+  describe('persistEnrichedTargetIfChanged', () => {
+    const userId = 'acct:foo@bar.com';
+
+    beforeEach(() => {
+      fakeMetadata.isSaved.returns(true);
+      fakeStore.profile.returns({ userid: userId });
+    });
+
+    it('updates the API when location selectors are newly enriched', async () => {
+      const before = {
+        ...fixtures.defaultAnnotation(),
+        $orphan: false,
+        permissions: { read: [], update: [userId], delete: [userId] },
+        target: [
+          {
+            source: 'https://example.com',
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      const after = {
+        ...before,
+        target: [
+          {
+            source: 'https://example.com',
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+      const saved = { ...after, updated: '2020-01-02' };
+      fakeApi.annotation.update.resolves(saved);
+
+      svc.persistEnrichedTargetIfChanged(before, after);
+      await fakeApi.annotation.update.returnValues[0];
+
+      assert.calledWith(
+        fakeApi.annotation.update,
+        { id: before.id },
+        { target: after.target },
+      );
+      assert.calledWith(fakeStore.addAnnotations, [saved]);
+    });
+
+    it('does not update when location and quote display are unchanged', () => {
+      const ann = {
+        ...fixtures.defaultAnnotation(),
+        $orphan: false,
+        permissions: { read: [], update: [userId], delete: [userId] },
+        target: [
+          {
+            source: 'https://example.com',
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+
+      svc.persistEnrichedTargetIfChanged(ann, ann);
+
+      assert.notCalled(fakeApi.annotation.update);
+    });
+
+    it('skips unsaved annotations', () => {
+      fakeMetadata.isSaved.returns(false);
+      const before = fixtures.defaultAnnotation();
+      const after = {
+        ...before,
+        target: [
+          {
+            source: 'https://example.com',
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+
+      svc.persistEnrichedTargetIfChanged(before, after);
+
+      assert.notCalled(fakeApi.annotation.update);
+    });
+  });
 });

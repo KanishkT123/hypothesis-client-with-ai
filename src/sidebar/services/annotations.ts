@@ -16,6 +16,8 @@ import {
   positiveSchemaTags,
 } from '../helpers/tag-inventory-group';
 import * as metadata from '../helpers/annotation-metadata';
+import { hasSortableLocation } from '../helpers/annotation-metadata';
+import { quoteDisplayChanged } from '../../annotator/util/merge-anchoring-selectors';
 import {
   enrichPdfQuoteDisplayExact,
   hasPendingPdfLineBreakHyphens,
@@ -27,6 +29,7 @@ import { wrapDisplayNameMentions, wrapMentions } from '../helpers/mentions';
 import {
   defaultPermissions,
   isPrivate,
+  permits,
   privatePermissions,
   sharedPermissions,
 } from '../helpers/permissions';
@@ -625,5 +628,43 @@ export class AnnotationsService {
     this._store.addAnnotations([annotation]);
 
     return annotation;
+  }
+
+  /**
+   * Persist enriched target selectors after guest anchoring when location or
+   * quote display metadata changed.
+   */
+  persistEnrichedTargetIfChanged(
+    before: Annotation,
+    after: Annotation,
+  ): void {
+    if (!metadata.isSaved(after) || after.$orphan) {
+      return;
+    }
+
+    const locationEnriched =
+      !hasSortableLocation(before) && hasSortableLocation(after);
+    const quoteDisplayEnriched = quoteDisplayChanged(
+      before.target[0]?.selector,
+      after.target[0]?.selector,
+    );
+
+    if (!locationEnriched && !quoteDisplayEnriched) {
+      return;
+    }
+
+    const userid = this._store.profile().userid;
+    if (!permits(after.permissions, 'update', userid)) {
+      return;
+    }
+
+    void this._api.annotation
+      .update({ id: after.id }, { target: after.target })
+      .then(saved => {
+        this._store.addAnnotations([saved]);
+      })
+      .catch(() => {
+        // Best-effort persistence; local store merge already applied.
+      });
   }
 }

@@ -23,7 +23,7 @@ import type {
 } from '../../types/annotator';
 import type { Annotation } from '../../types/api';
 import { mapHiddenAnnotationIdsToGuestTags } from '../helpers/hidden-annotation-guest-tags';
-import type {
+import {
   SidebarToHostCalls,
   HostToSidebarCalls,
   SidebarToGuestCalls,
@@ -43,6 +43,15 @@ import type { Frame } from '../store/modules/frames';
 import { watch } from '../util/watch';
 import type { AnnotationsService } from './annotations';
 import type { ToastMessengerService } from './toast-messenger';
+
+function hiddenTagsEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((tag, index) => tag === sortedB[index]);
+}
 
 /**
  * Return a minimal representation of an annotation that can be sent from the
@@ -556,6 +565,10 @@ export class FrameSyncService {
           permissions: ann.permissions ?? existing.permissions,
         };
         this._store.addAnnotations([merged as Annotation]);
+        this._annotationsService.persistEnrichedTargetIfChanged(
+          existing,
+          merged as Annotation,
+        );
       }
 
       if ($tag === this._pendingHoverTag) {
@@ -760,11 +773,10 @@ export class FrameSyncService {
       Object.entries(palette).every(
         ([tag, color]) => this._tagHighlightPalette[tag] === color,
       );
-    const hiddenUnchanged =
-      hiddenGuestTags.length === this._hiddenAnnotationIds.length &&
-      hiddenGuestTags.every(
-        (tag, index) => tag === this._hiddenAnnotationIds[index],
-      );
+    const hiddenUnchanged = hiddenTagsEqual(
+      hiddenGuestTags,
+      this._hiddenAnnotationIds,
+    );
     if (paletteUnchanged && hiddenUnchanged) {
       return;
     }
