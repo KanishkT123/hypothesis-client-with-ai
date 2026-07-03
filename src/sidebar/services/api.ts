@@ -325,7 +325,7 @@ export class APIService {
     this.group = {
       annotations: {
         read: apiCall('group.annotations.read') as APICall<
-          { id: string } & Record<string, Param | Param[]>,
+          { pubid: string } & Record<string, Param | Param[]>,
           void,
           GroupAnnotationsResult
         >,

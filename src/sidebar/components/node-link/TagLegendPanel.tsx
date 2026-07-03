@@ -1,6 +1,7 @@
 import { Button, Card, CloseButton } from '@hypothesis/frontend-shared';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 
+import { colorForTag } from '../../node-link/graph-model';
 import {
   emptyNodeLinkState,
   relationshipsForTag,
@@ -27,18 +28,38 @@ export type TagLegendPanelProps = {
   nodeLinkState: NodeLinkStateService;
 };
 
-function RelationshipRow({ edge }: { edge: ManualTagEdge }) {
+function TagBadge({
+  tag,
+  tagColors,
+}: {
+  tag: string;
+  tagColors: Record<string, string>;
+}) {
+  return (
+    <span
+      className="max-w-full truncate rounded-full px-2.5 py-0.5 font-bold text-white"
+      style={{ backgroundColor: colorForTag(tag, tagColors) }}
+      title={tag}
+    >
+      {tag}
+    </span>
+  );
+}
+
+function RelationshipRow({
+  edge,
+  tagColors,
+}: {
+  edge: ManualTagEdge;
+  tagColors: Record<string, string>;
+}) {
   return (
     <li className="flex flex-wrap items-center justify-center gap-2 py-1.5 text-sm leading-6">
-      <span className="max-w-full truncate rounded-full bg-grey-2 px-2.5 py-0.5 font-medium text-color-text">
-        {edge.sourceTag}
-      </span>
+      <TagBadge tag={edge.sourceTag} tagColors={tagColors} />
       <strong className="min-w-0 shrink-0 px-0.5 text-color-text">
         {edge.connectionType}
       </strong>
-      <span className="max-w-full truncate rounded-full bg-grey-2 px-2.5 py-0.5 font-medium text-color-text">
-        {edge.targetTag}
-      </span>
+      <TagBadge tag={edge.targetTag} tagColors={tagColors} />
     </li>
   );
 }
@@ -47,10 +68,12 @@ function RelationshipSection({
   title,
   edges,
   emptyMessage,
+  tagColors,
 }: {
   title: string;
   edges: ManualTagEdge[];
   emptyMessage: string;
+  tagColors: Record<string, string>;
 }) {
   return (
     <section className="border-t border-grey-3 pt-4">
@@ -68,6 +91,7 @@ function RelationshipSection({
             <RelationshipRow
               key={edge.id || `${edge.sourceTag}\n${edge.targetTag}`}
               edge={edge}
+              tagColors={tagColors}
             />
           ))}
         </ul>
@@ -86,12 +110,39 @@ function TagLegendPanel({ nodeLinkState }: TagLegendPanelProps) {
   const groupId = store.focusedGroupId();
   const focusedGroup = store.focusedGroup();
   const annotations = store.savedAnnotations();
+  const tagColors = store.tagInventorySchemaTagColors();
 
   const [status, setStatus] = useState<LoadStatus>('idle');
   const [message, setMessage] = useState('');
   const [state, setState] =
     useState<NodeLinkSemanticState>(emptyNodeLinkState());
   const [selectedTag, setSelectedTag] = useState('');
+
+  const loadStateForGroup = useCallback(
+    (currentGroupId: string, isCanceled: () => boolean = () => false) => {
+      setStatus('loading');
+      setMessage('');
+      nodeLinkState
+        .loadState(currentGroupId)
+        .then(result => {
+          if (isCanceled()) {
+            return;
+          }
+          setState(result.state);
+          setStatus(result.status);
+          setMessage(result.message || '');
+        })
+        .catch(err => {
+          if (isCanceled()) {
+            return;
+          }
+          setStatus('error');
+          setMessage(err instanceof Error ? err.message : String(err));
+          setState(emptyNodeLinkState({ selectedGroupId: currentGroupId }));
+        });
+    },
+    [nodeLinkState],
+  );
 
   useEffect(() => {
     let canceled = false;
@@ -100,31 +151,12 @@ function TagLegendPanel({ nodeLinkState }: TagLegendPanelProps) {
       return undefined;
     }
 
-    setStatus('loading');
-    setMessage('');
-    nodeLinkState
-      .loadState(groupId)
-      .then(result => {
-        if (canceled) {
-          return;
-        }
-        setState(result.state);
-        setStatus(result.status);
-        setMessage(result.message || '');
-      })
-      .catch(err => {
-        if (canceled) {
-          return;
-        }
-        setStatus('error');
-        setMessage(err instanceof Error ? err.message : String(err));
-        setState(emptyNodeLinkState({ selectedGroupId: groupId }));
-      });
+    loadStateForGroup(groupId, () => canceled);
 
     return () => {
       canceled = true;
     };
-  }, [groupId, isLoggedIn, isOpen, nodeLinkState]);
+  }, [groupId, isLoggedIn, isOpen, loadStateForGroup]);
 
   const tags = useMemo(
     () => tagsForNodeLinkState(state, annotations, groupId),
@@ -150,19 +182,7 @@ function TagLegendPanel({ nodeLinkState }: TagLegendPanelProps) {
     if (!groupId) {
       return;
     }
-    setStatus('loading');
-    setMessage('');
-    nodeLinkState
-      .loadState(groupId)
-      .then(result => {
-        setState(result.state);
-        setStatus(result.status);
-        setMessage(result.message || '');
-      })
-      .catch(err => {
-        setStatus('error');
-        setMessage(err instanceof Error ? err.message : String(err));
-      });
+    loadStateForGroup(groupId);
   };
 
   let content;
@@ -221,11 +241,13 @@ function TagLegendPanel({ nodeLinkState }: TagLegendPanelProps) {
           title="Outgoing"
           edges={relationships.outgoing}
           emptyMessage="No manual relationships start from this tag."
+          tagColors={tagColors}
         />
         <RelationshipSection
           title="Incoming"
           edges={relationships.incoming}
           emptyMessage="No manual relationships point to this tag."
+          tagColors={tagColors}
         />
         <div className="flex justify-end">
           <Button onClick={reload}>Refresh</Button>

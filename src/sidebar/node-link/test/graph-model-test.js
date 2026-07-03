@@ -1,5 +1,10 @@
 import * as fixtures from '../../test/annotation-fixtures';
-import { buildNodeLinkGraph, documentLabelFromUrl } from '../graph-model';
+import {
+  buildNodeLinkGraph,
+  buildTagGraphLayout,
+  colorForTag,
+  documentLabelFromUrl,
+} from '../graph-model';
 import { emptyNodeLinkState, NODE_LINK_STATE_TAG } from '../graph-state';
 
 function annotation(overrides = {}) {
@@ -28,6 +33,13 @@ describe('node-link graph model', () => {
     assert.equal(
       documentLabelFromUrl('http://example.com/little-women-1.html'),
       'little women 1.html',
+    );
+  });
+
+  it('uses tag inventory colors for node display colors', () => {
+    assert.equal(
+      colorForTag('Character', { Character: 'rgba(140, 209, 125, 0.38)' }),
+      '#8cd17d',
     );
   });
 
@@ -121,5 +133,69 @@ describe('node-link graph model', () => {
       ]),
       [['Character', 'explains', 'Theme']],
     );
+  });
+
+  it('uses manual tag-tag edges to create a directed layered layout', () => {
+    const graph = buildNodeLinkGraph(
+      [
+        annotation({ tags: ['Character'] }),
+        annotation({
+          id: 'ann-2',
+          tags: ['Action'],
+        }),
+      ],
+      emptyNodeLinkState({
+        descriptiveTags: [{ id: 'desc-theme', tag: 'Theme' }],
+        tagEdges: [
+          {
+            sourceTag: 'Character',
+            targetTag: 'Action',
+            connectionType: 'motivates',
+          },
+          {
+            sourceTag: 'Action',
+            targetTag: 'Theme',
+            connectionType: 'supports',
+          },
+        ],
+      }),
+    );
+
+    const layout = buildTagGraphLayout(graph);
+    const byTag = new Map(layout.nodes.map(node => [node.tag, node]));
+
+    assert.isBelow(byTag.get('Character').x, byTag.get('Action').x);
+    assert.isBelow(byTag.get('Action').x, byTag.get('Theme').x);
+  });
+
+  it('keeps unlinked tags in the canvas when no manual edge uses them', () => {
+    const graph = buildNodeLinkGraph(
+      [
+        annotation({ tags: ['Character'] }),
+        annotation({
+          id: 'ann-2',
+          tags: ['Setting'],
+        }),
+      ],
+      emptyNodeLinkState({
+        descriptiveTags: [{ id: 'desc-theme', tag: 'Theme' }],
+        tagEdges: [
+          {
+            sourceTag: 'Character',
+            targetTag: 'Theme',
+            connectionType: 'explains',
+          },
+        ],
+      }),
+    );
+
+    const layout = buildTagGraphLayout(graph);
+    const setting = layout.nodes.find(node => node.tag === 'Setting');
+
+    assert.isOk(setting);
+    assert.isAtLeast(setting.x, 94);
+    assert.isAtMost(setting.x, layout.width - 94);
+    assert.isAtLeast(setting.y, 31);
+    assert.isAtMost(setting.y, layout.height - 31);
   });
 });

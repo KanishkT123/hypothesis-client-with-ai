@@ -1,3 +1,4 @@
+import type { JSX } from 'preact';
 import { useCallback } from 'preact/hooks';
 
 import type { SidebarSettings } from '../../../types/config';

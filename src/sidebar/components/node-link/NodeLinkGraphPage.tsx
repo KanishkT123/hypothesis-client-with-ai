@@ -1,11 +1,13 @@
 import { Button, GraphIcon, RefreshIcon } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import type { JSX } from 'preact';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import type { Annotation, Group } from '../../../types/api';
 import {
   buildNodeLinkGraph,
   buildTagGraphLayout,
+  colorForTag,
 } from '../../node-link/graph-model';
 import type { NodeLinkGraph, TagLayoutNode } from '../../node-link/graph-model';
 import { emptyNodeLinkState, tagLegendText } from '../../node-link/graph-state';
@@ -23,6 +25,7 @@ import { useSidebarStore } from '../../store';
 
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type AddMode = 'edge' | 'tag';
 
 export type NodeLinkGraphPageProps = {
   auth: AuthService;
@@ -33,6 +36,24 @@ export type NodeLinkGraphPageProps = {
 
 const NODE_WIDTH = 188;
 const NODE_HEIGHT = 62;
+const MIN_ZOOM = 0.45;
+const MAX_ZOOM = 1.6;
+const ZOOM_STEP = 0.12;
+
+type GraphPoint = {
+  x: number;
+  y: number;
+};
+
+type DragState = {
+  tag: string;
+  pointerId: number;
+  offsetX: number;
+  offsetY: number;
+  startX: number;
+  startY: number;
+  moved: boolean;
+};
 
 function edgeKey(edge: Pick<ManualTagEdge, 'sourceTag' | 'targetTag'>) {
   return `${edge.sourceTag}\n${edge.targetTag}`;
@@ -64,17 +85,72 @@ function groupLabel(group: Group) {
     : group.name;
 }
 
-function edgePath(source: TagLayoutNode, target: TagLayoutNode) {
-  const sourceX = source.x + NODE_WIDTH / 2;
-  const sourceY = source.y;
-  const targetX = target.x - NODE_WIDTH / 2;
-  const targetY = target.y;
-  const distance = Math.max(80, Math.abs(targetX - sourceX));
-  const controlOffset = Math.min(180, distance * 0.55);
+function findGroupByIdentifier(groupId: string, groups: Group[]) {
+  return groups.find(
+    group => group.id === groupId || group.groupid === groupId,
+  );
+}
 
-  return `M ${sourceX} ${sourceY} C ${sourceX + controlOffset} ${sourceY}, ${
-    targetX - controlOffset
-  } ${targetY}, ${targetX} ${targetY}`;
+function canonicalGroupId(groupId: string, groups: Group[]) {
+  return findGroupByIdentifier(groupId, groups)?.id || groupId;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function nodeBoundaryPoint(from: TagLayoutNode, to: TagLayoutNode): GraphPoint {
+  const dx = to.x - from.x || 0.01;
+  const dy = to.y - from.y || 0.01;
+  const halfWidth = NODE_WIDTH / 2;
+  const halfHeight = NODE_HEIGHT / 2;
+
+  if (Math.abs(dx) / halfWidth > Math.abs(dy) / halfHeight) {
+    const scale = halfWidth / Math.abs(dx);
+    return {
+      x: from.x + Math.sign(dx) * halfWidth,
+      y: from.y + dy * scale,
+    };
+  }
+
+  const scale = halfHeight / Math.abs(dy);
+  return {
+    x: from.x + dx * scale,
+    y: from.y + Math.sign(dy) * halfHeight,
+  };
+}
+
+function edgePath(source: TagLayoutNode, target: TagLayoutNode, index = 0) {
+  const start = nodeBoundaryPoint(source, target);
+  const end = nodeBoundaryPoint(target, source);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+  const normalX = -dy / distance;
+  const normalY = dx / distance;
+  const direction = index % 2 === 0 ? 1 : -1;
+  const bow = clamp(distance * 0.15 + (index % 4) * 8, 26, 82);
+  const c1x = start.x + dx * 0.38 + normalX * direction * bow;
+  const c1y = start.y + dy * 0.38 + normalY * direction * bow;
+  const c2x = end.x - dx * 0.38 + normalX * direction * bow;
+  const c2y = end.y - dy * 0.38 + normalY * direction * bow;
+
+  return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
+}
+
+function edgeStroke(edge: ManualTagEdge) {
+  const hue =
+    hashString(`${edge.sourceTag}:${edge.connectionType}:${edge.targetTag}`) %
+    360;
+  return `hsl(${hue} 58% 34%)`;
+}
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
 }
 
 function splitTagLines(tag: string) {
@@ -106,28 +182,74 @@ function splitTagLines(tag: string) {
   );
 }
 
+function TagBadge({
+  tag,
+  tagColors,
+}: {
+  tag: string;
+  tagColors: Record<string, string>;
+}) {
+  return (
+    <span
+      className="inline-block max-w-full truncate rounded-full px-2.5 py-0.5 font-bold text-white"
+      style={{ backgroundColor: colorForTag(tag, tagColors) }}
+      title={tag}
+    >
+      {tag}
+    </span>
+  );
+}
+
+function RelationshipSentence({
+  edge,
+  tagColors,
+}: {
+  edge: ManualTagEdge;
+  tagColors: Record<string, string>;
+}) {
+  return (
+    <span className="inline-flex max-w-full flex-wrap items-center gap-2">
+      <TagBadge tag={edge.sourceTag} tagColors={tagColors} />
+      <strong>{edge.connectionType}</strong>
+      <TagBadge tag={edge.targetTag} tagColors={tagColors} />
+    </span>
+  );
+}
+
 function TagNode({
   node,
+  badgeCount,
   selected,
+  emphasized,
   muted,
   onSelect,
+  onPointerDown,
+  dragging,
 }: {
   node: TagLayoutNode;
+  badgeCount: number;
   selected: boolean;
+  emphasized: boolean;
   muted: boolean;
   onSelect: () => void;
+  onPointerDown: (
+    event: JSX.TargetedPointerEvent<SVGGElement>,
+    node: TagLayoutNode,
+  ) => void;
+  dragging: boolean;
 }) {
   const lines = splitTagLines(node.tag);
 
   return (
     <g
-      className={classnames('cursor-pointer transition-opacity', {
+      className={classnames('cursor-grab transition-opacity', {
         'opacity-35': muted,
+        'cursor-grabbing': dragging,
       })}
       transform={`translate(${node.x - NODE_WIDTH / 2}, ${
         node.y - NODE_HEIGHT / 2
       })`}
-      onClick={onSelect}
+      onPointerDown={event => onPointerDown(event, node)}
       role="button"
       tabIndex={0}
       onKeyDown={event => {
@@ -142,9 +264,16 @@ function TagNode({
         height={NODE_HEIGHT}
         rx="7"
         fill={node.descriptive ? '#475569' : node.color}
-        stroke={selected ? '#111827' : 'rgba(255,255,255,.72)'}
-        strokeWidth={selected ? 3 : 1.5}
+        stroke={
+          selected
+            ? '#111827'
+            : emphasized
+              ? '#f8fafc'
+              : 'rgba(255,255,255,.72)'
+        }
+        strokeWidth={selected || emphasized ? 3 : 1.5}
         strokeDasharray={node.descriptive ? '5 4' : undefined}
+        filter={selected || emphasized ? 'url(#nodeShadow)' : undefined}
       />
       <text
         x="14"
@@ -155,18 +284,16 @@ function TagNode({
       >
         TAG
       </text>
-      {!node.descriptive && (
-        <text
-          x={NODE_WIDTH - 18}
-          y="20"
-          fill="#fff"
-          fontSize="12"
-          fontWeight="800"
-          textAnchor="middle"
-        >
-          {node.quoteCount}
-        </text>
-      )}
+      <text
+        x={NODE_WIDTH - 18}
+        y="20"
+        fill="#fff"
+        fontSize="12"
+        fontWeight="800"
+        textAnchor="middle"
+      >
+        {badgeCount}
+      </text>
       {lines.map((line, index) => (
         <text
           key={line}
@@ -186,16 +313,59 @@ function TagNode({
 function GraphCanvas({
   graph,
   selectedTag,
+  selectedEdgeId,
+  tagColors,
   onSelectTag,
+  onSelectEdge,
+  onClearSelection,
 }: {
   graph: NodeLinkGraph;
   selectedTag: string;
+  selectedEdgeId: string;
+  tagColors: Record<string, string>;
   onSelectTag: (tag: string) => void;
+  onSelectEdge: (edgeId: string) => void;
+  onClearSelection: () => void;
 }) {
-  const layout = useMemo(() => buildTagGraphLayout(graph), [graph]);
-  const nodeByTag = new Map(layout.nodes.map(node => [node.tag, node]));
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const [draggingTag, setDraggingTag] = useState('');
+  const [hoveredEdgeId, setHoveredEdgeId] = useState('');
+  const [zoom, setZoom] = useState(0.92);
+  const [userZoomed, setUserZoomed] = useState(false);
+  const [nodePositions, setNodePositions] = useState<
+    Record<string, GraphPoint>
+  >({});
+  const layout = useMemo(
+    () => buildTagGraphLayout(graph, tagColors),
+    [graph, tagColors],
+  );
+  const layoutNodes = useMemo(
+    () =>
+      layout.nodes.map(node => {
+        const moved = nodePositions[node.tag];
+        return moved ? { ...node, x: moved.x, y: moved.y } : node;
+      }),
+    [layout.nodes, nodePositions],
+  );
+  const nodeByTag = new Map(layoutNodes.map(node => [node.tag, node]));
+  const relationshipCountByTag = useMemo(() => {
+    const counts = new Map(graph.tags.map(node => [node.tag, 0]));
+    for (const edge of graph.manualEdges) {
+      counts.set(edge.sourceTag, (counts.get(edge.sourceTag) || 0) + 1);
+      counts.set(edge.targetTag, (counts.get(edge.targetTag) || 0) + 1);
+    }
+    return counts;
+  }, [graph.manualEdges, graph.tags]);
+  const selectedEdge = selectedEdgeId
+    ? graph.manualEdges.find(edge => edgeId(edge) === selectedEdgeId)
+    : undefined;
   const relatedTags = new Set<string>();
-  if (selectedTag) {
+  if (selectedEdge) {
+    relatedTags.add(selectedEdge.sourceTag);
+    relatedTags.add(selectedEdge.targetTag);
+  } else if (selectedTag) {
     relatedTags.add(selectedTag);
     for (const edge of graph.manualEdges) {
       if (edge.sourceTag === selectedTag) {
@@ -206,51 +376,298 @@ function GraphCanvas({
     }
   }
 
+  useEffect(() => {
+    setNodePositions(current => {
+      const validTags = new Set(layout.nodes.map(node => node.tag));
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([tag]) => validTags.has(tag)),
+      );
+      return Object.keys(next).length === Object.keys(current).length
+        ? current
+        : next;
+    });
+  }, [layout.nodes]);
+
+  useEffect(() => {
+    if (userZoomed || !scrollRef.current) {
+      return;
+    }
+    const availableWidth = Math.max(320, scrollRef.current.clientWidth - 36);
+    setZoom(clamp(Math.min(1, availableWidth / layout.width), MIN_ZOOM, 1));
+  }, [layout.width, userZoomed]);
+
+  const graphPoint = (
+    event: Pick<PointerEvent | WheelEvent, 'clientX' | 'clientY'>,
+  ): GraphPoint => {
+    // Convert screen coordinates through the rendered SVG bounds so dragging
+    // stays aligned at every zoom level and display scale.
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return { x: 0, y: 0 };
+    }
+    return {
+      x: clamp(
+        ((event.clientX - rect.left) / rect.width) * layout.width,
+        NODE_WIDTH / 2 + 12,
+        layout.width - NODE_WIDTH / 2 - 12,
+      ),
+      y: clamp(
+        ((event.clientY - rect.top) / rect.height) * layout.height,
+        NODE_HEIGHT / 2 + 12,
+        layout.height - NODE_HEIGHT / 2 - 12,
+      ),
+    };
+  };
+
+  const setZoomLevel = (nextZoom: number) => {
+    setUserZoomed(true);
+    setZoom(clamp(nextZoom, MIN_ZOOM, MAX_ZOOM));
+  };
+
+  const fitZoom = () => {
+    const availableWidth = Math.max(
+      320,
+      (scrollRef.current?.clientWidth || 920) - 36,
+    );
+    setUserZoomed(false);
+    setZoom(clamp(Math.min(1, availableWidth / layout.width), MIN_ZOOM, 1));
+  };
+
+  const startDrag = (
+    event: JSX.TargetedPointerEvent<SVGGElement>,
+    node: TagLayoutNode,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const point = graphPoint(event);
+    dragRef.current = {
+      tag: node.tag,
+      pointerId: event.pointerId,
+      offsetX: point.x - node.x,
+      offsetY: point.y - node.y,
+      startX: point.x,
+      startY: point.y,
+      moved: false,
+    };
+    setDraggingTag(node.tag);
+    (
+      event.currentTarget as Element & {
+        setPointerCapture?: (pointerId: number) => void;
+      }
+    ).setPointerCapture?.(event.pointerId);
+  };
+
+  const updateDrag = (event: JSX.TargetedPointerEvent<SVGSVGElement>) => {
+    const drag = dragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    const point = graphPoint(event);
+    const nextX = point.x - drag.offsetX;
+    const nextY = point.y - drag.offsetY;
+    const moved =
+      drag.moved ||
+      Math.abs(point.x - drag.startX) > 4 ||
+      Math.abs(point.y - drag.startY) > 4;
+    dragRef.current = { ...drag, moved };
+    setNodePositions(current => ({
+      ...current,
+      [drag.tag]: {
+        x: clamp(
+          nextX,
+          NODE_WIDTH / 2 + 12,
+          layout.width - NODE_WIDTH / 2 - 12,
+        ),
+        y: clamp(
+          nextY,
+          NODE_HEIGHT / 2 + 12,
+          layout.height - NODE_HEIGHT / 2 - 12,
+        ),
+      },
+    }));
+  };
+
+  const stopDrag = (event: JSX.TargetedPointerEvent<SVGSVGElement>) => {
+    const drag = dragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    dragRef.current = null;
+    setDraggingTag('');
+    if (!drag.moved) {
+      onSelectTag(drag.tag === selectedTag ? '' : drag.tag);
+    }
+  };
+
   return (
-    <div className="min-h-0 overflow-auto rounded border bg-[#f7faf9]">
-      <svg
-        className="block min-h-full min-w-full"
-        width={layout.width}
-        height={layout.height}
-        viewBox={`0 0 ${layout.width} ${layout.height}`}
-        role="img"
-        aria-label="Tag relationship graph"
-      >
-        <rect width={layout.width} height={layout.height} fill="#f7faf9" />
-        {graph.manualEdges.map(edge => {
-          const source = nodeByTag.get(edge.sourceTag);
-          const target = nodeByTag.get(edge.targetTag);
-          if (!source || !target) {
-            return null;
+    <div className="relative min-h-0 overflow-hidden rounded border bg-[#f7faf9]">
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded border bg-white/95 p-1 shadow-sm">
+        <button
+          className="h-8 min-w-8 rounded px-2 text-sm font-bold hover:bg-grey-2"
+          type="button"
+          title="Zoom out"
+          onClick={() => setZoomLevel(zoom - ZOOM_STEP)}
+        >
+          -
+        </button>
+        <button
+          className="h-8 rounded px-2 text-xs font-bold hover:bg-grey-2"
+          type="button"
+          title="Fit graph to width"
+          onClick={fitZoom}
+        >
+          Fit
+        </button>
+        <button
+          className="h-8 min-w-8 rounded px-2 text-sm font-bold hover:bg-grey-2"
+          type="button"
+          title="Zoom in"
+          onClick={() => setZoomLevel(zoom + ZOOM_STEP)}
+        >
+          +
+        </button>
+        <span className="min-w-[44px] text-center text-xs font-bold text-grey-6">
+          {Math.round(zoom * 100)}%
+        </span>
+      </div>
+      <div
+        className="h-full min-h-0 overflow-auto"
+        ref={scrollRef}
+        onWheel={event => {
+          if (!event.ctrlKey && !event.metaKey) {
+            return;
           }
-          const active =
-            !selectedTag ||
-            edge.sourceTag === selectedTag ||
-            edge.targetTag === selectedTag;
-          return (
-            <path
-              key={edge.id || `${edge.sourceTag}:${edge.targetTag}`}
-              d={edgePath(source, target)}
-              fill="none"
-              stroke={active ? '#0f766e' : '#b7c8c4'}
-              strokeWidth={active ? 2.8 : 1.5}
-              strokeLinecap="round"
-              opacity={active ? 0.86 : 0.22}
-            />
-          );
-        })}
-        {layout.nodes.map(node => (
-          <TagNode
-            key={node.id}
-            node={node}
-            selected={node.tag === selectedTag}
-            muted={Boolean(selectedTag) && !relatedTags.has(node.tag)}
-            onSelect={() =>
-              onSelectTag(node.tag === selectedTag ? '' : node.tag)
-            }
+          event.preventDefault();
+          setZoomLevel(zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+        }}
+      >
+        <svg
+          className="block min-h-full min-w-full"
+          ref={svgRef}
+          width={layout.width}
+          height={layout.height}
+          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          style={{
+            width: `${Math.round(layout.width * zoom)}px`,
+            height: `${Math.round(layout.height * zoom)}px`,
+          }}
+          role="img"
+          aria-label="Tag relationship graph"
+          onPointerMove={updateDrag}
+          onPointerUp={stopDrag}
+          onPointerCancel={stopDrag}
+        >
+          <defs>
+            <filter
+              id="nodeShadow"
+              x="-14%"
+              y="-22%"
+              width="128%"
+              height="150%"
+            >
+              <feDropShadow
+                dx="0"
+                dy="7"
+                stdDeviation="5"
+                floodColor="#0f172a"
+                floodOpacity="0.22"
+              />
+            </filter>
+          </defs>
+          <rect
+            width={layout.width}
+            height={layout.height}
+            fill="#f7faf9"
+            onClick={onClearSelection}
           />
-        ))}
-      </svg>
+          {graph.manualEdges.map((edge, index) => {
+            const source = nodeByTag.get(edge.sourceTag);
+            const target = nodeByTag.get(edge.targetTag);
+            if (!source || !target) {
+              return null;
+            }
+            const id = edgeId(edge);
+            const selected = id === selectedEdgeId;
+            const hovered = id === hoveredEdgeId;
+            const active =
+              selected ||
+              (!selectedEdgeId &&
+                (!selectedTag ||
+                  edge.sourceTag === selectedTag ||
+                  edge.targetTag === selectedTag));
+            const path = edgePath(source, target, index);
+            return (
+              <g
+                key={id}
+                onMouseEnter={() => setHoveredEdgeId(id)}
+                onMouseLeave={() => setHoveredEdgeId('')}
+              >
+                <path
+                  d={path}
+                  fill="none"
+                  stroke={edgeStroke(edge)}
+                  strokeWidth={
+                    selected ? 3.8 : hovered ? 3.4 : active ? 2.8 : 1.8
+                  }
+                  strokeLinecap="round"
+                  opacity={
+                    selected ? 0.98 : hovered ? 0.92 : active ? 0.78 : 0.22
+                  }
+                  pointerEvents="none"
+                />
+                <path
+                  className="cursor-pointer"
+                  d={path}
+                  fill="none"
+                  stroke="rgba(15,23,42,0.001)"
+                  strokeWidth="64"
+                  strokeLinecap="round"
+                  focusable="false"
+                  pointerEvents="stroke"
+                  onPointerDown={event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onClick={event => {
+                    event.stopPropagation();
+                    onSelectEdge(id);
+                  }}
+                />
+              </g>
+            );
+          })}
+          {layoutNodes.map(node => {
+            const endpoint =
+              selectedEdge &&
+              (node.tag === selectedEdge.sourceTag ||
+                node.tag === selectedEdge.targetTag);
+            return (
+              <TagNode
+                key={node.id}
+                node={node}
+                badgeCount={
+                  node.descriptive
+                    ? relationshipCountByTag.get(node.tag) || 0
+                    : node.quoteCount
+                }
+                selected={node.tag === selectedTag}
+                emphasized={Boolean(endpoint)}
+                muted={
+                  (Boolean(selectedTag) || Boolean(selectedEdge)) &&
+                  !relatedTags.has(node.tag)
+                }
+                onSelect={() =>
+                  onSelectTag(node.tag === selectedTag ? '' : node.tag)
+                }
+                onPointerDown={startDrag}
+                dragging={draggingTag === node.tag}
+              />
+            );
+          })}
+        </svg>
+      </div>
     </div>
   );
 }
@@ -258,13 +675,41 @@ function GraphCanvas({
 function EvidencePanel({
   graph,
   selectedTag,
+  selectedEdge,
+  tagColors,
+  onSelectEdge,
 }: {
   graph: NodeLinkGraph;
   selectedTag: string;
+  selectedEdge: ManualTagEdge | null;
+  tagColors: Record<string, string>;
+  onSelectEdge: (edgeId: string) => void;
 }) {
+  if (selectedEdge) {
+    return (
+      <div className="space-y-4">
+        <section className="rounded border bg-white p-4">
+          <h3 className="mb-3 text-sm font-bold uppercase text-grey-6">
+            Selected relationship
+          </h3>
+          <div className="text-sm leading-7">
+            <RelationshipSentence edge={selectedEdge} tagColors={tagColors} />
+          </div>
+        </section>
+        <p className="text-sm leading-6 text-grey-6">
+          The connected source and destination tags are highlighted in the
+          canvas.
+        </p>
+      </div>
+    );
+  }
+
   const quotes = selectedTag
     ? graph.quotes.filter(quote => quote.tags.includes(selectedTag))
     : [];
+  const node = selectedTag
+    ? graph.tags.find(tag => tag.tag === selectedTag)
+    : null;
   const outgoing = selectedTag
     ? graph.manualEdges.filter(edge => edge.sourceTag === selectedTag)
     : [];
@@ -283,37 +728,101 @@ function EvidencePanel({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h3 className="text-lg font-bold text-color-text">{selectedTag}</h3>
-        <p className="text-sm text-grey-6">
-          {quotes.length} linked quote{quotes.length === 1 ? '' : 's'}
-        </p>
-      </div>
+      <section className="rounded border bg-white p-4">
+        <h3 className="mb-3 text-sm font-bold uppercase text-grey-6">
+          Selected node
+        </h3>
+        <div className="space-y-3">
+          <div>
+            <div className="text-xs font-bold uppercase text-grey-6">Tag</div>
+            <div className="mt-1 text-lg font-bold text-color-text">
+              {selectedTag}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="rounded bg-grey-1 px-2 py-2">
+              <div className="text-base font-bold text-color-text">
+                {outgoing.length + incoming.length}
+              </div>
+              <div className="text-grey-6">relationships</div>
+            </div>
+            <div className="rounded bg-grey-1 px-2 py-2">
+              <div className="text-base font-bold text-color-text">
+                {node?.quoteCount || 0}
+              </div>
+              <div className="text-grey-6">quotes</div>
+            </div>
+            <div className="rounded bg-grey-1 px-2 py-2">
+              <div className="text-base font-bold text-color-text">
+                {node?.documentCount || 0}
+              </div>
+              <div className="text-grey-6">documents</div>
+            </div>
+          </div>
+          {node?.descriptive && (
+            <p className="rounded border border-grey-3 bg-grey-1 px-3 py-2 text-sm text-grey-6">
+              This is a descriptive tag. It only connects to other tag nodes.
+            </p>
+          )}
+        </div>
+      </section>
 
-      <section className="space-y-2">
-        <h4 className="text-xs font-bold uppercase text-grey-6">
-          Manual relationships
-        </h4>
-        {[...outgoing, ...incoming].length ? (
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="text-xs font-bold uppercase text-grey-6">
+            Outgoing relationships
+          </h4>
+          <span className="rounded-full bg-grey-2 px-2 py-0.5 text-xs font-bold text-grey-6">
+            {outgoing.length}
+          </span>
+        </div>
+        {outgoing.length ? (
           <ul className="space-y-2">
-            {[...outgoing, ...incoming].map(edge => (
-              <li
-                className="rounded border bg-white px-3 py-2 text-sm"
-                key={edge.id || `${edge.sourceTag}:${edge.targetTag}`}
-              >
-                <span className="rounded-full bg-grey-2 px-2 py-0.5 font-medium">
-                  {edge.sourceTag}
-                </span>{' '}
-                <strong>{edge.connectionType}</strong>{' '}
-                <span className="rounded-full bg-grey-2 px-2 py-0.5 font-medium">
-                  {edge.targetTag}
-                </span>
+            {outgoing.map(edge => (
+              <li key={edgeId(edge)}>
+                <button
+                  className="w-full rounded border bg-white px-3 py-2 text-left text-sm hover:border-brand hover:bg-brand/5 focus:outline-none focus:ring-2 focus:ring-brand"
+                  type="button"
+                  onClick={() => onSelectEdge(edgeId(edge))}
+                >
+                  <RelationshipSentence edge={edge} tagColors={tagColors} />
+                </button>
               </li>
             ))}
           </ul>
         ) : (
           <p className="text-sm text-grey-6">
-            No manual tag-tag relationships involve this tag yet.
+            This tag does not point to another tag yet.
+          </p>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="text-xs font-bold uppercase text-grey-6">
+            Incoming relationships
+          </h4>
+          <span className="rounded-full bg-grey-2 px-2 py-0.5 text-xs font-bold text-grey-6">
+            {incoming.length}
+          </span>
+        </div>
+        {incoming.length ? (
+          <ul className="space-y-2">
+            {incoming.map(edge => (
+              <li key={edgeId(edge)}>
+                <button
+                  className="w-full rounded border bg-white px-3 py-2 text-left text-sm hover:border-brand hover:bg-brand/5 focus:outline-none focus:ring-2 focus:ring-brand"
+                  type="button"
+                  onClick={() => onSelectEdge(edgeId(edge))}
+                >
+                  <RelationshipSentence edge={edge} tagColors={tagColors} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-grey-6">
+            No manual relationships point to this tag yet.
           </p>
         )}
       </section>
@@ -356,6 +865,7 @@ function NodeLinkEditor({
   graph,
   selectedTag,
   semanticState,
+  tagColors,
   onSaveState,
   saveStatus,
   saveMessage,
@@ -363,6 +873,7 @@ function NodeLinkEditor({
   graph: NodeLinkGraph;
   selectedTag: string;
   semanticState: NodeLinkSemanticState;
+  tagColors: Record<string, string>;
   onSaveState: (nextState: NodeLinkSemanticState) => void;
   saveStatus: SaveStatus;
   saveMessage: string;
@@ -374,6 +885,7 @@ function NodeLinkEditor({
   const [editingEdgeId, setEditingEdgeId] = useState('');
   const [tagName, setTagName] = useState('');
   const [editingTagId, setEditingTagId] = useState('');
+  const [addMode, setAddMode] = useState<AddMode>('edge');
   const [formMessage, setFormMessage] = useState('');
 
   useEffect(() => {
@@ -396,6 +908,7 @@ function NodeLinkEditor({
   };
 
   const editEdge = (edge: ManualTagEdge) => {
+    setAddMode('edge');
     setEditingEdgeId(edgeId(edge));
     setEdgeSource(edge.sourceTag);
     setEdgeRelationship(edge.connectionType);
@@ -544,6 +1057,7 @@ function NodeLinkEditor({
   };
 
   const editDescriptiveTag = (tag: DescriptiveTag) => {
+    setAddMode('tag');
     setEditingTagId(tag.id);
     setTagName(tag.tag);
     setFormMessage('');
@@ -611,58 +1125,113 @@ function NodeLinkEditor({
         </p>
       )}
 
-      <section className="space-y-3">
-        <h4 className="text-sm font-bold">Manual tag-tag edge</h4>
-        <div className="grid gap-2">
-          <select
-            className="h-9 rounded border bg-white px-2 text-sm"
-            value={edgeSource}
-            disabled={!canEdit}
-            onChange={event =>
-              setEdgeSource((event.target as HTMLSelectElement).value)
-            }
-          >
-            <option value="">Source tag</option>
-            {tags.map(tag => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
-          <input
-            className="h-9 rounded border px-2 text-sm"
-            value={edgeRelationship}
-            disabled={!canEdit}
-            placeholder="relationship"
-            onInput={event =>
-              setEdgeRelationship((event.target as HTMLInputElement).value)
-            }
-          />
-          <select
-            className="h-9 rounded border bg-white px-2 text-sm"
-            value={edgeTarget}
-            disabled={!canEdit}
-            onChange={event =>
-              setEdgeTarget((event.target as HTMLSelectElement).value)
-            }
-          >
-            <option value="">Target tag</option>
-            {tags.map(tag => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
+      <section className="space-y-3 rounded border bg-white p-3">
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="text-sm font-bold">Add New</h4>
+          <div className="flex rounded border bg-grey-1 p-0.5 text-xs font-bold">
+            <button
+              className={classnames('rounded px-2.5 py-1', {
+                'bg-white text-brand shadow-sm': addMode === 'edge',
+                'text-grey-6 hover:text-color-text': addMode !== 'edge',
+              })}
+              type="button"
+              onClick={() => {
+                setAddMode('edge');
+                resetTagForm();
+              }}
+            >
+              Edge
+            </button>
+            <button
+              className={classnames('rounded px-2.5 py-1', {
+                'bg-white text-brand shadow-sm': addMode === 'tag',
+                'text-grey-6 hover:text-color-text': addMode !== 'tag',
+              })}
+              type="button"
+              onClick={() => {
+                setAddMode('tag');
+                resetEdgeForm();
+              }}
+            >
+              Tag
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={saveEdge}
-            disabled={!canEdit || saveStatus === 'saving'}
-          >
-            {editingEdgeId ? 'Update Edge' : 'Add Edge'}
-          </Button>
-          {editingEdgeId && <Button onClick={resetEdgeForm}>Cancel</Button>}
-        </div>
+
+        {addMode === 'edge' ? (
+          <div className="space-y-3">
+            <div className="grid gap-2">
+              <select
+                className="h-9 rounded border bg-white px-2 text-sm"
+                value={edgeSource}
+                disabled={!canEdit}
+                onChange={event =>
+                  setEdgeSource((event.target as HTMLSelectElement).value)
+                }
+              >
+                <option value="">Source tag</option>
+                {tags.map(tag => (
+                  <option key={tag} value={tag}>
+                    {tag}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="h-9 rounded border px-2 text-sm"
+                value={edgeRelationship}
+                disabled={!canEdit}
+                placeholder="relationship"
+                onInput={event =>
+                  setEdgeRelationship((event.target as HTMLInputElement).value)
+                }
+              />
+              <select
+                className="h-9 rounded border bg-white px-2 text-sm"
+                value={edgeTarget}
+                disabled={!canEdit}
+                onChange={event =>
+                  setEdgeTarget((event.target as HTMLSelectElement).value)
+                }
+              >
+                <option value="">Target tag</option>
+                {tags.map(tag => (
+                  <option key={tag} value={tag}>
+                    {tag}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={saveEdge}
+                disabled={!canEdit || saveStatus === 'saving'}
+              >
+                {editingEdgeId ? 'Update Edge' : 'Add Edge'}
+              </Button>
+              {editingEdgeId && <Button onClick={resetEdgeForm}>Cancel</Button>}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <input
+              className="h-9 w-full rounded border px-2 text-sm"
+              value={tagName}
+              placeholder="New descriptive tag"
+              onInput={event =>
+                setTagName((event.target as HTMLInputElement).value)
+              }
+            />
+            <div className="flex gap-2">
+              <Button
+                onClick={saveDescriptiveTag}
+                disabled={saveStatus === 'saving'}
+              >
+                {editingTagId ? 'Update Tag' : 'Add Tag'}
+              </Button>
+              {editingTagId && <Button onClick={resetTagForm}>Cancel</Button>}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="space-y-2">
@@ -684,13 +1253,7 @@ function NodeLinkEditor({
                 key={edgeId(edge)}
               >
                 <div className="leading-6">
-                  <span className="rounded-full bg-grey-2 px-2 py-0.5 font-medium">
-                    {edge.sourceTag}
-                  </span>{' '}
-                  <strong>{edge.connectionType}</strong>{' '}
-                  <span className="rounded-full bg-grey-2 px-2 py-0.5 font-medium">
-                    {edge.targetTag}
-                  </span>
+                  <RelationshipSentence edge={edge} tagColors={tagColors} />
                 </div>
                 <div className="mt-2 flex gap-2">
                   <button
@@ -716,26 +1279,8 @@ function NodeLinkEditor({
         )}
       </section>
 
-      <section className="space-y-3">
-        <h4 className="text-sm font-bold">Descriptive tag</h4>
-        <input
-          className="h-9 w-full rounded border px-2 text-sm"
-          value={tagName}
-          placeholder="New descriptive tag"
-          onInput={event =>
-            setTagName((event.target as HTMLInputElement).value)
-          }
-        />
-        <div className="flex gap-2">
-          <Button
-            onClick={saveDescriptiveTag}
-            disabled={saveStatus === 'saving'}
-          >
-            {editingTagId ? 'Update Tag' : 'Add Tag'}
-          </Button>
-          {editingTagId && <Button onClick={resetTagForm}>Cancel</Button>}
-        </div>
-
+      <section className="space-y-2">
+        <h4 className="text-sm font-bold">Descriptive tags</h4>
         {semanticState.descriptiveTags.length ? (
           <ul className="space-y-2">
             {semanticState.descriptiveTags.map(tag => {
@@ -794,49 +1339,88 @@ function NodeLinkGraphPage({
   const groups = store.allGroups();
   const hasFetchedProfile = store.hasFetchedProfile();
   const isLoggedIn = store.isLoggedIn();
+  const tagColors = store.tagInventorySchemaTagColors();
   const routeGroup = routeGroupParam(routeParams);
+  const focusedGroupId = store.focusedGroupId() || '';
+  const canonicalRouteGroup = routeGroup
+    ? canonicalGroupId(routeGroup, groups)
+    : '';
+  const fallbackGroupId =
+    (focusedGroupId ? canonicalGroupId(focusedGroupId, groups) : '') ||
+    groups[0]?.id ||
+    '';
 
-  const [selectedGroupId, setSelectedGroupId] = useState(routeGroup);
+  const [selectedGroupId, setSelectedGroupId] = useState(canonicalRouteGroup);
   const [status, setStatus] = useState<LoadStatus>('idle');
   const [message, setMessage] = useState('');
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [semanticState, setSemanticState] =
     useState<NodeLinkSemanticState>(emptyNodeLinkState());
   const [selectedTag, setSelectedTag] = useState('');
+  const [selectedEdgeId, setSelectedEdgeId] = useState('');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState('');
+  const activeLoadRef = useRef<{
+    controller: AbortController;
+    groupId: string;
+  } | null>(null);
+  const loadedGroupRef = useRef('');
 
   useEffect(() => {
-    if (routeGroup && routeGroup !== selectedGroupId) {
-      setSelectedGroupId(routeGroup);
+    if (canonicalRouteGroup && canonicalRouteGroup !== selectedGroupId) {
+      setSelectedGroupId(canonicalRouteGroup);
     }
-  }, [routeGroup, selectedGroupId]);
+  }, [canonicalRouteGroup, selectedGroupId]);
 
   useEffect(() => {
-    if (!selectedGroupId && groups.length) {
-      setSelectedGroupId(store.focusedGroupId() || groups[0].id);
+    if (!selectedGroupId && fallbackGroupId) {
+      setSelectedGroupId(fallbackGroupId);
     }
-  }, [groups, selectedGroupId, store]);
+  }, [fallbackGroupId, selectedGroupId]);
 
-  const loadGraph = () => {
-    if (!selectedGroupId || !isLoggedIn) {
+  const loadGraph = (force = false) => {
+    const selectedGroup = findGroupByIdentifier(selectedGroupId, groups);
+    const groupId = selectedGroup?.id || selectedGroupId;
+    const waitingForGroups = Boolean(selectedGroupId) && groups.length === 0;
+    const unresolvedGroupIdentifier =
+      Boolean(selectedGroupId) && groups.length > 0 && !selectedGroup;
+    if (
+      !groupId ||
+      !isLoggedIn ||
+      waitingForGroups ||
+      unresolvedGroupIdentifier
+    ) {
+      return undefined;
+    }
+    if (
+      !force &&
+      (activeLoadRef.current?.groupId === groupId ||
+        loadedGroupRef.current === groupId)
+    ) {
       return undefined;
     }
 
     const controller = new AbortController();
+    activeLoadRef.current?.controller.abort();
+    activeLoadRef.current = { controller, groupId };
     setStatus('loading');
     setMessage('');
 
     Promise.all([
-      nodeLinkState.fetchGroupAnnotations(selectedGroupId, controller.signal),
-      nodeLinkState.loadState(selectedGroupId),
+      nodeLinkState.fetchGroupAnnotations(groupId, controller.signal),
+      nodeLinkState.loadState(groupId),
     ])
       .then(([fetchedAnnotations, loadedState]) => {
+        if (activeLoadRef.current?.controller !== controller) {
+          return;
+        }
         setAnnotations(fetchedAnnotations);
         setSemanticState(loadedState.state);
         setStatus('loaded');
         setSaveStatus('idle');
         setSaveMessage('');
+        loadedGroupRef.current = groupId;
+        activeLoadRef.current = null;
         setMessage(
           loadedState.status === 'invalid' ? loadedState.message || '' : '',
         );
@@ -845,19 +1429,34 @@ function NodeLinkGraphPage({
         if (err.name === 'AbortError') {
           return;
         }
+        if (activeLoadRef.current?.controller !== controller) {
+          return;
+        }
+        activeLoadRef.current = null;
         setStatus('error');
         setMessage(err instanceof Error ? err.message : String(err));
       });
 
-    return () => controller.abort();
+    return () => {
+      if (activeLoadRef.current?.controller === controller) {
+        controller.abort();
+        activeLoadRef.current = null;
+      }
+    };
   };
 
-  useEffect(loadGraph, [isLoggedIn, nodeLinkState, selectedGroupId]);
+  useEffect(loadGraph, [
+    groups.length,
+    isLoggedIn,
+    nodeLinkState,
+    selectedGroupId,
+  ]);
 
-  const selectedGroup = groups.find(group => group.id === selectedGroupId);
+  const selectedGroup = findGroupByIdentifier(selectedGroupId, groups);
+  const selectedGroupPubId = selectedGroup?.id || selectedGroupId;
 
   const saveSemanticState = (nextState: NodeLinkSemanticState) => {
-    if (!selectedGroupId) {
+    if (!selectedGroupPubId) {
       setSaveStatus('error');
       setSaveMessage('Choose a group before saving.');
       return;
@@ -867,7 +1466,9 @@ function NodeLinkGraphPage({
     setSaveStatus('saving');
     setSaveMessage('');
     nodeLinkState
-      .saveState(selectedGroupId, nextState, { groupName: selectedGroup?.name })
+      .saveState(selectedGroupPubId, nextState, {
+        groupName: selectedGroup?.name,
+      })
       .then(result => {
         setSemanticState(result.state);
         setSaveStatus('saved');
@@ -890,6 +1491,28 @@ function NodeLinkGraphPage({
     }
   }, [graph.tags, selectedTag]);
 
+  useEffect(() => {
+    if (
+      selectedEdgeId &&
+      !graph.manualEdges.some(edge => edgeId(edge) === selectedEdgeId)
+    ) {
+      setSelectedEdgeId('');
+    }
+  }, [graph.manualEdges, selectedEdgeId]);
+
+  const selectedEdge =
+    graph.manualEdges.find(edge => edgeId(edge) === selectedEdgeId) || null;
+
+  const selectTag = (tag: string) => {
+    setSelectedTag(tag);
+    setSelectedEdgeId('');
+  };
+
+  const selectEdge = (id: string) => {
+    setSelectedEdgeId(current => (current === id ? '' : id));
+    setSelectedTag('');
+  };
+
   const login = async () => {
     try {
       await auth.login({ action: 'login' });
@@ -899,7 +1522,7 @@ function NodeLinkGraphPage({
     }
   };
 
-  const canLoad = isLoggedIn && selectedGroupId;
+  const canLoad = Boolean(isLoggedIn && selectedGroupPubId && groups.length);
 
   return (
     <div className="flex h-screen min-h-screen flex-col bg-grey-2 text-color-text">
@@ -921,7 +1544,7 @@ function NodeLinkGraphPage({
           )}
           <Button
             onClick={() => {
-              loadGraph();
+              loadGraph(true);
             }}
             disabled={!canLoad || status === 'loading'}
             title="Refresh from Hypothesis"
@@ -984,24 +1607,38 @@ function NodeLinkGraphPage({
             <div className="rounded border bg-white p-6">
               <h2 className="mb-2 text-lg font-bold">Graph failed to load</h2>
               <p className="mb-4 text-sm text-grey-6">{message}</p>
-              <Button onClick={() => loadGraph()}>Retry</Button>
+              <Button onClick={() => loadGraph(true)}>Retry</Button>
             </div>
           ) : (
             <GraphCanvas
               graph={graph}
               selectedTag={selectedTag}
-              onSelectTag={setSelectedTag}
+              selectedEdgeId={selectedEdgeId}
+              tagColors={tagColors}
+              onSelectTag={selectTag}
+              onSelectEdge={selectEdge}
+              onClearSelection={() => {
+                setSelectedTag('');
+                setSelectedEdgeId('');
+              }}
             />
           )}
         </main>
 
         <aside className="w-[390px] shrink-0 overflow-auto border-l bg-white p-4">
           <div className="space-y-5">
-            <EvidencePanel graph={graph} selectedTag={selectedTag} />
+            <EvidencePanel
+              graph={graph}
+              selectedTag={selectedTag}
+              selectedEdge={selectedEdge}
+              tagColors={tagColors}
+              onSelectEdge={selectEdge}
+            />
             <NodeLinkEditor
               graph={graph}
               selectedTag={selectedTag}
               semanticState={semanticState}
+              tagColors={tagColors}
               onSaveState={saveSemanticState}
               saveStatus={saveStatus}
               saveMessage={saveMessage}

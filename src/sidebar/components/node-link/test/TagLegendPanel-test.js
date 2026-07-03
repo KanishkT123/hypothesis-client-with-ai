@@ -5,12 +5,17 @@ import {
 } from '@hypothesis/frontend-testing';
 import sinon from 'sinon';
 
+import { colorForTag } from '../../../node-link/graph-model';
 import { emptyNodeLinkState } from '../../../node-link/graph-state';
 import TagLegendPanel, { $imports } from '../TagLegendPanel';
 
 describe('TagLegendPanel', () => {
   let fakeStore;
   let fakeNodeLinkState;
+  const tagColors = {
+    Character: 'rgba(140, 209, 125, 0.38)',
+    Theme: 'rgba(78, 121, 167, 0.38)',
+  };
 
   function createComponent() {
     return mount(<TagLegendPanel nodeLinkState={fakeNodeLinkState} />);
@@ -23,6 +28,7 @@ describe('TagLegendPanel', () => {
       hasFetchedProfile: sinon.stub().returns(true),
       isLoggedIn: sinon.stub().returns(true),
       isSidebarPanelOpen: sinon.stub().withArgs('tagLegend').returns(true),
+      tagInventorySchemaTagColors: sinon.stub().returns(tagColors),
       savedAnnotations: sinon.stub().returns([
         { group: 'group-a', tags: ['Character'] },
         { group: 'group-a', tags: ['Action'] },
@@ -93,6 +99,32 @@ describe('TagLegendPanel', () => {
     assert.include(wrapper.text(), 'Theme');
     assert.include(wrapper.text(), 'Action');
     assert.include(wrapper.text(), 'reveals');
+  });
+
+  it('colors relationship badges with the tag inventory colors', async () => {
+    const wrapper = createComponent();
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.find('select option[value="Character"]').exists();
+    });
+
+    wrapper
+      .find('select')
+      .props()
+      .onChange({ target: { value: 'Character' } });
+    wrapper.update();
+
+    const characterBadge = wrapper.find('span[title="Character"]').first();
+    const themeBadge = wrapper.find('span[title="Theme"]').first();
+
+    assert.equal(
+      characterBadge.prop('style').backgroundColor,
+      colorForTag('Character', tagColors),
+    );
+    assert.equal(
+      themeBadge.prop('style').backgroundColor,
+      colorForTag('Theme', tagColors),
+    );
   });
 
   it('prompts logged-out users to log in', () => {

@@ -55,9 +55,9 @@ function isMissingOrForbidden(err: unknown) {
 /**
  * Load node-link semantic state from the Hypothesis API.
  *
- * The extension/client should not use the local workbench server or API tokens.
- * This service reuses the normal OAuth-backed `APIService` so the node-link
- * sidebar panel sees the same authenticated group state as annotations.
+ * Node-link runs inside the authenticated client. It uses the same
+ * OAuth-backed `APIService` as annotations instead of a separate token or
+ * local server.
  */
 // @inject
 export class NodeLinkStateService {

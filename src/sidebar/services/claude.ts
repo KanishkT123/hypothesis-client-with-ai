@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import {zodOutputFormat} from '@anthropic-ai/sdk/helpers/zod';
-import {z} from 'zod';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { z } from 'zod';
 
 const PassageSchema = z.object({
   text: z
@@ -73,7 +73,7 @@ export class ClaudeService {
   async AISearchDocument(
     request: ClaudeSearchRequest,
   ): Promise<ClaudeSearchResult> {
-    const {query, candidateURIs, apiKey, signal} = request;
+    const { query, candidateURIs, apiKey, signal } = request;
     const documentURL = this.firstPDFURI(candidateURIs);
     if (!documentURL) {
       throw new Error('No PDF URL found in candidateURIs');
@@ -84,7 +84,6 @@ export class ClaudeService {
       dangerouslyAllowBrowser: true,
     });
 
-    console.log('[ClaudeService] start call', {documentURL, query});
     const startedAt = Date.now();
     try {
       const message = await client.messages.parse(
@@ -99,8 +98,8 @@ export class ClaudeService {
               content: [
                 {
                   type: 'document',
-                  source: {type: 'url', url: documentURL},
-                  cache_control: {type: 'ephemeral'},
+                  source: { type: 'url', url: documentURL },
+                  cache_control: { type: 'ephemeral' },
                 } as any,
                 {
                   type: 'text',
@@ -113,22 +112,17 @@ export class ClaudeService {
             format: zodOutputFormat(PassagesSchema),
           },
         },
-        signal ? {signal} : undefined,
+        signal ? { signal } : undefined,
       );
-
-      console.log('[ClaudeService] success', {
-        elapsedMs: Date.now() - startedAt,
-      });
 
       const passages = message.parsed_output;
       if (!passages) {
         throw new Error('Claude returned no structured output');
       }
-      console.log('[ClaudeService] parsed quotes:', passages);
 
       // Wrap in the Reducto-compatible shape: { result: [{ quotes: [...] }] }
-      const quotes = passages.map(p => ({text: p.text}));
-      return {answer: {result: [{quotes}]}};
+      const quotes = passages.map(p => ({ text: p.text }));
+      return { answer: { result: [{ quotes }] } };
     } catch (error: unknown) {
       const aborted =
         signal?.aborted ||
